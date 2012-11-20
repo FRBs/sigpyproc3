@@ -1,16 +1,19 @@
-Installation
-~~~~~~~~~~~~
 
-Requirements
+sigpyproc
+=========
+
+Installation
 ------------
+
+### Requirements
+
 	
         * numpy 
         * ctypes 
         * FFTW3
         * OpenMP
 
-Step-by-step guide
-------------------
+### Step-by-step guide
 
 As both setuptools and distutils do not have any clear method of support for
 distributing C libraries for ctypes, the onus is on the user to ditribute the c libraries 
