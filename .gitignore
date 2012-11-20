@@ -1,7 +1,9 @@
 *.py[cod]
+*~
 
 # C extensions
 *.so
+*.o
 
 # Packages
 *.egg
@@ -33,3 +35,9 @@ nosetests.xml
 .mr.developer.cfg
 .project
 .pydevproject
+
+#sigpyproc specific
+working_dir/
+Docs/
+build/
+lib/
