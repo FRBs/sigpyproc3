@@ -3,6 +3,7 @@
 #include <time.h>
 #include <math.h>
 #include <omp.h>
+#include <string.h>
  
 /*----------------------------------------------------------------------------*/
 
@@ -43,6 +44,25 @@ void dedisperse(float* inbuffer,
   }
 }
 
+void subband(float* inbuffer,
+             float* outbuffer,
+             int* delays,
+             int* c_to_s,
+             int maxdelay,
+             int nchans,
+             int nsubs,
+             int nsamps)
+{
+  int ii,jj,out_size;
+  out_size = nsubs*(nsamps-maxdelay)*sizeof(float);
+  memset(outbuffer,0.0,out_size);
+#pragma omp parallel for default(shared) private(ii,jj)
+  for (ii=0;ii<(nsamps-maxdelay);ii++){
+    for (jj=0;jj<nchans;jj++){
+      outbuffer[(ii*nsubs) + c_to_s[jj]] += (float) inbuffer[(ii*nchans) + (delays[jj]*nchans) + jj];
+    }
+  }
+}
 
 void foldFil(float* inbuffer,
              float* foldbuffer,

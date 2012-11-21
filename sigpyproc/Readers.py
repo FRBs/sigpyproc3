@@ -10,6 +10,8 @@ from numpy.ctypeslib import as_ctypes as as_c
 from Utils import File
 from Header import Header
 from Filterbank import Filterbank,FilterbankBlock
+from TimeSeries import TimeSeries
+from FourierSeries import FourierSeries
 
 class FilReader(Filterbank):
     """Class to handle the reading of sigproc format filterbank files

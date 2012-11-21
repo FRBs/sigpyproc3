@@ -80,7 +80,7 @@ class Filterbank(object):
             size = self.header.nsamples-start
         else:
             size = nsamps
-        out_ar = np.empty(size*self.header.nchans,dtype=self.dtype)
+        out_ar = np.empty(size*self.header.nchans,dtype=self.header.dtype)
 
         if self.header.foff >= 0.0: 
             sign = 1.0
@@ -153,6 +153,57 @@ class Filterbank(object):
                                 C.c_int(ii*(gulp-max_delay)))
         return TimeSeries(tim_ar,self.header.newHeader({"nchans":1,"refdm":dm}))
 
+    def subband(self,dm,nsub,filename=None,gulp=10000):
+        """Produce a set of dedispersed subbands from the data.
+
+        :param dm: the DM of the subbands
+        :type dm: float
+        
+        :param nsub: the number of subbands to produce
+        :type nsub: int
+
+        :param filename: output file name of subbands (def=``basename_DMXXX.XX.subbands``)
+        
+        :param gulp: number of samples in each read
+        :type gulp: int
+
+        :return: name of output subbands file
+        :rtype: :func:`str`
+        """
+        
+        subfactor     = self.header.nchans/nsub
+        chan_delays   = self.header.getDMdelays(dm)
+        chan_delays_c = as_c(chan_delays)
+        max_delay     = int(chan_delays.max())
+        gulp          = max(2*max_delay,gulp)
+        out_ar        = np.empty((gulp-max_delay)*nsub,dtype="float32") #must be memset to zero in c code
+        out_ar_c      = as_c(out_ar)
+        new_foff      = self.header.foff*self.header.nchans/nsub
+        new_fch1      = self.header.ftop-new_foff/2.
+        chan_to_sub   = np.arange(self.header.nchans,dtype="int32")/subfactor
+        chan_to_sub_c = as_c(chan_to_sub)
+        changes       = {"fch1"  :new_fch1,
+                         "foff"  :new_foff,
+                         "refdm" :dm,
+                         "nchans":nsub,
+                         "nbits" :32}
+        if filename is None:
+            filename = "%s_DM%06.2f.subbands"%(self.header.basename,dm)
+        out_file = self.header.prepOutfile(filename, changes, nbits=32,
+                                           back_compatible=True)
+        
+        for nsamps,ii,data in self.readPlan(gulp,skipback=max_delay):
+            self.lib.subband(as_c(data),
+                             out_ar_c,
+                             chan_delays_c,
+                             chan_to_sub_c,
+                             C.c_int(max_delay),
+                             C.c_int(self.header.nchans),
+                             C.c_int(nsub),
+                             C.c_int(nsamps))
+            out_file.cwrite(out_ar[:(nsamps-max_delay)*nsub])
+        return filename
+
     def upTo8bit(self,filename=None,gulp=512,back_compatible=True):
         """Convert 1-,2- or 4-bit data to 8-bit data and write to file.
 
@@ -211,7 +262,7 @@ class Filterbank(object):
                                     "foff":self.header.foff*ffactor},
                                    back_compatible=back_compatible)
 
-        write_ar = np.zeros(gulp*self.header.nchans/ffactor/tfactor,dtype=self.dtype)
+        write_ar = np.zeros(gulp*self.header.nchans/ffactor/tfactor,dtype=self.header.dtype)
         write_ar_c = as_c(write_ar)
         for nsamps,ii,data in self.readPlan(gulp):
             self.lib.downsample(as_c(data),
