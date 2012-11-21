@@ -43,7 +43,7 @@ class Profile(np.ndarray):
              high quality signal-to-noise measurements.
           """   
           tmp_ar = self.copy()
-          width= self._findWidth()
+          width= self._getWidth()
           baseline = self._getBaseline(width)
           tmp_ar-=baseline.mean()
           tmp_ar/=baseline.std()
