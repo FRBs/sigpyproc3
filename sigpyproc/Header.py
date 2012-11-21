@@ -2,7 +2,6 @@ import numpy as np
 import HeaderParams as conf
 from os.path import splitext
 from struct import pack
-from string import zfill
 from Utils import File
 
 class Header(dict):
@@ -250,7 +249,7 @@ def radec_to_str(val):
     xx = (integral-(integral%10000))/10000
     yy = ((integral-(integral%100))/100)-xx*100
     zz = integral - 100*yy - 10000*xx + fractional
-    zz = zfill("%.4f"%(zz),7)
+    zz = "%07.4f"%(zz)
     return "%02d:%02d:%s"%(sign*xx,yy,zz)
 
 def MJD_to_Gregorian(mjd):
@@ -266,7 +265,7 @@ def MJD_to_Gregorian(mjd):
     hh = tt*24.
     mm = np.fmod(hh,1)*60.
     ss = np.fmod(mm,1)*60.
-    ss = zfill("%.5f"%(ss),8)
+    ss = "%08.5f"%(ss)
     j = mjd+2400000.5
     j = int(j)
     j = j - 1721119
