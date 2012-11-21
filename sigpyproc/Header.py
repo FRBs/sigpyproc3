@@ -46,10 +46,13 @@ class Header(dict):
         self.tobs    = self.tsamp * self.nsamples
         self.src_raj = getattr(self,"src_raj",0)
         self.src_dej = getattr(self,"src_dej",0)
-        self.ra_rad  = ra_to_rad(radec_to_str(self.src_raj))
-        self.dec_rad = dec_to_rad(radec_to_str(self.src_dej))
+        self.ra      = radec_to_str(self.src_raj)
+        self.dec     = radec_to_str(self.src_dej)
+        self.ra_rad  = ra_to_rad(self.ra)
+        self.dec_rad = dec_to_rad(self.dec)
         self.ra_deg  = (self.ra_rad*180.)/np.pi
         self.dec_deg = (self.dec_rad*180.)/np.pi
+
         
         if hasattr(self,"tstart"):
             self.obs_date,self.obs_time = MJD_to_Gregorian(self.tstart)
