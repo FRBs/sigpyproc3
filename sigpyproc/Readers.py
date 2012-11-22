@@ -1,17 +1,15 @@
 import os
 import time
-import HeaderParams as conf
-import ctypes as C
+import sigpyproc.HeaderParams as conf
 import numpy as np
 from inspect import stack as istack
 from struct import unpack
 from sys import stdout
-from numpy.ctypeslib import as_ctypes as as_c
-from Utils import File
-from Header import Header
-from Filterbank import Filterbank,FilterbankBlock
-from TimeSeries import TimeSeries
-from FourierSeries import FourierSeries
+from sigpyproc.Utils import File
+from sigpyproc.Header import Header
+from sigpyproc.Filterbank import Filterbank,FilterbankBlock
+from sigpyproc.TimeSeries import TimeSeries
+from sigpyproc.FourierSeries import FourierSeries
 
 class FilReader(Filterbank):
     """Class to handle the reading of sigproc format filterbank files
@@ -102,7 +100,7 @@ class FilReader(Filterbank):
         tstart = time.time()
         skipback = abs(skipback)
         if skipback >= gulp:
-             raise ValueError,"readsamps must be > skipback value"
+            raise ValueError,"readsamps must be > skipback value"
         self._file.seek(self.header.hdrlen+start*self.sampsize)
         nreads = nsamps//(gulp-skipback)
         lastread = nsamps-(nreads*(gulp-skipback))
@@ -160,7 +158,7 @@ def readDat(filename,inf=None):
         inf = "%s.inf"%(basename)
     if not os.path.isfile(inf):
         raise IOError,"No corresponding inf file found"
-    header = parseInf(inf)
+    header = parseInfHeader(inf)
     f = File(filename,"r",nbits=32)
     data = np.fromfile(f,dtype="float32")
     header["basename"] = basename
@@ -207,13 +205,13 @@ def readFFT(filename,inf=None):
         inf = "%s.inf"%(basename)
     if not os.path.isfile(inf):
         raise IOError,"No corresponding inf file found"
-    header = parseInf(inf)
+    header = parseInfHeader(inf)
     f = File(filename,"r",nbits=32)
     data = np.fromfile(f,dtype="complex32")
     header["basename"] = basename
     header["inf"] = inf
     header["filename"] = filename
-    return data,header
+    return FourierSeries(data,header)
 
 def readSpec(filename):
     """Read a sigpyproc format spec file.
@@ -235,7 +233,7 @@ def readSpec(filename):
     f = File(filename,"r",nbits=32)
     f.seek(hdrlen)
     data = np.fromfile(f,dtype="complex32")
-    return data,header
+    return FourierSeries(data,header)
 
 def parseInfHeader(filename):
     """Parse the metadata from a presto ``.inf`` file.

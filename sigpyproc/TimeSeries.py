@@ -1,4 +1,3 @@
-from Header import Header
 from numpy.ctypeslib import as_ctypes as as_c
 import numpy as np
 import ctypes as C
@@ -204,5 +203,5 @@ class TimeSeries(np.ndarray):
         new_ar = np.hstack((self,self.mean()*np.ones(npad)))
         return TimeSeries(new_ar,self.header.newHeader())
             
-from FoldedData import FoldedData
-from FourierSeries import FourierSeries
+from sigpyproc.FoldedData import FoldedData
+from sigpyproc.FourierSeries import FourierSeries

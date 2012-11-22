@@ -1,6 +1,6 @@
 from numpy.ctypeslib import as_ctypes as as_c
-from Utils import rollArray
-from FoldedData import FoldedData
+from sigpyproc.Utils import rollArray
+from sigpyproc.FoldedData import FoldedData
 import ctypes as C
 import numpy as np
 
@@ -18,6 +18,11 @@ class Filterbank(object):
             self.lib = C.CDLL("libSigPyProc32.so") #if 32-bit data select 32-bit library
         else:
             self.lib = C.CDLL("libSigPyProc8.so") #if 8-bit data select 8-bit library
+        self.chan_means  = None
+        self.chan_stdevs = None
+        self.chan_maxima = None
+        self.chan_minima = None
+
 
     def setNthreads(self,nthreads=None):
         """Set the number of threads available to OpenMP.
@@ -89,7 +94,7 @@ class Filterbank(object):
         changes    = {"fch1":self.header.fch1+sign*(self.header.nchans-1)*self.header.foff,
                       "foff":self.header.foff*sign*(-1.0)}
         #NB bandwidth is +ive by default
-        outFile = self.header.prepOutfile(filename, changes,
+        out_file = self.header.prepOutfile(filename, changes,
                                           nbits=self.header.nbits,
                                           back_compatible=back_compatible)
         for nsamps,ii,data in self.readPlan(gulp,start=start,nsamps=nsamps):
@@ -97,9 +102,9 @@ class Filterbank(object):
                                 as_c(out_ar), 
                                 C.c_int(self.header.nchans),
                                 C.c_int(nsamps))
-            outFile.cwrite(out_ar[:nsamps*self.header.nchans])
-        outFile.close()
-        return outFile.name
+            out_file.cwrite(out_ar[:nsamps*self.header.nchans])
+        out_file.close()
+        return out_file.name
 
     def bandpass(self,gulp=512):
         """Sum across each time sample for all frequencies.
@@ -162,7 +167,8 @@ class Filterbank(object):
         :param nsub: the number of subbands to produce
         :type nsub: int
 
-        :param filename: output file name of subbands (def=``basename_DMXXX.XX.subbands``)
+        :param filename: output file name of subbands (def=basename_DM.subbands)
+        :type filename: :func:`str`
         
         :param gulp: number of samples in each read
         :type gulp: int
@@ -551,5 +557,5 @@ class FilterbankBlock(np.ndarray):
         new_ar.dm = dm
         return new_ar
         
-from TimeSeries import TimeSeries
-from Utils import File
+from sigpyproc.TimeSeries import TimeSeries
+

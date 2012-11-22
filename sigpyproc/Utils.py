@@ -1,8 +1,7 @@
-import os,sys,tempfile,shutil
 import ctypes as C
 import numpy as np
 from numpy.ctypeslib import as_ctypes as as_c
-from HeaderParams import nbits_to_dtype
+from sigpyproc.HeaderParams import nbits_to_dtype
 
 lib  = C.CDLL("libSigPyProc.so")
 
@@ -27,9 +26,6 @@ class File(file):
 
     def __init__(self,filename,mode,nbits):
         file.__init__(self,filename,mode)
-        self._setNbits(nbits)
-
-    def _setNbits(self,nbits):
         self.nbits = nbits
         self.dtype = nbits_to_dtype[self.nbits]
         if nbits in [1,2,4]:

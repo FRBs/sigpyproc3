@@ -1,5 +1,5 @@
 import ctypes as C
-from Utils import File
+from sigpyproc.Utils import File
 from numpy.ctypeslib import as_ctypes as as_c
 import numpy as np
 lib = C.CDLL("libSigPyProcSpec.so")
@@ -78,8 +78,6 @@ class PowerSpectrum(np.ndarray):
         :rtype: :func:`list` of :class:`~sigpyproc.FourierSeries.PowerSpectrum`
         """
 
-        fold_ar   = np.empty_like(self.size-1)
-        fold_ar_c = as_c(fold_ar)
         sum_ar    = self.copy()
         sum_ar_c  = as_c(sum_ar)
         
@@ -234,10 +232,10 @@ class FourierSeries(np.ndarray):
         :rtype: :func:`tuple` of :func:`str`
         """
         if basename is None: basename = self.header.basename
-        self.makeInf(outfile="%s.inf"%(basename))
+        self.header.makeInf(outfile="%s.inf"%(basename))
         fftfile = File("%s.fft"%(basename),"w+")
-        self.fftBuffer.Ndarray.tofile(fftfile)
+        self.tofile(fftfile)
         return "%s.fft"%(basename),"%s.inf"%(basename)
 
-from TimeSeries import TimeSeries
-from FoldedData import Profile
+from sigpyproc.TimeSeries import TimeSeries
+from sigpyproc.FoldedData import Profile

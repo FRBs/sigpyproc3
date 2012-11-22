@@ -1,8 +1,8 @@
 import numpy as np
-import HeaderParams as conf
+import sigpyproc.HeaderParams as conf
 from os.path import splitext
 from struct import pack
-from Utils import File
+from sigpyproc.Utils import File
 
 class Header(dict):
     """Container object to handle observation metadata.
@@ -122,31 +122,14 @@ class Header(dict):
                 continue
 
             if conf.header_keys[key] == "str":
-                header = "".join([header,self._write_string(key,self[key])])
+                header = "".join([header,_write_string(key,self[key])])
             elif conf.header_keys[key] == "I":
-                header = "".join([header,self._write_int(key,self[key])])
+                header = "".join([header,_write_int(key,self[key])])
             elif conf.header_keys[key] == "d":
-                header = "".join([header,self._write_double(key,self[key])])
+                header = "".join([header,_write_double(key,self[key])])
             elif conf.header_keys[key] == "b":
-                header = "".join([header,self._write_char(key,self[key])])
+                header = "".join([header,_write_char(key,self[key])])
         return "".join([header,pack("I",len(hend)),hend])
-
-    def _write_string(self,key,value):
-        return "".join([pack("I", len(key)),
-                        key,pack('I',len(value)),
-                        value])
-
-    def _write_int(self,key,value):
-        return "".join([pack('I',len(key)),
-                        key,pack('I',value)])
-
-    def _write_double(self,key,value):
-        return "".join([pack('I',len(key)),
-                        key,pack('d',value)])
-    
-    def _write_char(self,key,value):
-        return "".join([pack('I',len(key)),
-                        key,pack('b',value)])
 
     def makeInf(self,outfile=None):
         """Make a presto format .inf file.
@@ -189,20 +172,22 @@ class Header(dict):
             f.close()
             return None
 
-    def getDMdelays(self,dm,in_channels=True):
+    def getDMdelays(self,dm,in_samples=True):
         """For a given dispersion measure get the dispersive ISM delay for each frequency channel.
 
         :param dm: dispersion measure to calculate delays for 
         :type dm: float
         
+        :param in_samples: flag to return delays as numbers of samples (def=True)
+        :type in_samples: bool
+
         :returns: delays for each channel (highest frequency first)
         :rtype: :class:`numpy.ndarray`
         """
         self.updateHeader()
         chanFreqs  = (np.arange(self.nchans,dtype="float128")*self.foff)+self.fch1
         delays = dm * 4.148808e3 *((chanFreqs**-2)-(self.fch1**-2))
-        chanDelays = (delays/self.tsamp).round().astype("int32")
-        if in_channels:
+        if in_samples:
             return (delays/self.tsamp).round().astype("int32")
         else:
             return delays
@@ -231,6 +216,23 @@ class Header(dict):
         new = self.newHeader(updates)
         out_file.write(new.SPPHeader(back_compatible=back_compatible))
         return out_file
+
+def _write_string(key,value):
+    return "".join([pack("I", len(key)),
+                    key,pack('I',len(value)),
+                    value])
+
+def _write_int(key,value):
+    return "".join([pack('I',len(key)),
+                    key,pack('I',value)])
+
+def _write_double(key,value):
+    return "".join([pack('I',len(key)),
+                    key,pack('d',value)])
+
+def _write_char(key,value):
+    return "".join([pack('I',len(key)),
+                    key,pack('b',value)])
 
 def radec_to_str(val):
     """Convert Sigproc format RADEC float to a string.
@@ -327,17 +329,17 @@ def rad_to_hms(rad):
     s = (arc - m) * 60.0
     return (h, m, s)
 
-def hms_to_rad(hour, min, sec):
+def hms_to_rad(hour, min_, sec):
     """Convert (hours, minutes, seconds) to radians."""
     if (hour < 0.0): sign = -1
     else: sign = 1
     return sign * np.pi/12/60./60. * \
         (60.0 * (60.0 * np.fabs(hour) +
-                 np.fabs(min)) + np.fabs(sec))
+                 np.fabs(min_)) + np.fabs(sec))
 
-def hms_to_hrs(hour, min, sec):
+def hms_to_hrs(hour, min_, sec):
     """Convert (hours, minutes, seconds) to hours."""
-    return (12./np.pi) * hms_to_rad(hour, min, sec)
+    return (12./np.pi) * hms_to_rad(hour, min_, sec)
 
 def ra_to_rad(ra_string):
     """Convert right ascension string to radians."""
