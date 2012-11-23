@@ -189,7 +189,7 @@ class FoldedData(np.ndarray):
         :return: a 2-D array containing the time vs. phase plane
         :rtype: :class:`~sigpyproc.FoldedData.FoldSlice`
         """
-        return self.sum(axis=0).view(FoldSlice)
+        return self.sum(axis=1).view(FoldSlice)
 
     def getFreqPhase(self):
         """Return the data cube collapsed in time.
@@ -197,7 +197,7 @@ class FoldedData(np.ndarray):
         :return: a 2-D array containing the frequency vs. phase plane
         :rtype: :class:`~sigpyproc.FoldedData.FoldSlice`
         """
-        return self.sum(axis=1).view(FoldSlice)
+        return self.sum(axis=0).view(FoldSlice)
 
     def centre(self):
         """Try and roll the data cube to center the pulse."""
