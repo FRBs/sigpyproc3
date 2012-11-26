@@ -156,14 +156,18 @@ class Header(dict):
                " Type of observation (EM band)          =  Radio\n",
                " Beam diameter (arcsec)                 =  9.22\n",
                " Dispersion measure (cm-3 pc)           =  %.03f\n"%(getattr(self,"refdm",0.0)),
-               " Central freq of low channel (Mhz)      =  %.05f\n"%(self.fbottom+0.5*abs(self.foff)),
-               " Total bandwidth (Mhz)                  =  %.05f\n"%(self.bandwidth),
                " Number of channels                     =  %d\n"%(getattr(self,"nchans",1)),
-               " Channel bandwidth (Mhz)                =  %.09f\n"%(abs(self.foff)),
-               " Data analyzed by                       =  sigpyproc\n",
-               " Any additional notes:",
-               "    Input filterbank samples have %d bits.\n"%(self.nbits))
+               " Data analyzed by                       =  sigpyproc\n",)
         
+        if hasattr(self,"foff") and hasattr(self,"nchans") and hasattr(self,"fch1"):
+            inf += (" Central freq of low channel (Mhz)      =  %.05f\n"%(self.fbottom+0.5*abs(self.foff)),
+                    " Total bandwidth (Mhz)                  =  %.05f\n"%(self.bandwidth),
+                    " Channel bandwidth (Mhz)                =  %.09f\n"%(abs(self.foff)))
+        else:
+            inf += (" Central freq of low channel (Mhz)      =  %.05f\n"%(0.0),
+                    " Total bandwidth (Mhz)                  =  %.05f\n"%(0.0),
+                    " Channel bandwidth (Mhz)                =  %.09f\n"%(0.0))
+
         if outfile == None:
             return "".join(inf)
         else:

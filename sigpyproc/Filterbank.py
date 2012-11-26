@@ -372,7 +372,37 @@ class Filterbank(object):
                              C.c_int(nsamps),
                              C.c_int(ii*gulp))
         return TimeSeries(tim_ar,self.header.newHeader({"channel":chan,"refdm":0.0,"nchans":1}))
+
+    def split(self,start,nsamps,filename=None,gulp=1024,back_compatible=True):
+        """Split data in time.
+
+        :param start: start sample of split
+        :type start: int
+
+        :param nsamps: number of samples in split
+        :type nsamps: int
+
+        :param filename: name of output file
+        :type filename: :func:`str` 
+
+        :param gulp: number of samples in each read
+        :type gulp: int
+
+        :param back_compatible: sigproc compatibility flag (legacy code)
+        :type back_compatible: bool
+
+        :return: name of new file
+        :rtype: :func:`str`
+        """
+        if filename is None:
+            filename = "%s_%d_%d.fil"%(self.header.basename,start,start+nsamps)
+        out_file = self.header.prepOutfile(filename, nbits=self.header.nbits)
         
+        for count, ii, data in self.readPlan(gulp,start=start,nsamps=nsamps):
+            out_file.cwrite(data)
+        out_file.close()
+        return out_file.name
+       
     def splitToChans(self,gulp=1024,back_compatible=True):
         """Split the data into component channels and write each to file.
 

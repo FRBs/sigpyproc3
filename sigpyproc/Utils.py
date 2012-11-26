@@ -71,7 +71,7 @@ class File(file):
         """
         
         if self.unpack:
-            packed = np.empty(int(ar.size/self.nbits),dtype=self.dtype)
+            packed = np.empty(int(ar.size*self.bitfact),dtype=self.dtype)
             lib.pack(as_c(ar),
                      as_c(packed),
                      C.c_int(self.nbits),
