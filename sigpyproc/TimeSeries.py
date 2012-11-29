@@ -13,7 +13,10 @@ class TimeSeries(np.ndarray):
     :type header: :class:`~sigpyproc.Header.Header`
     """
     def __new__(cls,input_array,header):
-        obj = input_array.astype("float32").view(cls)
+        if getattr(input_array,"dtype",False) == np.dtype("float32"):
+            obj = input_array.view(cls)
+        else:
+            obj = input_array.astype("float32").view(cls)
         obj.header = header
         return obj
 
@@ -202,6 +205,46 @@ class TimeSeries(np.ndarray):
         """        
         new_ar = np.hstack((self,self.mean()*np.ones(npad)))
         return TimeSeries(new_ar,self.header.newHeader())
+
+    def resample(self,accel,jerk=0,period=0.001):
+        """Perform time domain resampling to remove acceleration and jerk.
+
+        :param accel: The acceleration to remove from the time series
+        :type accel: float
+        
+        :param jerk: The jerk/jolt to remove from the time series
+        :type jerk: float
+
+        :param period: The mimimum period that the resampling will be sensitive to.
+        :type period: float
+
+        :return: resampled time series
+        :rtype: :class:`~sigpyproc.TimeSeries.TimeSeries`
+        """
+        
+        ##############################
+        # under construction
+        ##############################
+        
+        speed_of_light = 299792458.0
+        t_last_samp = (self.size-1)*self.header.tsamp
+        total_drift = (accel*(t_last_samp)**2) / (2*period*299792458.0)
+        new_size = self.size+int(total_drift)
+        out_ar = np.empty(new_size,dtype="float32")
+        print t_last_samp
+        print new_size
+        print total_drift
+        
+        lib.resample(as_c(self),
+                     as_c(out_ar),
+                     C.c_int(self.size),
+                     C.c_float(accel),
+                     C.c_float(period),
+                     C.c_float(self.header.tsamp))
+        
+        new_header = self.header.newHeader({"nsamples":out_ar.size,
+                                            "accel":accel})
+        return TimeSeries(out_ar,new_header)
             
 from sigpyproc.FoldedData import FoldedData
 from sigpyproc.FourierSeries import FourierSeries

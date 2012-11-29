@@ -229,3 +229,42 @@ void rfft(float* buffer,
   fftwf_execute(plan);
   fftwf_destroy_plan(plan);
 }
+
+void resample(float* input,
+	      float* output,
+	      int nsamps,
+	      float accel,
+	      float period,
+	      float tsamp)
+{
+  int index, ii;
+  float drift;
+  int jj = 0; 
+  int njump = 0;
+  float partial_calc = accel / (2 * period * 299792458.0);
+  int sign = ((accel>0)-(accel<0));
+
+  for (ii=0; ii<nsamps; ii++){
+    drift = abs(partial_calc * pow(ii*tsamp,2));
+
+    //printf("drift: %f      %f\n",drift,tsamp+tot_drift);
+
+    if (drift - njump*tsamp > tsamp){
+      njump++;
+      if (sign == 1){
+	//output[jj]=input[ii];
+	jj++;
+	//output[jj]=input[ii];
+      } else {
+	jj--;
+	//output[jj]=input[ii];
+      }
+    } else {
+      //output[jj]=input[ii];
+    }
+    jj++;
+    //printf("ii: %d       jj: %d\n",ii,jj);
+  }
+  printf("njump: %d\nii:%d jj%d\n",njump,ii,jj);
+}
+

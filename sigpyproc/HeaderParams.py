@@ -43,7 +43,8 @@ header_keys = {
     "ftop": 'd',
     "obs_date": 'str',
     "obs_time": 'str',
-    "signed": 'b'}
+    "signed": 'b',
+    "accel": 'd'}
 
 # header keys recognised by the sigproc package
 sigproc_keys = ["signed","telescope_id","ibeam","nbeams",
