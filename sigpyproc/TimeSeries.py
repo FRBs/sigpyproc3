@@ -206,7 +206,7 @@ class TimeSeries(np.ndarray):
         new_ar = np.hstack((self,self.mean()*np.ones(npad)))
         return TimeSeries(new_ar,self.header.newHeader())
 
-    def resample(self,accel,jerk=0,period=0.001):
+    def resample(self,accel,jerk=0):
         """Perform time domain resampling to remove acceleration and jerk.
 
         :param accel: The acceleration to remove from the time series
@@ -221,30 +221,35 @@ class TimeSeries(np.ndarray):
         :return: resampled time series
         :rtype: :class:`~sigpyproc.TimeSeries.TimeSeries`
         """
-        
-        ##############################
-        # under construction
-        ##############################
-        
         speed_of_light = 299792458.0
-        t_last_samp = (self.size-1)*self.header.tsamp
-        total_drift = (accel*(t_last_samp)**2) / (2*period*299792458.0)
-        new_size = self.size+int(total_drift)
-        out_ar = np.empty(new_size,dtype="float32")
-        print t_last_samp
-        print new_size
-        print total_drift
-        
+        total_drift = (accel*self.header.tsamp * self.size**2) / (2*299792458.0)
+        new_size = self.size+int(total_drift - np.sign(accel)) #factor to handle rounding
+        out_ar = np.zeros(new_size,dtype="float32")
         lib.resample(as_c(self),
                      as_c(out_ar),
                      C.c_int(self.size),
                      C.c_float(accel),
-                     C.c_float(period),
                      C.c_float(self.header.tsamp))
         
         new_header = self.header.newHeader({"nsamples":out_ar.size,
                                             "accel":accel})
         return TimeSeries(out_ar,new_header)
-            
+    
+    def resample2(self,accel,jerk=0):
+        speed_of_light = 299792458.0
+        total_drift = (accel*self.header.tsamp * (self.size/2)**2) / (2*299792458.0)
+        new_size = self.size+int(total_drift - np.sign(accel)) #factor to handle rounding                                   
+        out_ar = np.zeros(new_size,dtype="float32")
+        lib.resample2(as_c(self),
+                     as_c(out_ar),
+                     C.c_int(self.size),
+                     C.c_float(accel),
+                     C.c_float(self.header.tsamp))
+
+        new_header = self.header.newHeader({"nsamples":out_ar.size,
+                                            "accel":accel})
+        return TimeSeries(out_ar,new_header)
+
+
 from sigpyproc.FoldedData import FoldedData
 from sigpyproc.FourierSeries import FourierSeries
