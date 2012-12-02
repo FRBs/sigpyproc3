@@ -218,6 +218,7 @@ class Header(dict):
         if nbits is None: nbits = self.nbits
         out_file = File(filename,"w+",nbits)
         new = self.newHeader(updates)
+        new["nbits"] = nbits
         out_file.write(new.SPPHeader(back_compatible=back_compatible))
         return out_file
 
