@@ -237,59 +237,18 @@ void resample(float* input,
 	      float tsamp)
 {
   int index, ii;
-  float drift;
-  int jj = 0; 
-  int njump = 0;
+  int nsamps_by_2 = nsamps/2;
   float partial_calc = (accel*tsamp) / (2 * 299792458.0);
-
-  for (ii=0; ii<nsamps; ii++){
-    drift = abs(partial_calc * pow(ii,2));
-    if (drift - njump > 1){
-      njump++;
-      if (accel > 0){
-	output[jj]=input[ii];
-	jj++;
-	output[jj]=input[ii];
-      } else {
-	jj--;
-	output[jj]=input[ii];
-      }
-    } else {
-      output[jj]=input[ii];
-    }
-    jj++;
+  float tot_drift = partial_calc * pow(nsamps_by_2,2);
+  int last_bin = 0;
+  for (ii=0;ii<nsamps;ii++){
+    index = ii + partial_calc * pow(ii-nsamps_by_2,2) - tot_drift;
+    output[index] = input[ii];
+    if (index - last_bin > 1)
+      output[index-1] = input[ii];
+    last_bin = index;
   }
 }
 
-void resample2(float* input,
-              float* output,
-              int nsamps,
-              float accel,
-              float tsamp)
-{
-  int index, ii;
-  float drift;
-  int jj = 0;
-  int njump = 0;
-  float partial_calc = (accel*tsamp) / (2 * 299792458.0);
-  int sign = ((accel>0)-(accel<0));
 
-  for (ii=0; ii<nsamps; ii++){
-    drift = abs(partial_calc * pow(ii-nsamps/2,2));
-    printf("%.10f\t%.10f\t%d\t%d\n",partial_calc,drift,pow(ii-nsamps/8,2),ii-nsamps/2);
-    if (drift - njump > 1){
-      njump++;
-      if (sign == 1)
-        output[jj]=input[ii];
-        jj++;
-        output[jj]=input[ii];
-      } else {
-        jj--;
-        output[jj]=input[ii];
-      }
-    } else {
-      output[jj]=input[ii];
-    }
-    jj++;
-  }
-}
+

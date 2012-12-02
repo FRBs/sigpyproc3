@@ -215,32 +215,19 @@ class TimeSeries(np.ndarray):
         :param jerk: The jerk/jolt to remove from the time series
         :type jerk: float
 
-        :param period: The mimimum period that the resampling will be sensitive to.
+        :param period: The mimimum period that the resampling 
+                       will be sensitive to.
         :type period: float
 
         :return: resampled time series
         :rtype: :class:`~sigpyproc.TimeSeries.TimeSeries`
         """
-        speed_of_light = 299792458.0
-        total_drift = (accel*self.header.tsamp * self.size**2) / (2*299792458.0)
-        new_size = self.size+int(total_drift - np.sign(accel)) #factor to handle rounding
+        if accel > 0:
+            new_size = self.size-1
+        else:
+            new_size = self.size
         out_ar = np.zeros(new_size,dtype="float32")
         lib.resample(as_c(self),
-                     as_c(out_ar),
-                     C.c_int(self.size),
-                     C.c_float(accel),
-                     C.c_float(self.header.tsamp))
-        
-        new_header = self.header.newHeader({"nsamples":out_ar.size,
-                                            "accel":accel})
-        return TimeSeries(out_ar,new_header)
-    
-    def resample2(self,accel,jerk=0):
-        speed_of_light = 299792458.0
-        total_drift = (accel*self.header.tsamp * (self.size/2)**2) / (2*299792458.0)
-        new_size = self.size+int(total_drift - np.sign(accel)) #factor to handle rounding                                   
-        out_ar = np.zeros(new_size,dtype="float32")
-        lib.resample2(as_c(self),
                      as_c(out_ar),
                      C.c_int(self.size),
                      C.c_float(accel),
