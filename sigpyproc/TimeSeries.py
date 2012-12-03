@@ -237,6 +237,22 @@ class TimeSeries(np.ndarray):
                                             "accel":accel})
         return TimeSeries(out_ar,new_header)
 
+    def correlate(self,other):
+        """Cross correlate with another time series of the same length.
+
+        :param other: array to correlate with
+        :type other: :class:`numpy.ndarray` 
+
+        :return: time series containing the correlation
+        :rtype: :class:`sigpyproc.TimeSeries.TimeSeries`
+        """
+        if type(self) != type(other):
+            try:
+                other = TimeSeries(other,self.header.newHeader())
+            except:
+                raise Exception("Could not convert argument to TimeSeries instance")
+        return (self.rFFT()*other.rFFT()).iFFT()
+            
 
 from sigpyproc.FoldedData import FoldedData
 from sigpyproc.FourierSeries import FourierSeries

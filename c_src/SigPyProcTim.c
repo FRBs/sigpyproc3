@@ -230,6 +230,7 @@ void rfft(float* buffer,
   fftwf_destroy_plan(plan);
 }
 
+
 void resample(float* input,
 	      float* output,
 	      int nsamps,

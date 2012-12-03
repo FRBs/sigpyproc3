@@ -5,6 +5,7 @@
 #include <time.h>
 #include <math.h>
 #include <omp.h>
+#include <string.h>
  
 /*----------------------------------------------------------------------------*/
 
@@ -218,6 +219,18 @@ void rednoise(float* fftbuffer,
   }
 }
 
+void conjugate(float* specbuffer,
+	       float* outbuffer,
+	       int size)
+{
+  int ii;
+  int out_size = 2*size-2;
+  memcpy(outbuffer,specbuffer,size*sizeof(float));
+  for (ii=0;ii<size-2;ii+=2){
+    outbuffer[out_size-1-ii] = -1.0*specbuffer[ii+1];
+    outbuffer[out_size-2-ii] = specbuffer[ii];
+  }
+}
 
 void sumHarms(float* specbuffer,
 	      float* sumbuffer,
@@ -238,4 +251,21 @@ void sumHarms(float* specbuffer,
       factarray[kk]+=2*kk+1;
     }
   }										 
+}
+
+void multiply_fs(float* selfbuffer,
+		 float* otherbuffer,
+		 float* outbuffer,
+		 int size)
+{
+  int ii;
+  float sr,si,or,oi;
+  for (ii=0;ii<size;ii+=2){
+    sr = selfbuffer[ii];
+    si = selfbuffer[ii+1];
+    or = otherbuffer[ii];
+    oi = otherbuffer[ii+1];
+    outbuffer[ii]   = sr*or - si*oi;
+    outbuffer[ii+1] = sr*oi + si*or; 
+  }
 }

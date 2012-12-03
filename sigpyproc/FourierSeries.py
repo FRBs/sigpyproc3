@@ -122,6 +122,23 @@ class FourierSeries(np.ndarray):
         if obj is None: return
         if hasattr(obj,"header"):
             self.header = obj.header
+
+    def __mul__(self,other):
+        if type(other) == type(self):
+            if other.size != self.size:
+                raise Exception("Instances must be the same size")
+            else:
+                out_ar = np.empty_like(self)
+                lib.multiply_fs(as_c(self),
+                                as_c(other),
+                                as_c(out_ar),
+                                C.c_int(self.size))
+                return FourierSeries(out_ar,self.header.newHeader())
+        else:
+            return super(FourierSeries,self).__mul__(other)
+            
+    def __rmul__(self,other):
+        self.__mul__(other)
     
     def formSpec(self,interpolated=True):
         """Form power spectrum.
@@ -188,6 +205,24 @@ class FourierSeries(np.ndarray):
                      C.c_float(endfreq))
         return FourierSeries(out_ar,self.header.newHeader())
 
+    def conjugate(self):
+        """Conjugate the Fourier series.
+
+        :return: conjugated Fourier series.
+        :rtype: :class:`sigpyproc.FourierSeries.FourierSeries`
+
+        .. note::
+        
+           Function assumes that the Fourier series is the non-conjugated
+           product of a real to complex FFT.
+        """
+        out_ar = np.empty(2*self.size-2,dtype="float32")
+        lib.conjugate(as_c(self),
+                      as_c(out_ar),
+                      C.c_int(self.size))
+        return FourierSeries(out_ar,self.header.newHeader())
+
+   
     def reconProf(self,freq,nharms=32):
         """Reconstruct the time domain pulse profile from a signal and its harmonics.
 
