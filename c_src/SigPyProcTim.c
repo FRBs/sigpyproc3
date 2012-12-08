@@ -225,11 +225,11 @@ void rfft(float* buffer,
           int size)
 {
   fftwf_plan plan;
+  int ii;
   plan = fftwf_plan_dft_r2c_1d(size, buffer, (fftwf_complex*) result,FFTW_ESTIMATE);
   fftwf_execute(plan);
   fftwf_destroy_plan(plan);
 }
-
 
 void resample(float* input,
 	      float* output,
