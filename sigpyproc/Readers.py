@@ -164,6 +164,7 @@ def readDat(filename,inf=None):
     header["basename"] = basename
     header["inf"] = inf
     header["filename"] = filename
+    header["nsamples"] = data.size
     return TimeSeries(data,header)
 
 def readTim(filename):
@@ -265,6 +266,7 @@ def parseInfHeader(filename):
     header["nchans"]       = 1
     header["nbits"]        = 32
     header["hdrlen"]       = 0
+    header["nsamples"]     = 0
     return Header(header)
 
 def parseSigprocHeader(filename):
