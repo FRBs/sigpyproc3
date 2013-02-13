@@ -24,7 +24,7 @@ class File(file):
        rather than numbers of bits or bytes.
     """
 
-    def __init__(self,filename,mode,nbits):
+    def __init__(self,filename,mode,nbits=8):
         file.__init__(self,filename,mode)
         self.nbits = nbits
         self.dtype = nbits_to_dtype[self.nbits]
@@ -154,13 +154,13 @@ def editInplace(inst,key,value):
        editInplace comes when the new header to be written to file is longer or shorter than the
        header that was previously in the file.
     """
-    temp = File(inst.filename,"r+")
+    temp = File(inst.header.filename,"r+")
     if key is "source_name":
-        oldlen = len(inst.source_name)
+        oldlen = len(inst.header.source_name)
         value = value[:oldlen]+" "*(oldlen-len(value))
-    inst[key] = value
-    new_header = inst.SPPHeader(back_compatible=True)
-    if inst.hdrlen != len(new_header):
+    inst.header[key] = value
+    new_header = inst.header.SPPHeader(back_compatible=True)
+    if inst.header.hdrlen != len(new_header):
         raise ValueError,"New header is too long/short for file"
     else:
         temp.seek(0)

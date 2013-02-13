@@ -153,12 +153,12 @@ class TimeSeries(np.ndarray):
         """
         if factor == 1: return self
         newLen = self.size//factor
-        tim_ar  = np.empty(newLen,dtype="float32")
+        tim_ar  = np.zeros(newLen,dtype="float32")
         lib.downsampleTim(as_c(self),
                           as_c(tim_ar),
                           C.c_int(factor),
                           C.c_int(newLen))
-        return TimeSeries(tim_ar,self.newHeader({'tsamp':self.tsamp*factor}))
+        return TimeSeries(tim_ar,self.header.newHeader({'tsamp':self.header.tsamp*factor}))
            
     def toDat(self,basename):
         """Write time series in presto ``.dat`` format.

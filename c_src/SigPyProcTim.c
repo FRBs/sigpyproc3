@@ -167,13 +167,24 @@ void runBoxcar(float* inbuffer,
 {
   int ii;
   double sum = 0;
-  for(ii=0;ii<window;ii++){
+  
+  
+
+
+  for(ii=0;ii<window/2;ii++){
     sum += inbuffer[ii];
+    outbuffer[ii] = sum;
   }
-  for (ii=window;ii<nsamps;ii++){
-    outbuffer[ii-window] = sum;
-    sum += inbuffer[ii];
-    sum -= inbuffer[ii-window];
+
+  for (ii=window/2;ii<nsamps-window/2;ii++){
+    sum += inbuffer[ii+window/2];
+    sum -= inbuffer[ii-window/2];
+    outbuffer[ii] = sum;
+  }
+
+  for(ii=nsamps-window/2;ii<nsamps;ii++){
+    sum -= inbuffer[ii];
+    outbuffer[ii] = sum;
   }
 }
 
@@ -188,7 +199,7 @@ void downsampleTim(float* inbuffer,
   for(ii=0;ii<newLen;ii++){
     for(jj=0;jj<factor;jj++)
       outbuffer[ii]+=inbuffer[(ii*factor)+jj];
-    outbuffer[ii]/=(float) factor;
+    //outbuffer[ii]/=(float) factor;
   }
 }
 
