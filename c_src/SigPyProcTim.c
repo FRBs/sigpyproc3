@@ -171,20 +171,20 @@ void runBoxcar(float* inbuffer,
   
 
 
-  for(ii=0;ii<window/2;ii++){
+  for(ii=0;ii<window;ii++){
     sum += inbuffer[ii];
-    outbuffer[ii] = sum;
+    outbuffer[ii] = sum/(ii+1);
   }
 
   for (ii=window/2;ii<nsamps-window/2;ii++){
     sum += inbuffer[ii+window/2];
     sum -= inbuffer[ii-window/2];
-    outbuffer[ii] = sum;
+    outbuffer[ii] = sum/window;
   }
 
-  for(ii=nsamps-window/2;ii<nsamps;ii++){
+  for(ii=nsamps-window;ii<nsamps;ii++){
+    outbuffer[ii] = sum/(nsamps-ii);
     sum -= inbuffer[ii];
-    outbuffer[ii] = sum;
   }
 }
 
