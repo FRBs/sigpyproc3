@@ -528,7 +528,8 @@ class FilterbankBlock(np.ndarray):
             raise ValueError,"Bad frequency factor given"
         newnsamps = self.shape[1] - self.shape[0]%tfactor
         new_ar = np.empty(newnsamps*self.shape[0]/ffactor/tfactor,dtype="float32")
-        self.lib.downsample(as_c(self),
+        ar = self.transpose().ravel().copy()
+        self.lib.downsample(as_c(ar),
                             as_c(new_ar),
                             C.c_int(tfactor),
                             C.c_int(ffactor),
@@ -565,7 +566,13 @@ class FilterbankBlock(np.ndarray):
         :rtype: :class:`~sigpyproc.Filterbank.FilterbankBlock`
         """
         return self/self.mean(axis=1).reshape(self.shape[0],1)
+
+    def get_tim(self):
+        return self.sum(axis=0)
         
+    def get_bandpass(self):
+        return self.sum(axis=1)
+    
     def dedisperse(self,dm):
         """Dedisperse the block.
 

@@ -33,7 +33,7 @@ class PowerSpectrum(np.ndarray):
         :return: frequency of bin
         :rtype: float
         """
-        return bin_/(self.header.tobs)
+        return (bin_)/(self.header.tobs)
             
     def bin2period(self,bin_):
         """Return centre period of a given bin.
@@ -89,8 +89,9 @@ class PowerSpectrum(np.ndarray):
             harm_ar = np.array([int(kk*ll/float(nharm)) 
                                 for ll in range(nharm) 
                                 for kk in range(1,nharm,2)]).astype("int32")
-            facts_ar = np.array([(kk*nfoldi+nharm/2)/nharm 
-                                 for kk in range(1,nharm,2)]).astype("int32")
+
+            facts_ar = np.array([(kk*nfoldi+nharm/2)/nharm for kk in range(1,nharm,2)]).astype("int32")
+
             lib.sumHarms(as_c(self),
                          sum_ar_c,
                          as_c(harm_ar),

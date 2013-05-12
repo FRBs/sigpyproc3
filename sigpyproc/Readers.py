@@ -208,7 +208,7 @@ def readFFT(filename,inf=None):
         raise IOError,"No corresponding inf file found"
     header = parseInfHeader(inf)
     f = File(filename,"r",nbits=32)
-    data = np.fromfile(f,dtype="complex32")
+    data = np.fromfile(f,dtype="float32")
     header["basename"] = basename
     header["inf"] = inf
     header["filename"] = filename
