@@ -217,9 +217,9 @@ void foldTim(float* buffer,
   int ii,phasebin,subbint,factor1;
   float factor2,tj;
   float c = 299792458.0;
-  int tobs;
+  float tobs;
   
-  tobs = (int) (nsamps*tsamp);
+  tobs = nsamps*tsamp;
   factor1 = (int) ((nsamps/nints)+1);
 
   for(ii=0;ii<nsamps;ii++){
