@@ -190,7 +190,7 @@ class TimeSeries(np.ndarray):
         :return: output file name
         :rtype: :func:`str`
         """
-        outfile = self.header.prepOutfile(filename,nbits=32)
+        outfile = self.header.prepOutfile(filename)
         self.tofile(outfile)
         return outfile.name
         

@@ -112,10 +112,6 @@ void formSpecInterpolated(float* fftbuffer,
     rl=r;
     il=i;
   }
-
-
-
-
 }
 
 void formSpec(float* fftbuffer,
@@ -198,10 +194,8 @@ void rednoise(float* fftbuffer,
     for (ii = 0; ii < numread_old; ii++) {
       outbuffer[ii*2+windex] = 0.0;
       outbuffer[ii*2+1+windex] = 0.0;
-      outbuffer[ii*2+windex]=oldinbuf[ii*2]/
-	sqrt(mean_old+slope*((numread_old+numread_new) / 2.0 - ii));
-      outbuffer[ii*2+1+windex]=oldinbuf[ii*2+1]/
-	sqrt(mean_old+slope*((numread_old+numread_new) / 2.0 - ii));
+      outbuffer[ii*2+windex]=oldinbuf[ii*2]/sqrt(mean_old+slope*((numread_old+numread_new) / 2.0 - ii));
+      outbuffer[ii*2+1+windex]=oldinbuf[ii*2+1]/sqrt(mean_old+slope*((numread_old+numread_new) / 2.0 - ii));
     }
     windex+=2*numread_old;
     
@@ -245,9 +239,7 @@ void sumHarms(float* specbuffer,
 	      int nfoldi)
 {
   int ii,jj,kk;
-
   for(ii=nfoldi;ii<nsamps-(nharms-1);ii+=nharms){
-
     for(jj=0;jj<nharms;jj++){
       for(kk=0;kk<nharms/2;kk++){
 	sumbuffer[ii+jj] += specbuffer[ factarray[kk] + sumarray[jj*nharms/2+kk]] ;
