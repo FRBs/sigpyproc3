@@ -234,6 +234,36 @@ class Filterbank(object):
             out_file.cwrite(data)
         return out_file.name
 
+    def applyChannelMask(self,chanmask,outfilename=None,gulp=512,back_compatible=True):
+        """Set the data in the given channels to zero.
+
+        :param outfilename: name of the output filterbank file
+        :type outfilename: str
+
+        :param chanmask: binary channel mask (0 for bad channel, 1 for good)
+        :type chanmask: list
+
+        :param gulp: number of samples in each read
+        :type gulp: int
+
+        :param back_compatible: sigproc compatibility flag
+        :type back_compatible: bool
+
+        :return: outfile name
+        :rtype: str
+        """
+        #Slow python only version
+        #a C function would do this much faster
+        if outfilename is None:
+            outfilename = "%s_masked.fil"%(self.header.basename)
+        mask = np.array(chanmask).astype("ubyte")
+        out_file = self.header.prepOutfile(outfilename,back_compatible=back_compatible)
+        for nsamps,ii,data in self.readPlan(gulp):
+            for jj,chan in enumerate(chanmask):
+                if chan==0:
+                    data[jj::self.header.nchans] = 0
+            out_file.cwrite(data)
+        return out_file.name
 
     def downsample(self,tfactor=1,ffactor=1,gulp=512,filename=None,back_compatible=True):
         """Downsample data in time and/or frequency and write to file.
