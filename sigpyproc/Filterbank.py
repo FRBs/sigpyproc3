@@ -252,16 +252,15 @@ class Filterbank(object):
         :return: outfile name
         :rtype: str
         """
-        #Slow python only version
-        #a C function would do this much faster
         if outfilename is None:
             outfilename = "%s_masked.fil"%(self.header.basename)
         mask = np.array(chanmask).astype("ubyte")
         out_file = self.header.prepOutfile(outfilename,back_compatible=back_compatible)
         for nsamps,ii,data in self.readPlan(gulp):
-            for jj,chan in enumerate(chanmask):
-                if chan==0:
-                    data[jj::self.header.nchans] = 0
+            self.lib.maskChannels(as_c(data),
+                                  as_c(mask),
+                                  C.c_int(self.header.nchans),
+                                  C.c_int(nsamps))
             out_file.cwrite(data)
         return out_file.name
 

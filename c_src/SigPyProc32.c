@@ -44,6 +44,21 @@ void dedisperse(float* inbuffer,
   }
 }
 
+void maskChannels(float* inbuffer,
+                  unsigned char* mask,
+                  int nchans,
+                  int nsamps)
+{
+  int ii,jj;
+  for (ii=0;ii<nchans;ii++){
+    if (mask[ii] == 0){
+      for (jj=0;jj<nsamps;jj++){
+        inbuffer[jj*nchans+ii] = 0.0;
+      }
+    }
+  }
+}
+
 void subband(float* inbuffer,
              float* outbuffer,
              int* delays,
