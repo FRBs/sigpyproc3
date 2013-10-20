@@ -583,9 +583,11 @@ class FilterbankBlock(np.ndarray):
         :rtype: :func:`str`
         """
         if filename is None:
-            filename = "%s_%d_to_%d.fil"%(self.header.basename,self.header.tstart,self.header.mjdAfterNsamps(self.shape[1]))
-        out_file = self.header.prepOutfile(filename,back_compatible=back_compatible)
-        out_file.cwrite(self)
+            filename = "%s_%d_to_%d.fil"%(self.header.basename,self.header.tstart,
+                                          self.header.mjdAfterNsamps(self.shape[1]))
+        new_header = {"nbits":32}
+        out_file = self.header.prepOutfile(filename,new_header,nbits=32,back_compatible=back_compatible)
+        out_file.cwrite(self.transpose().ravel())
         return filename
 
     def normalise(self):
