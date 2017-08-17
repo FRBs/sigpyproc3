@@ -425,8 +425,8 @@ class Filterbank(object):
         """
         if filename is None:
             filename = "%s_%d_%d.fil"%(self.header.basename,start,start+nsamps)
-        out_file = self.header.prepOutfile(filename, nbits=self.header.nbits)
-        
+        new_tstart = self.header.tstart + ((self.header.tsamp * start) / 86400.0)
+        out_file = self.header.prepOutfile(filename, updates={'tstart': new_tstart}, nbits=self.header.nbits)
         for count, ii, data in self.readPlan(gulp,start=start,nsamps=nsamps):
             out_file.cwrite(data)
         out_file.close()
