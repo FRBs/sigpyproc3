@@ -280,7 +280,10 @@ def parseSigprocHeader(filename):
     """
     f = open(filename,"r")
     header = {}
-    keylen = unpack("I",f.read(4))[0]
+    try:
+        keylen = unpack("I",f.read(4))[0]
+    except struct.error:
+        raise IOError,"File Header is not in sigproc format... Is file empty?"
     key = f.read(keylen)
     if key != "HEADER_START":
         raise IOError,"File Header is not in sigproc format"
