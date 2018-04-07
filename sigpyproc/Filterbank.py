@@ -555,7 +555,7 @@ class FilterbankBlock(np.ndarray):
         """ 
         if not self.shape[0]%ffactor == 0:
             raise ValueError,"Bad frequency factor given"
-        newnsamps = self.shape[1] - self.shape[0]%tfactor
+        newnsamps = self.shape[1] - self.shape[1]%tfactor
         new_ar = np.empty(newnsamps*self.shape[0]/ffactor/tfactor,dtype="float32")
         ar = self.transpose().ravel().copy()
         self.lib.downsample(as_c(ar),
