@@ -1,6 +1,6 @@
 from setuptools import setup, Extension #find_packages
 
-__version__ = '0.1.0'
+__version__ = '0.1.1'
 
 def describe(filename):
     f = open(filename, "r")
