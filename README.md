@@ -1,4 +1,3 @@
-
 sigpyproc
 =========
 
@@ -15,25 +14,35 @@ Installation
 
 ### Step-by-step guide
 
-As both setuptools and distutils do not have any clear method of support for
-distributing C libraries for ctypes, the onus is on the user to ditribute the c libraries 
-once built
+Once you have all the requirements installed, you can install this via pip:
 
-1. Clone or download the git repositry from https://github.com/ewanbarr/sigpyproc
+```
+pip install git+https://github.com/telegraphic/sigpyproc
+```
 
-2. Unzip and untar if needed and move to source directory
+Or, download / clone this repository, and then run
 
-3. Make sure FFTW3 has been compiled with the ``--enable-float`` and ``--enable-shared`` options
+```
+python setup.py install
+```
 
-4. run ``sudo python setup.py install``
+### Docker
 
-5. a lib/c and bin/ directories will be created in the source directory
+This repo now comes with a `Dockerfile`, so you can build a simple docker container with `sigpyproc` in it. To do so, clone this directory, cd into it, and then run on your command line:
 
-6. Distribute the contents of these directories if required
+```
+docker build --tag sigpyproc .
+```
 
-7. If you are developing, then append the lib/c directory to the LD_LIBRARY_PATH environment variable
+You can then run the container with
+
+```
+docker run --rm -it sigpyproc
+```
+
+(Have a read of docker tutorials and documentation for more details!)
 
 
-
+[![Build Status](https://travis-ci.org/telegraphic/sigpyproc.svg?branch=master)](https://travis-ci.org/telegraphic/sigpyproc)
 
 
