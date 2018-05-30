@@ -12,11 +12,14 @@
 # INSTALL BASE FROM KERN SUITE
 FROM kernsuite/base:3
 ARG DEBIAN_FRONTEND=noninteractive
+
 ENV TERM xterm
+ENV PYTHONPATH=/lib/python
+ENV LD_LIBRARY_PATH=/lib/python
 
 ######
 # Do docker apt-installs
-RUN docker-apt-install build-essential python-setuptools python-pip
+RUN docker-apt-install build-essential python-setuptools python-pip python-tk
 RUN docker-apt-install git
 RUN docker-apt-install curl wget
 RUN docker-apt-install make cmake
@@ -32,3 +35,5 @@ RUN pip install numpy matplotlib ipython
 # Finally, install sigpyproc!
 COPY . .
 RUN python setup.py install
+
+
