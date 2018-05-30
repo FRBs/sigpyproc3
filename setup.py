@@ -1,5 +1,6 @@
-from distutils.core import setup, Extension
+from setuptools import setup, Extension, find_packages
 
+__version__ = '0.1.0'
 
 def describe(filename):
     f = open(filename, "r")
@@ -55,12 +56,13 @@ ext5 = Extension('libSigPyProc',
                  )
 
 setup(name='sigpyproc',
-      version='0.1.0',
+      version=__version__,
       description='Python pulsar data toolbox',
       install_requires = ['numpy'],
       author='Ewan Barr',
       author_email='ewan.d.barr@googlemail.com',
-      packages=['sigpyproc'],
       long_description=describe('README.md'),
-      ext_modules=[ext0, ext1, ext2, ext3, ext4, ext5]
+      ext_modules=[ext0, ext1, ext2, ext3, ext4, ext5],
+      packages=find_packages(),
+      zip_safe=False
       )
