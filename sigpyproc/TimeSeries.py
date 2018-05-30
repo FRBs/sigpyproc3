@@ -1,7 +1,9 @@
 from numpy.ctypeslib import as_ctypes as as_c
 import numpy as np
 import ctypes as C
-lib = C.CDLL("libSigPyProcTim.so")
+
+from .ctype_helper import load_lib
+lib = load_lib("libSigPyProcTim.so")
 
 class TimeSeries(np.ndarray):
     """Class for handling pulsar data in time series.

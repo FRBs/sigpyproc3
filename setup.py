@@ -1,4 +1,4 @@
-from setuptools import setup, Extension, find_packages
+from setuptools import setup, Extension #find_packages
 
 __version__ = '0.1.0'
 
@@ -63,6 +63,6 @@ setup(name='sigpyproc',
       author_email='ewan.d.barr@googlemail.com',
       long_description=describe('README.md'),
       ext_modules=[ext0, ext1, ext2, ext3, ext4, ext5],
-      packages=find_packages(),
+      packages=['sigpyproc'],
       zip_safe=False
       )

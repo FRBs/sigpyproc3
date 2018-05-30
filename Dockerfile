@@ -14,8 +14,6 @@ FROM kernsuite/base:3
 ARG DEBIAN_FRONTEND=noninteractive
 
 ENV TERM xterm
-ENV PYTHONPATH=/lib/python
-ENV LD_LIBRARY_PATH=/lib/python
 
 ######
 # Do docker apt-installs
@@ -30,10 +28,13 @@ RUN docker-apt-install libomp-dev
 # Pip installation of python packages
 # Q. Would using CONDA be better?
 RUN pip install --upgrade pip
+RUN pip install --upgrade setuptools
 RUN pip install numpy matplotlib ipython
 
 # Finally, install sigpyproc!
 COPY . .
 RUN python setup.py install
+
+
 
 

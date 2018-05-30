@@ -2,7 +2,9 @@ import numpy as np
 import ctypes as C
 from sigpyproc.Utils import rollArray
 from os import popen
-lib = C.CDLL("libSigPyProc.so")
+
+from .ctype_helper import load_lib
+lib  = load_lib("libSigPyProc.so")
 
 class Profile(np.ndarray):
     """Class to handle a 1-D pulse profile.

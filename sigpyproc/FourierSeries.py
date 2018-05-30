@@ -2,7 +2,10 @@ import ctypes as C
 from sigpyproc.Utils import File
 from numpy.ctypeslib import as_ctypes as as_c
 import numpy as np
-lib = C.CDLL("libSigPyProcSpec.so")
+
+from .ctype_helper import load_lib
+lib  = load_lib("libSigPyProcSpec.so")
+
 
 class PowerSpectrum(np.ndarray):
     """Class to handle power spectra.
