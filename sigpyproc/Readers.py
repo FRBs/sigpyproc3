@@ -48,7 +48,8 @@ class FilReader(Filterbank):
         """
         self._file.seek(self.header.hdrlen+start*self.sampsize)
         data = self._file.cread(self.header.nchans*nsamps)
-        data = data.reshape(nsamps,self.header.nchans).transpose()
+        nsamps_read = data.size / self.header.nchans
+        data = data.reshape(nsamps_read, self.header.nchans).transpose()
         start_mjd = self.header.mjdAfterNsamps(start)
         new_header = self.header.newHeader({'tstart':start_mjd})
         return FilterbankBlock(data,new_header)
