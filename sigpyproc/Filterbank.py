@@ -4,6 +4,10 @@ from sigpyproc.FoldedData import FoldedData
 import ctypes as C
 import numpy as np
 
+from .ctype_helper import load_lib
+lib32 = load_lib("libSigPyProc32.so")
+lib8 = load_lib("libSigPyProc8.so")
+
 class Filterbank(object):
     """Class exporting methods for the manipulation of frequency-major
     order pulsar data.
@@ -15,9 +19,9 @@ class Filterbank(object):
     """
     def __init__(self):
         if self.header.nbits == 32:
-            self.lib = C.CDLL("libSigPyProc32.so") #if 32-bit data select 32-bit library
+            self.lib = lib32 #if 32-bit data select 32-bit library
         else:
-            self.lib = C.CDLL("libSigPyProc8.so") #if 8-bit data select 8-bit library
+            self.lib = lib8 #if 8-bit data select 8-bit library
         self.chan_means  = None
         self.chan_stdevs = None
         self.chan_maxima = None

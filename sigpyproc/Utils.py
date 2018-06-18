@@ -3,7 +3,8 @@ import numpy as np
 from numpy.ctypeslib import as_ctypes as as_c
 from sigpyproc.HeaderParams import nbits_to_dtype
 
-lib  = C.CDLL("libSigPyProc.so")
+from .ctype_helper import load_lib
+lib  = load_lib("libSigPyProc.so")
 
 class File(file):
     """A class to handle writing of arbitrary bit size data to file.

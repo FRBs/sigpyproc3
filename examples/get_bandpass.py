@@ -1,4 +1,4 @@
-from SigPyProc.Readers import FilReader
+from sigpyproc.Readers import FilReader
 import matplotlib.pyplot as plt
 import numpy as np
 
