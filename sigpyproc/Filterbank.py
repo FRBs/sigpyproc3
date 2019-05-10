@@ -569,7 +569,7 @@ class FilterbankBlock(np.ndarray):
                             C.c_int(self.shape[0]),
                             C.c_int(newnsamps))
         new_ar = new_ar.reshape(newnsamps//tfactor,self.shape[0]//ffactor).transpose()
-        new_tsamp = self.header.tsamp/tfactor
+        new_tsamp = self.header.tsamp*tfactor
         new_nchans = self.header.nchans//ffactor
         new_header = self.header.newHeader({"tsamp":new_tsamp,"nchans":new_nchans})
         return FilterbankBlock(new_ar,new_header)
