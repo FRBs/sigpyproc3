@@ -1,5 +1,6 @@
 import ctypes as C
 import numpy as np
+import warnings
 from numpy.ctypeslib import as_ctypes as as_c
 from sigpyproc.HeaderParams import nbits_to_dtype
 
@@ -69,8 +70,20 @@ class File(file):
            Regardless of the dtype of the array argument, the data will be packed
            with a bitsize determined by the nbits attribute of the File instance.
            To change this attribute, use the _setNbits methods.
+           It is the responsibility of the user to ensure that values in the array
+           do not go beyond the maximum and minimum values allowed by the nbits
+           attribute.
         """
-        
+        if self.dtype != ar.dtype:
+            warnings.warn("Given data (dtype={0}) will be unsafely cast to the \
+                          requested dtype={1} before being written out to file"\
+                          .format(ar.dtype, self.dtype), stacklevel=2)
+            ar = ar.astype(self.dtype, casting='unsafe')
+         
+        #The lib.pack function has an assumption that the given array has 8-bit
+        #data. If the given array was, say 32-bit floats and the requested nbits
+        #is, say 2-bit, then the output will be garbage, hence the casting above is
+        #necessary.
         if self.unpack:
             packed = np.empty(int(ar.size*self.bitfact),dtype=self.dtype)
             lib.pack(as_c(ar),
