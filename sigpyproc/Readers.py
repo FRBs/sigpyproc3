@@ -125,13 +125,13 @@ class FilReader(Filterbank):
         
         for ii,block,skip in blocks:
             if verbose:
-                sys.stdout.write("Percentage complete: %d%%\r"%(100*ii/nreads))
+                sys.stdout.write(f"Percentage complete: {100*ii/nreads:.2f}%\r")
                 sys.stdout.flush()
             data = self._file.cread(block)
             self._file.seek(skip*self.itemsize//self.bitfact,os.SEEK_CUR)
             yield int(block/self.header.nchans),int(ii),data
         if verbose:
-            print "Execution time: %f seconds     \n"%(time.time()-tstart)
+            print(f"Execution time: {time.time()-tstart:.2f} seconds     \n")
 
 
 
@@ -155,7 +155,7 @@ def readDat(filename,inf=None):
 
     basename = os.path.splitext(filename)[0]
     if inf is None:
-        inf = "%s.inf"%(basename)
+        inf = f"{basename}.inf"
     if not os.path.isfile(inf):
         raise IOError("No corresponding inf file found")
     header = parseInfHeader(inf)
@@ -203,7 +203,7 @@ def readFFT(filename,inf=None):
     """
     basename = os.path.splitext(filename)[0]
     if inf is None:
-        inf = "%s.inf"%(basename)
+        inf = f"{basename}.inf"
     if not os.path.isfile(inf):
         raise IOError("No corresponding inf file found")
     header = parseInfHeader(inf)
@@ -295,10 +295,10 @@ def parseSigprocHeader(filename):
         try:
             key = key.decode()
         except UnicodeDecodeError as e:
-            print("Could not convert to unicode: {0}".format(str(e)))
+            print(f"Could not convert to unicode: {str(e)}")
 
         if not key in list(conf.header_keys.keys()):
-            print("'%s' not recognised header key"%(key))
+            print(f"'{key}' not recognised header key")
             return None
 
         if conf.header_keys[key] == "str":

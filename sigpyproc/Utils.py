@@ -76,9 +76,9 @@ class File(io.FileIO):
            attribute.
         """
         if self.dtype != ar.dtype:
-            warnings.warn("Given data (dtype={0}) will be unsafely cast to the \
-                          requested dtype={1} before being written out to file"\
-                          .format(ar.dtype, self.dtype), stacklevel=2)
+            warnings.warn(f"Given data (dtype={ar.dtype}) will be unsafely cast to the"
+                          f"requested dtype={self.dtype} before being written out to file", 
+                          stacklevel=2)
             ar = ar.astype(self.dtype, casting='unsafe')
          
         #The lib.pack function has an assumption that the given array has 8-bit

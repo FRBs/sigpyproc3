@@ -43,11 +43,11 @@ class Profile(np.ndarray):
            This is a bare-bones, quick-n'-dirty algorithm that should not be used for 
            high quality signal-to-noise measurements.
         """   
-        tmp_ar = self.copy()
-        width= self._getWidth()
+        tmp_ar   = self.copy()
+        width    = self._getWidth()
         baseline = self._getBaseline(width)
-        tmp_ar-=baseline.mean()
-        tmp_ar/=baseline.std()
+        tmp_ar  -=baseline.mean()
+        tmp_ar  /=baseline.std()
         return float(tmp_ar.sum()/np.sqrt(width))
 
     def retroProf(self,height=0.7,width=0.7):

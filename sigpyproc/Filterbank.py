@@ -83,7 +83,7 @@ class Filterbank(object):
         :return type: :func:`str`
         """
         if filename is None:
-            filename = "%s_inverted.fil"%(self.header.basename)
+            filename = f"{self.header.basename}_inverted.fil"
 
         if nsamps is None:
             size = self.header.nsamples-start
@@ -198,7 +198,7 @@ class Filterbank(object):
                          "nchans":nsub,
                          "nbits" :32}
         if filename is None:
-            filename = "%s_DM%06.2f.subbands"%(self.header.basename,dm)
+            filename = f"{self.header.basename}_DM{dm:06.2f}.subbands"
         out_file = self.header.prepOutfile(filename, changes, nbits=32,
                                            back_compatible=True)
         
@@ -231,9 +231,10 @@ class Filterbank(object):
         
         """
         if filename is None:
-            filename = "%s_8bit.fil"%(self.header.basename)
+            filename = f"{self.header.basename}_8bit.fil"
             
-        out_file = self.header.prepOutfile(filename,{"nbits":8},nbits=8,back_compatible=back_compatible)
+        out_file = self.header.prepOutfile(filename, {"nbits":8}, nbits=8,
+                                           back_compatible=back_compatible)
         for nsamps,ii,data in self.readPlan(gulp):
             out_file.cwrite(data)
         return out_file.name
@@ -257,9 +258,9 @@ class Filterbank(object):
         :rtype: str
         """
         if outfilename is None:
-            outfilename = "%s_masked.fil"%(self.header.basename)
+            outfilename = f"{self.header.basename}_masked.fil"
         mask = np.array(chanmask).astype("ubyte")
-        out_file = self.header.prepOutfile(outfilename,back_compatible=back_compatible)
+        out_file = self.header.prepOutfile(outfilename, back_compatible=back_compatible)
         for nsamps,ii,data in self.readPlan(gulp):
             self.lib.maskChannels(as_c(data),
                                   as_c(mask),
@@ -290,7 +291,7 @@ class Filterbank(object):
         :rtype: :func:`str`
         """
         if filename is None:
-            filename = "%s_f%d_t%d.fil"%(self.header.basename,ffactor,tfactor)
+            filename = f"{self.header.basename}_f{ffactor:d}_t{tfactor:d}.fil"
         if not self.header.nchans%ffactor == 0:
             raise ValueError("Bad frequency factor given")
         if not gulp%tfactor == 0:
@@ -301,7 +302,7 @@ class Filterbank(object):
                                     "foff":self.header.foff*ffactor},
                                     back_compatible=back_compatible)
 
-        write_ar   = np.zeros(gulp*self.header.nchans//ffactor//tfactor,dtype=self.header.dtype)
+        write_ar   = np.zeros(gulp*self.header.nchans//ffactor//tfactor, dtype=self.header.dtype)
         write_ar_c = as_c(write_ar)
         for nsamps,ii,data in self.readPlan(gulp):
             self.lib.downsample(as_c(data),
@@ -428,9 +429,10 @@ class Filterbank(object):
         :rtype: :func:`str`
         """
         if filename is None:
-            filename = "%s_%d_%d.fil"%(self.header.basename,start,start+nsamps)
+            filename = f"{self.header.basename}_{start:d}_{start+nsamps:d}.fil"
         new_tstart = self.header.tstart + ((self.header.tsamp * start) / 86400.0)
-        out_file = self.header.prepOutfile(filename, updates={'tstart': new_tstart}, nbits=self.header.nbits)
+        out_file   = self.header.prepOutfile(filename, updates={'tstart': new_tstart},
+                                             nbits=self.header.nbits)
         for count, ii, data in self.readPlan(gulp,start=start,nsamps=nsamps):
             out_file.cwrite(data)
         out_file.close()
@@ -455,9 +457,9 @@ class Filterbank(object):
         """
         tim_ar    = np.empty([self.header.nchans,gulp],dtype="float32")
         tim_ar_c  = as_c(tim_ar)
-        out_files = [self.header.prepOutfile("%s_chan%04d.tim"%(self.header.basename,ii),
+        out_files = [self.header.prepOutfile(f"{self.header.basename}_chan{ii:04d}.tim",
                                              {"nchans":1,"nbits":32,"data_type":2},
-                                             back_compatible=back_compatible,nbits=32)
+                                             back_compatible=back_compatible, nbits=32)
             
                      for ii in range(self.header.nchans)]
         for nsamps,ii,data in self.readPlan(gulp):
@@ -587,10 +589,11 @@ class FilterbankBlock(np.ndarray):
         :rtype: :func:`str`
         """
         if filename is None:
-            filename = "%s_%d_to_%d.fil"%(self.header.basename,self.header.tstart,
-                                          self.header.mjdAfterNsamps(self.shape[1]))
+            filename = (f"{self.header.basename}_{self.header.tstart:d}_"
+                        f"to_{self.header.mjdAfterNsamps(self.shape[1]):d}.fil")
         new_header = {"nbits":32}
-        out_file = self.header.prepOutfile(filename,new_header,nbits=32,back_compatible=back_compatible)
+        out_file   = self.header.prepOutfile(filename, new_header, nbits=32,
+                                             back_compatible=back_compatible)
         out_file.cwrite(self.transpose().ravel())
         return filename
 

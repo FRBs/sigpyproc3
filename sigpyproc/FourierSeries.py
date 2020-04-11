@@ -256,7 +256,7 @@ class FourierSeries(np.ndarray):
         :rtype: :func:`str`
         """
         if filename is None:
-            filename = "%s.spec"%(self.header.basename)
+            filename = f"{self.header.basename}.spec"
         outfile = self.header.prepOutfile(filename,nbits=32)
         self.tofile(outfile)
         return outfile.name
@@ -271,10 +271,10 @@ class FourierSeries(np.ndarray):
         :rtype: :func:`tuple` of :func:`str`
         """
         if basename is None: basename = self.header.basename
-        self.header.makeInf(outfile="%s.inf"%(basename))
-        fftfile = File("%s.fft"%(basename),"w+")
+        self.header.makeInf(outfile=f"{basename}.inf")
+        fftfile = File(f"{basename}.fft","w+")
         self.tofile(fftfile)
-        return "%s.fft"%(basename),"%s.inf"%(basename)
+        return f"{basename}.fft", f"{basename}.inf"
 
 from sigpyproc.TimeSeries import TimeSeries
 from sigpyproc.FoldedData import Profile

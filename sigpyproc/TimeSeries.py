@@ -175,13 +175,13 @@ class TimeSeries(np.ndarray):
         
                 Method also writes a corresponding .inf file from the header data
         """
-        self.header.makeInf(outfile="%s.inf"%(basename))
-        with open("%s.dat"%(basename),"w+") as datfile:
+        self.header.makeInf(outfile=f"{basename}.inf")
+        with open(f"{basename}.dat", "w+") as datfile:
             if self.size%2 != 0:
                 self[:-1].tofile(datfile)
             else:
                 self.tofile(datfile)
-        return "%s.dat"%(basename),"%s.inf"%(basename) 
+        return f"{basename}.dat", f"{basename}.inf"
 
     def toFile(self,filename):
         """Write time series in sigproc format.

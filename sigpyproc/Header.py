@@ -141,39 +141,38 @@ class Header(dict):
         :rtype: :func:`str`
         """
         self.updateHeader()
-        inf = (" Data file name without suffix          =  %s\n"%(self.basename),
-               " Telescope used                         =  Effelsberg\n",
-               " Instrument used                        =  PFFTS\n",
-               " Object being observed                  =  %s\n"%(self.source_name),
-               " J2000 Right Ascension (hh:mm:ss.ssss)  =  %s\n"%(radec_to_str(self.src_raj)),
-               " J2000 Declination     (dd:mm:ss.ssss)  =  %s\n"%(radec_to_str(self.src_dej)),
-               " Data observed by                       =  Robotic overlords\n",
-               " Epoch of observation (MJD)             =  %.09f\n"%(self.tstart),
-               " Barycentered?           (1=yes, 0=no)  =  %d\n"%(getattr(self,"barycentric",0)),
-               " Number of bins in the time series      =  %d\n"%(self.nsamples),
-               " Width of each time series bin (sec)    =  %.17g\n"%(self.tsamp),
-               " Any breaks in the data? (1=yes, 0=no)  =  0\n",
-               " Type of observation (EM band)          =  Radio\n",
-               " Beam diameter (arcsec)                 =  9.22\n",
-               " Dispersion measure (cm-3 pc)           =  %.03f\n"%(getattr(self,"refdm",0.0)),
-               " Number of channels                     =  %d\n"%(getattr(self,"nchans",1)),
-               " Data analyzed by                       =  sigpyproc\n",)
+        inf = (f" Data file name without suffix          =  {self.basename}\n"
+               f" Telescope used                         =  Effelsberg\n"
+               f" Instrument used                        =  PFFTS\n"
+               f" Object being observed                  =  {self.source_name}\n",
+               f" J2000 Right Ascension (hh:mm:ss.ssss)  =  {radec_to_str(self.src_raj)}\n"
+               f" J2000 Declination     (dd:mm:ss.ssss)  =  {radec_to_str(self.src_dej)}\n"
+               f" Data observed by                       =  Robotic overlords\n"
+               f" Epoch of observation (MJD)             =  {self.tstart:.09f}\n"
+               f" Barycentered?           (1=yes, 0=no)  =  {getattr(self,'barycentric',0):d}\n"
+               f" Number of bins in the time series      =  {self.nsamples:d}\n"
+               f" Width of each time series bin (sec)    =  {self.tsamp:.17g}\n"
+               f" Any breaks in the data? (1=yes, 0=no)  =  0\n"
+               f" Type of observation (EM band)          =  Radio\n"
+               f" Beam diameter (arcsec)                 =  9.22\n"
+               f" Dispersion measure (cm-3 pc)           =  {getattr(self, 'refdm', 0.0):.03f}\n"
+               f" Number of channels                     =  {getattr(self, 'nchans', 1):d}\n"
+               f" Data analyzed by                       =  sigpyproc\n")
         
         if hasattr(self,"foff") and hasattr(self,"nchans") and hasattr(self,"fch1"):
-            inf += (" Central freq of low channel (Mhz)      =  %.05f\n"%(self.fbottom+0.5*abs(self.foff)),
-                    " Total bandwidth (Mhz)                  =  %.05f\n"%(self.bandwidth),
-                    " Channel bandwidth (Mhz)                =  %.09f\n"%(abs(self.foff)))
+            inf += (f" Central freq of low channel (Mhz)      =  {self.fbottom+0.5*abs(self.foff):.05f}\n"
+                    f" Total bandwidth (Mhz)                  =  {self.bandwidth:.05f}\n"
+                    f" Channel bandwidth (Mhz)                =  {abs(self.foff):.09f}\n")
         else:
-            inf += (" Central freq of low channel (Mhz)      =  %.05f\n"%(0.0),
-                    " Total bandwidth (Mhz)                  =  %.05f\n"%(0.0),
-                    " Channel bandwidth (Mhz)                =  %.09f\n"%(0.0))
+            inf += (f" Central freq of low channel (Mhz)      =  {0.0:.05f}\n"
+                    f" Total bandwidth (Mhz)                  =  {0.0:.05f}\n"
+                    f" Channel bandwidth (Mhz)                =  {0.0:.09f}\n")
 
         if outfile == None:
-            return "".join(inf)
+            return inf
         else:
-            f = open(outfile,"w+")
-            f.write("".join(inf))
-            f.close()
+            with open(outfile, 'w+') as f:
+                f.write(inf)
             return None
 
     def getDMdelays(self,dm,in_samples=True):
@@ -252,16 +251,12 @@ def radec_to_str(val):
     :returns: 'xx:yy:zz.zzz' format string
     :rtype: :func:`str`
     """
-    if val < 0:
-        sign = -1
-    else:
-        sign = 1
-    fractional,integral = np.modf(abs(val))
-    xx = (integral-(integral%10000))/10000
-    yy = ((integral-(integral%100))/100)-xx*100
-    zz = integral - 100*yy - 10000*xx + fractional
-    zz = "%07.4f"%(zz)
-    return "%02d:%02d:%s"%(sign*xx,yy,zz)
+    sign = -1 if val < 0 else 1
+    val  = np.fabs(val)
+    xx   = int(val//10000)
+    yy   = int(val//100) -xx*100
+    zz   = val - 100*yy - 10000*xx
+    return f"{sign*xx:02d}:{yy:02d}:{zz:07.4f}"
 
 def MJD_to_Gregorian(mjd):
     """Convert Modified Julian Date to the Gregorian calender.
@@ -272,35 +267,32 @@ def MJD_to_Gregorian(mjd):
     :returns: date and time
     :rtype: :func:`tuple` of :func:`str`
     """
-    tt = np.fmod(mjd,1)
-    hh = tt*24.
+    hh = np.fmod(mjd,1)*24.
     mm = np.fmod(hh,1)*60.
     ss = np.fmod(mm,1)*60.
-    ss = "%08.5f"%(ss)
     j = mjd+2400000.5
     j = int(j)
     j = j - 1721119
-    y = (4 * j - 1) / 146097
+    y = (4 * j - 1) // 146097
     j = 4 * j - 1 - 146097 * y
-    d = j / 4
-    j = (4 * d + 3) / 1461
+    d = j // 4
+    j = (4 * d + 3) // 1461
     d = 4 * d + 3 - 1461 * j
-    d = (d + 4) / 4
-    m = (5 * d - 3) / 153
+    d = (d + 4) // 4
+    m = (5 * d - 3) // 153
     d = 5 * d - 3 - 153 * m
-    d = (d + 5) / 5
+    d = (d + 5) // 5
     y = 100 * y + j
     if m < 10:
         m = m + 3
     else:
         m = m - 9
         y = y + 1
-    return("%02d/%02d/%02d"%(d,m,y),"%02d:%02d:%s"%(hh,mm,ss))
+    return (f"{d:02d}/{m:02d}/{y:02d}", f"{int(hh):02d}:{int(mm):02d}:{ss:08.5f}")
 
 def rad_to_dms(rad):
     """Convert radians to (degrees, arcminutes, arcseconds)."""
-    if (rad < 0.0): sign = -1
-    else: sign = 1
+    sign = -1 if rad < 0 else 1
     arc = (180/np.pi) * np.fmod(np.fabs(rad),np.pi)
     d = int(arc)
     arc = (arc - d) * 60.0
@@ -320,8 +312,7 @@ def dms_to_rad(deg, min_, sec):
     else:
         sign = 1
     return sign * (np.pi/180/60./60.) * \
-        (60.0 * (60.0 * np.fabs(deg) +
-                 np.fabs(min_)) + np.fabs(sec))
+                (60.0 * (60.0 * np.fabs(deg) + np.fabs(min_)) + np.fabs(sec))
 
 def dms_to_deg(deg, min_, sec):
     """Convert (degrees, arcminutes, arcseconds) to degrees."""
@@ -340,11 +331,9 @@ def rad_to_hms(rad):
 
 def hms_to_rad(hour, min_, sec):
     """Convert (hours, minutes, seconds) to radians."""
-    if (hour < 0.0): sign = -1
-    else: sign = 1
+    sign = -1 if hour < 0 else 1
     return sign * np.pi/12/60./60. * \
-        (60.0 * (60.0 * np.fabs(hour) +
-                 np.fabs(min_)) + np.fabs(sec))
+            (60.0 * (60.0 * np.fabs(hour) + np.fabs(min_)) + np.fabs(sec))
 
 def hms_to_hrs(hour, min_, sec):
     """Convert (hours, minutes, seconds) to hours."""
