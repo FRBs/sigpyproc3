@@ -42,8 +42,8 @@ class TimeSeries(np.ndarray):
         :returns: data cube containing the folded data 
         :rtype: :class:`~sigpyproc.FoldedData.FoldedData`  
         """
-        if self.size/(nbins*nints) < 10: 
-            raise ValueError,"nbins x nints is too large for length of data"
+        if self.size//(nbins*nints) < 10: 
+            raise ValueError("nbins x nints is too large for length of data")
         fold_ar  = np.zeros(nbins*nints,dtype="float64")
         count_ar = np.zeros(nbins*nints,dtype="int32")
         lib.foldTim(as_c(self),
@@ -176,11 +176,11 @@ class TimeSeries(np.ndarray):
                 Method also writes a corresponding .inf file from the header data
         """
         self.header.makeInf(outfile="%s.inf"%(basename))
-        datfile = open("%s.dat"%(basename),"w+")
-        if self.size%2 != 0:
-            self[:-1].tofile(datfile)
-        else:
-            self.tofile(datfile)
+        with open("%s.dat"%(basename),"w+") as datfile:
+            if self.size%2 != 0:
+                self[:-1].tofile(datfile)
+            else:
+                self.tofile(datfile)
         return "%s.dat"%(basename),"%s.inf"%(basename) 
 
     def toFile(self,filename):

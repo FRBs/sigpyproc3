@@ -88,12 +88,12 @@ class PowerSpectrum(np.ndarray):
         folds = [] 
         for ii in range(nfolds):
             nharm = 2**(ii+1)
-            nfoldi =int(max(1,min(nharm*nfold1-nharm/2,self.size)))
+            nfoldi =int(max(1,min(nharm*nfold1-nharm//2,self.size)))
             harm_ar = np.array([int(kk*ll/float(nharm)) 
                                 for ll in range(nharm) 
                                 for kk in range(1,nharm,2)]).astype("int32")
 
-            facts_ar = np.array([(kk*nfoldi+nharm/2)/nharm for kk in range(1,nharm,2)]).astype("int32")
+            facts_ar = np.array([(kk*nfoldi+nharm//2)/nharm for kk in range(1,nharm,2)]).astype("int32")
 
             lib.sumHarms(as_c(self),
                          sum_ar_c,
@@ -153,11 +153,11 @@ class FourierSeries(np.ndarray):
         :return: a power spectrum
         :rtype: :class:`~sigpyproc.FourierSeries.PowerSpectrum`
         """
-        spec_ar = np.empty(self.size/2,dtype="float32")
+        spec_ar = np.empty(self.size//2,dtype="float32")
         if interpolated:
             lib.formSpecInterpolated(as_c(self),
                                      as_c(spec_ar),
-                                     C.c_int(self.size/2))
+                                     C.c_int(self.size//2))
         else:
             lib.formSpec(as_c(self),
                          as_c(spec_ar),
@@ -202,7 +202,7 @@ class FourierSeries(np.ndarray):
                      as_c(buf_c1),
                      as_c(buf_c2),
                      as_c(buf_f1),
-                     C.c_int(self.size/2),
+                     C.c_int(self.size//2),
                      C.c_float(self.header.tsamp),
                      C.c_int(startwidth),
                      C.c_int(endwidth),

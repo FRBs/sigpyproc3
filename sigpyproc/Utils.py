@@ -143,7 +143,7 @@ def nearestFactor(n,val):
     while check<rootn:
         if n%check==0:
             fact.append(check)
-            fact.append(n/check)
+            fact.append(n//check)
         check+=1
     if rootn==check:
         fact.append(check)
@@ -175,7 +175,7 @@ def editInplace(inst,key,value):
     inst.header[key] = value
     new_header = inst.header.SPPHeader(back_compatible=True)
     if inst.header.hdrlen != len(new_header):
-        raise ValueError,"New header is too long/short for file"
+        raise ValueError("New header is too long/short for file")
     else:
         temp.seek(0)
         temp.write(new_header)

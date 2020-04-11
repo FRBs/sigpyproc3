@@ -13,7 +13,7 @@ class Header(dict):
  
     """
     def __init__(self,info):
-        super(Header,self).__init__(info)
+        super().__init__(info)
         self._mirror()
         self.updateHeader()
 
@@ -21,12 +21,12 @@ class Header(dict):
         self.__setattr__(key,value)
 
     def __setattr__(self,key,value):
-        super(Header, self).__setattr__(key,value)
-        super(Header, self).__setitem__(key,value)
+        super().__setattr__(key,value)
+        super().__setitem__(key,value)
                 
     def _mirror(self):
         for key,value in self.items():
-            super(Header, self).__setattr__(key,value)
+            super().__setattr__(key,value)
 
     def updateHeader(self):
         """Check for changes in header and recalculate all derived quantaties.
@@ -55,7 +55,7 @@ class Header(dict):
 
         
         if hasattr(self,"tstart"):
-            self.obs_date,self.obs_time = MJD_to_Gregorian(self.tstart)
+            self.obs_date, self.obs_time = MJD_to_Gregorian(self.tstart)
                 
         if hasattr(self,"nbits"):
             self.dtype = conf.nbits_to_dtype[self.nbits]
@@ -111,25 +111,25 @@ class Header(dict):
         """
         
         self.updateHeader()
-        hstart  = "HEADER_START"
-        hend    = "HEADER_END"
-        header  = "".join([pack("I",len(hstart)),hstart])
+        hstart  = b"HEADER_START"
+        hend    = b"HEADER_END"
+        header  = b"".join([pack("I", len(hstart)), hstart])
         
-        for key in self.keys():
+        for key in list(self.keys()):
             if back_compatible and key not in conf.sigproc_keys:
                 continue
             elif not back_compatible and key not in conf.header_keys:
                 continue
 
             if conf.header_keys[key] == "str":
-                header = "".join([header,_write_string(key,self[key])])
+                header = b"".join([header, _write_string(key,self[key])])
             elif conf.header_keys[key] == "I":
-                header = "".join([header,_write_int(key,self[key])])
+                header = b"".join([header, _write_int(key,self[key])])
             elif conf.header_keys[key] == "d":
-                header = "".join([header,_write_double(key,self[key])])
+                header = b"".join([header, _write_double(key,self[key])])
             elif conf.header_keys[key] == "b":
-                header = "".join([header,_write_char(key,self[key])])
-        return "".join([header,pack("I",len(hend)),hend])
+                header = b"".join([header, _write_char(key,self[key])])
+        return b"".join([header, pack("I",len(hend)), hend])
 
     def makeInf(self,outfile=None):
         """Make a presto format .inf file.
@@ -223,21 +223,25 @@ class Header(dict):
         return out_file
 
 def _write_string(key,value):
-    return "".join([pack("I", len(key)),
-                    key,pack('I',len(value)),
-                    value])
+    key   = key.encode()
+    value = value.encode()
+    return b"".join([pack("I", len(key)), key,
+                     pack('I', len(value)), value])
 
 def _write_int(key,value):
-    return "".join([pack('I',len(key)),
-                    key,pack('I',value)])
+    key   = key.encode()
+    return b"".join([pack('I', len(key)), key,
+                     pack('I', value)])
 
 def _write_double(key,value):
-    return "".join([pack('I',len(key)),
-                    key,pack('d',value)])
+    key   = key.encode()
+    return b"".join([pack('I', len(key)), key,
+                     pack('d',value)])
 
 def _write_char(key,value):
-    return "".join([pack('I',len(key)),
-                    key,pack('b',value)])
+    key   = key.encode()
+    return b"".join([pack('I', len(key)), key,
+                     pack('b',value)])
 
 def radec_to_str(val):
     """Convert Sigproc format RADEC float to a string.

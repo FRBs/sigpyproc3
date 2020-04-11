@@ -73,7 +73,7 @@ class Profile(np.ndarray):
         new_prof /= new_prof.max()
         new_prof *= rows
         for ii in np.arange(rows)[::-1]:
-            print "".join([("#" if val >= ii else " ") for val in new_prof])
+            print("".join([("#" if val >= ii else " ") for val in new_prof]))
 
           
 class FoldSlice(np.ndarray):
