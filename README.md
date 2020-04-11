@@ -1,12 +1,24 @@
 sigpyproc
 =========
 
+`sigpyproc` is a pulsar and FRB data analysis library for python.
+
+Usage
+-----
+
+```python
+from sigpyproc.Readers import FilReader
+myFil = FilReader("tutorial.fil")
+
+```
+
 Installation
 ------------
 
 ### Requirements
 
-	
+You need Python 3.6 or later to run sigpyproc.
+    
         * numpy 
         * ctypes 
         * FFTW3

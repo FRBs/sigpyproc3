@@ -229,7 +229,6 @@ class TimeSeries(np.ndarray):
         else:
             new_size = self.size
         out_ar = np.zeros(new_size,dtype="float32")
-        print new_size
         lib.resample(as_c(self),
                      as_c(out_ar),
                      C.c_int(new_size),
