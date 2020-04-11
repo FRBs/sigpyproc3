@@ -1,3 +1,4 @@
+import io
 import ctypes as C
 import numpy as np
 import warnings
@@ -7,7 +8,7 @@ from sigpyproc.HeaderParams import nbits_to_dtype
 from .ctype_helper import load_lib
 lib  = load_lib("libSigPyProc.so")
 
-class File(file):
+class File(io.FileIO):
     """A class to handle writing of arbitrary bit size data to file.
 
     :param filename: name of file to open
@@ -26,18 +27,18 @@ class File(file):
        rather than numbers of bits or bytes.
     """
 
-    def __init__(self,filename,mode,nbits=8):
-        file.__init__(self,filename,mode)
+    def __init__(self, filename, mode, nbits=8):
+        super().__init__(filename, mode)
         self.nbits = nbits
         self.dtype = nbits_to_dtype[self.nbits]
         if nbits in [1,2,4]:
             self.bitfact = nbits/8.
-            self.unpack = True
+            self.unpack  = True
         else:
             self.bitfact = 1
-            self.unpack = False
+            self.unpack  = False
 
-    def cread(self,nunits):
+    def cread(self, nunits):
         """Read nunits of data from the file.
 
         :param nunits: number of units to be read from file 
@@ -48,9 +49,9 @@ class File(file):
         """
 
         count = int(nunits*self.bitfact)
-        data = np.fromfile(self,count=count,dtype=self.dtype)
+        data  = np.fromfile(self, count=count, dtype=self.dtype)
         if self.unpack:
-            unpacked = np.empty(nunits,dtype=self.dtype)
+            unpacked = np.empty(nunits, dtype=self.dtype)
             lib.unpack(as_c(data),
                        as_c(unpacked),
                        C.c_int(self.nbits),
@@ -85,7 +86,7 @@ class File(file):
         #is, say 2-bit, then the output will be garbage, hence the casting above is
         #necessary.
         if self.unpack:
-            packed = np.empty(int(ar.size*self.bitfact),dtype=self.dtype)
+            packed = np.empty(int(ar.size*self.bitfact), dtype=self.dtype)
             lib.pack(as_c(ar),
                      as_c(packed),
                      C.c_int(self.nbits),
@@ -97,7 +98,7 @@ class File(file):
     def __del__(self):
         self.close()
 
-def rollArray(y,shift,axis):
+def rollArray(y, shift, axis):
     """Roll the elements in the array by 'shift' positions along the                                         
     given axis.
     
@@ -150,7 +151,7 @@ def nearestFactor(n,val):
     fact.sort()
     return fact[np.abs(np.array(fact)-val).argmin()]
 
-def editInplace(inst,key,value):
+def editInplace(inst, key, value):
     """Edit a sigproc style header in place
 
     :param inst: a header instance with a ``.filename`` attribute
@@ -168,10 +169,10 @@ def editInplace(inst,key,value):
        editInplace comes when the new header to be written to file is longer or shorter than the
        header that was previously in the file.
     """
-    temp = File(inst.header.filename,"r+")
+    temp = File(inst.header.filename, "r+")
     if key is "source_name":
         oldlen = len(inst.header.source_name)
-        value = value[:oldlen]+" "*(oldlen-len(value))
+        value  = value[:oldlen]+" "*(oldlen-len(value))
     inst.header[key] = value
     new_header = inst.header.SPPHeader(back_compatible=True)
     if inst.header.hdrlen != len(new_header):
