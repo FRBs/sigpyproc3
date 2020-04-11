@@ -1,4 +1,5 @@
 import os
+import sysconfig
 import ctypes as C
 
 THIS_DIRPATH   = os.path.dirname(os.path.abspath(__file__))
@@ -12,5 +13,9 @@ def load_lib(libname):
 
     Returns a ctypes.CDLL object
     """
-    lib = C.CDLL(os.path.join(PARENT_DIRPATH, libname))
+    try:
+        lib = C.CDLL(os.path.join(PARENT_DIRPATH, libname))
+    except OSError:
+        libname = libname.split(".so")[0] + sysconfig.get_config_var('EXT_SUFFIX') # PEP 3149
+        lib = C.CDLL(os.path.join(PARENT_DIRPATH, libname))
     return lib
