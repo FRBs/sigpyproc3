@@ -23,7 +23,10 @@ class Filterbank(object):
         else:
             self.lib = lib8 #if 8-bit data select 8-bit library
         self.chan_means  = None
+        self.chan_vars   = None
         self.chan_stdevs = None
+        self.chan_skews  = None
+        self.chan_kurts  = None
         self.chan_maxima = None
         self.chan_minima = None
 
@@ -485,33 +488,57 @@ class Filterbank(object):
         Function creates four instance attributes:
         
            * :attr:`chan_means`: the mean value of each channel
+           * :attr:`chan_vars`: the variance of each channel
            * :attr:`chan_stdevs`: the standard deviation of each channel
+           * :attr:`chan_skews`: the skewness of each channel
+           * :attr:`chan_kurts`: the kurtosis of each channel
            * :attr:`chan_max`: the maximum value of each channel
            * :attr:`chan_min`: the minimum value of each channel
         """
         maxima_ar = np.zeros(self.header.nchans,dtype="float32")
         minima_ar = np.zeros(self.header.nchans,dtype="float32")
-        means_ar  = np.zeros(self.header.nchans,dtype="float32")
-        stdev_ar  = np.zeros(self.header.nchans,dtype="float32")
+        count_ar  = np.zeros(self.header.nchans,dtype="int64")
+        M1_ar  = np.zeros(self.header.nchans,dtype="float32")
+        M2_ar  = np.zeros(self.header.nchans,dtype="float32")
+        M3_ar  = np.zeros(self.header.nchans,dtype="float32")
+        M4_ar  = np.zeros(self.header.nchans,dtype="float32")
         maxima_ar_c = as_c(maxima_ar)
         minima_ar_c = as_c(minima_ar)
-        means_ar_c  = as_c(means_ar)
-        stdev_ar_c  = as_c(stdev_ar)
+        count_ar_c  = as_c(count_ar)
+        M1_ar_c  = as_c(M1_ar)
+        M2_ar_c  = as_c(M2_ar)
+        M3_ar_c  = as_c(M3_ar)
+        M4_ar_c  = as_c(M4_ar)        
         for nsamps,ii,data in self.readPlan(gulp):
             self.lib.getStats(as_c(data),
-                              means_ar_c,
-                              stdev_ar_c,
+                              M1_ar_c,
+                              M2_ar_c,
+                              M3_ar_c,
+                              M4_ar_c,
                               maxima_ar_c,
                               minima_ar_c,
+                              count_ar_c,
                               C.c_int(self.header.nchans),
                               C.c_int(nsamps),
                               C.c_int(ii))
 
-        means_ar /= self.header.nsamples
-        stdev_ar = np.sqrt((stdev_ar/self.header.nsamples)-means_ar**2)
-        stdev_ar[np.where(np.isnan(stdev_ar))] = 0        
-        self.chan_means = means_ar
+        means_ar = M1_ar
+        var_ar   = M2_ar / self.header.nsamples
+        stdev_ar = np.sqrt(var_ar)
+
+        M2_ar[M2_ar == 0] = np.nan
+        skew_ar  = M3_ar / np.power(M2_ar, 1.5) * np.sqrt(self.header.nsamples)
+        kurt_ar  = M4_ar / np.power(M2_ar, 2.0) * self.header.nsamples - 3.0
+
+        stdev_ar[np.isnan(stdev_ar)] = 0   
+        skew_ar[np.isnan(skew_ar)] = 0
+        kurt_ar[np.isnan(kurt_ar)] = -3.0
+    
+        self.chan_means  = means_ar
+        self.chan_vars   = var_ar
         self.chan_stdevs = stdev_ar
+        self.chan_skews  = skew_ar
+        self.chan_kurts  = kurt_ar
         self.chan_maxima = maxima_ar
         self.chan_minima = minima_ar
 
