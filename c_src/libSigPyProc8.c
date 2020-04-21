@@ -186,6 +186,27 @@ void splitToChans(unsigned char* inbuffer,
 }
 
 /*
+TODO: This code is very slow compared to python slicing.
+*/
+void splitToBands(unsigned char* inbuffer,
+      unsigned char* outbuffer,
+      int nchans,
+      int nsamps,
+      int nsub,
+      int chanpersub,
+      int chanstart)
+{
+  int ii,jj;
+  int chan_end = nsub*chanpersub+chanstart;
+#pragma omp parallel for default(shared) private(ii,jj)
+  for (ii=0; ii<nsamps; ii++){
+    for (jj=chanstart; jj<chan_end; jj++){
+      outbuffer[(ii*nchans)+(jj%chanpersub*nsub + jj/chanpersub)] = inbuffer[(ii*nchans)+jj];
+    }  
+  }
+}
+
+/*
 getStats: Computing central moments in one pass through the data, 
 the algorithm is numerically stable and accurate.
 

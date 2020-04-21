@@ -478,6 +478,62 @@ class Filterbank(object):
             f.close()
             
         return [f.name for f in out_files]
+
+    def splitToBands(self, chanpersub, chanstart=0, gulp=1024, back_compatible=True):
+        """Split the data into component Sub-bands and write each to a filterbank file.
+
+        :param chanpersub: number of channels in each sub-band
+        :type chanpersub: int 
+
+        :param chanstart: start channel of split
+        :type chanstart: int 
+
+        :param gulp: number of samples in each read
+        :type gulp: int 
+
+        :param back_compatible: sigproc compatibility flag (legacy code)
+        :type back_compatible: bool
+
+        :return: names of all files written to disk
+        :rtype: :func:`list` of :func:`str`
+        
+        .. note::
+        
+                Filterbanks are written to disk with names based on sub-band number.
+
+        """
+        #TODO: C version is too slow. Need to fix
+        nsub   = (self.header.nchans - chanstart) // chanpersub
+        fstart = self.header.fch1 + chanstart*self.header.foff
+
+        out_files = [self.header.prepOutfile(f"{self.header.basename}_sub{ii:02d}.fil",
+                                             {"nchans":chanpersub,
+                                              "fch1": fstart + ii*chanpersub*self.header.foff},
+                                             back_compatible=back_compatible, nbits=self.header.nbits)
+                     for ii in range(nsub)]
+
+        #subband_ar    = np.empty([gulp*chanpersub, nsub], dtype=self.header.dtype)
+        #subband_ar_c  = as_c(subband_ar)
+        for nsamps,ii,data in self.readPlan(gulp):
+            """
+            self.lib.splitToBands(as_c(data),
+                                  subband_ar_c,
+                                  C.c_int(self.header.nchans),
+                                  C.c_int(nsamps),
+                                  C.c_int(nsub),
+                                  C.c_int(chanpersub),
+                                  C.c_int(chanstart))
+            """
+            for ii, out_file in enumerate(out_files):
+                data = data.reshape(nsamps, self.header.nchans)
+                subband_ar = data[:,chanstart+chanpersub*ii:chanstart+chanpersub*(ii+1)]
+                out_file.cwrite(subband_ar.ravel())
+                #out_file.cwrite(subband_ar[:nsamps*chanpersub, ii])
+
+        for out_file in out_files:
+            out_file.close()
+            
+        return [out_file.name for out_file in out_files]
         
     def getStats(self,gulp=512):
         """Retrieve channelwise statistics of data.
@@ -563,6 +619,8 @@ class Filterbank(object):
         :return: name of output file
         :return type: :func:`str`
         """
+        if self.header.nbits < 8:
+            raise TypeError(f"{self.header.nbits}-bit filterbank not supported yet!")
         if filename is None:
             filename = f"{self.header.basename}_bpcorr.fil"
 
