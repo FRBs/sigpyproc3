@@ -253,3 +253,49 @@ void invertFreq(unsigned char* inbuffer,unsigned char* outbuffer,int nchans,int 
   } 
   
 }
+
+/*
+Digitizing code taken from SigProcDigitizer.C (dspsr)
+*/
+void removeBandpass(unsigned char* inbuffer,
+        unsigned char* outbuffer,
+        float* means,
+        float* stdevs,
+        int nchans,
+        int nsamps)
+{
+  int ii,jj;
+  unsigned char val;
+  double scale;
+
+  float DIGI_MEAN  = 127.5;
+  float DIGI_SIGMA = 6;
+  float DIGI_SCALE = DIGI_MEAN / DIGI_SIGMA;
+  int DIGI_MIN = 0;
+  int DIGI_MAX = 255;  
+
+#pragma omp parallel for default(shared) private(jj,ii) shared(outbuffer,inbuffer)
+  for (jj = 0; jj < nchans; jj++){
+    for (ii = 0; ii < nsamps; ii++){
+      val = inbuffer[(nchans*ii)+jj];
+
+      if (stdevs[jj] == 0.0)
+        scale = 1.0;
+      else
+        scale = 1.0 / stdevs[jj];
+
+      // Normalize the data per channel to N(0,1)
+      double normval = (val - means[jj]) * scale;
+      // Shift the data for digitization
+      int result = ((normval * DIGI_SCALE) + DIGI_MEAN + 0.5);
+      // clip the result at the limits
+      if (result < DIGI_MIN)
+        result = DIGI_MIN;
+      
+      if (result > DIGI_MAX)
+        result = DIGI_MAX;
+      outbuffer[(nchans*ii)+jj] = (unsigned char) result;
+    }
+  } 
+  
+}

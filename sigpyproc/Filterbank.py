@@ -534,13 +534,56 @@ class Filterbank(object):
         skew_ar[np.isnan(skew_ar)] = 0
         kurt_ar[np.isnan(kurt_ar)] = -3.0
     
-        self.chan_means  = means_ar
-        self.chan_vars   = var_ar
-        self.chan_stdevs = stdev_ar
-        self.chan_skews  = skew_ar
-        self.chan_kurts  = kurt_ar
+        self.chan_means  = means_ar.astype('float32') 
+        self.chan_vars   = var_ar.astype('float32') 
+        self.chan_stdevs = stdev_ar.astype('float32') 
+        self.chan_skews  = skew_ar.astype('float32') 
+        self.chan_kurts  = kurt_ar.astype('float32') 
         self.chan_maxima = maxima_ar
         self.chan_minima = minima_ar
+
+    def removeBandpass(self,gulp=512,filename=None,back_compatible=True):
+        """Remove the bandpass from the data and write new data to a new file.
+
+        :param gulp: number of samples in each read                                                                                      
+        :type gulp: int
+        
+        :param start: start sample                                                                       
+        :type start: int                                                                                     
+        
+        :param nsamps: number of samples in split                                                
+        :type nsamps: int
+
+        :param filename: name of output file (defaults to ``basename_inverted.fil``)
+        :type filename: string
+
+        :param back_compatible: sigproc compatibility flag (legacy code)
+        :type back_compatible: bool
+        
+        :return: name of output file
+        :return type: :func:`str`
+        """
+        if filename is None:
+            filename = f"{self.header.basename}_bpcorr.fil"
+
+        if self.chan_stdevs is None:
+            self.getStats(gulp=gulp)
+
+        out_ar   = np.empty(self.header.nsamples*self.header.nchans, 
+                            dtype=self.header.dtype)
+        out_file = self.header.prepOutfile(filename, nbits=self.header.nbits,
+                                           back_compatible=back_compatible)
+        for nsamps,ii,data in self.readPlan(gulp):
+            self.lib.removeBandpass(as_c(data),
+                                    as_c(out_ar),
+                                    as_c(self.chan_means),
+                                    as_c(self.chan_stdevs),
+                                    C.c_int(self.header.nchans),
+                                    C.c_int(nsamps))
+            out_file.cwrite(out_ar[:nsamps*self.header.nchans])
+        out_file.close()
+        return out_file.name
+
 
 class FilterbankBlock(np.ndarray):
     """Class to handle a discrete block of data in time-major order.

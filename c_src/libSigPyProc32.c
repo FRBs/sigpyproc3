@@ -265,5 +265,32 @@ void invertFreq(float* inbuffer,float* outbuffer,int nchans,int nsamps)
 
 }
 
+void removeBandpass(float* inbuffer,
+        float* outbuffer,
+        float* means,
+        float* stdevs,
+        int nchans,
+        int nsamps)
+{
+  int ii,jj;
+  float val;
+  double scale;
 
+#pragma omp parallel for default(shared) private(jj,ii) shared(outbuffer,inbuffer)
+  for (jj = 0; jj < nchans; jj++){
+    for (ii = 0; ii < nsamps; ii++){
+      val = inbuffer[(nchans*ii)+jj];
+
+      if (stdevs[jj] == 0.0)
+        scale = 1.0;
+      else
+        scale = 1.0 / stdevs[jj];
+
+      // Normalize the data per channel to N(0,1)
+      double normval = (val - means[jj]) * scale;
+      outbuffer[(nchans*ii)+jj] = (float) normval;
+    }
+  } 
+  
+}
 
