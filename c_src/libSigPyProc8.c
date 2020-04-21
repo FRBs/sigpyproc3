@@ -27,7 +27,7 @@ void getTim(unsigned char* inbuffer,float* outbuffer,int nchans,int nsamps,int i
   }
 }
 
-void getBpass(unsigned char* inbuffer,float* outbuffer,int nchans,int nsamps){
+void getBpass(unsigned char* inbuffer,double* outbuffer,int nchans,int nsamps){
   int ii,jj;
 #pragma omp parallel for default(shared) private(jj,ii) 
   for (jj=0;jj<nchans;jj++){
@@ -315,6 +315,34 @@ void removeBandpass(unsigned char* inbuffer,
       
       if (result > DIGI_MAX)
         result = DIGI_MAX;
+      outbuffer[(nchans*ii)+jj] = (unsigned char) result;
+    }
+  } 
+  
+}
+
+
+/*
+Remove the channel-weighted zero-DM (Eatough, Keane & Lyne 2009)
+code based on zerodm.c (presto)
+*/
+void removeZeroDM(unsigned char* inbuffer,
+        unsigned char* outbuffer,
+        float* bpass,
+        float* chanwts,
+        int nchans,
+        int nsamps)
+{
+  int ii,jj;
+
+#pragma omp parallel for default(shared) private(jj,ii) shared(outbuffer,inbuffer)
+  for (ii = 0; ii < nsamps; ii++){
+    double zerodm = 0.0;
+    for (jj = 0; jj < nchans; jj++){
+      zerodm += inbuffer[(nchans*ii)+jj];
+    }
+    for (jj = 0; jj < nchans; jj++){
+      int result = ((inbuffer[(nchans*ii)+jj] - zerodm*chanwts[jj]) + bpass[jj] + 0.5);
       outbuffer[(nchans*ii)+jj] = (unsigned char) result;
     }
   } 

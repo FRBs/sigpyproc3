@@ -114,7 +114,7 @@ class Filterbank(object):
         return out_file.name
 
     def bandpass(self,gulp=512):
-        """Sum across each time sample for all frequencies.
+        """Average across each time sample for all frequencies.
 
         :param gulp: number of samples in each read
         :type gulp: int
@@ -122,13 +122,14 @@ class Filterbank(object):
         :return: the bandpass of the data
         :rtype: :class:`~sigpyproc.TimeSeries.TimeSeries`
         """
-        bpass_ar = np.zeros(self.header.nchans,dtype="float32")
+        bpass_ar = np.zeros(self.header.nchans,dtype="float64")
         bpass_ar_c = as_c(bpass_ar)
         for nsamps,ii,data in self.readPlan(gulp):
             self.lib.getBpass(as_c(data),
                               bpass_ar_c,
                               C.c_int(self.header.nchans),
                               C.c_int(nsamps))
+        bpass_ar = bpass_ar/self.header.nsamples
         return TimeSeries(bpass_ar,self.header.newHeader({"nchans":1}))
 
     def dedisperse(self,dm,gulp=10000):
@@ -638,6 +639,50 @@ class Filterbank(object):
                                     as_c(self.chan_stdevs),
                                     C.c_int(self.header.nchans),
                                     C.c_int(nsamps))
+            out_file.cwrite(out_ar[:nsamps*self.header.nchans])
+        out_file.close()
+        return out_file.name
+
+    def removeZeroDM(self, gulp=512, filename=None, back_compatible=True):
+        """Remove the channel-weighted zero-DM from the data and write new data to a new file.
+
+        :param gulp: number of samples in each read                                                                                      
+        :type gulp: int
+        
+        :param start: start sample                                                                       
+        :type start: int                                                                                     
+        
+        :param nsamps: number of samples in split                                                
+        :type nsamps: int
+
+        :param filename: name of output file (defaults to ``basename_inverted.fil``)
+        :type filename: string
+
+        :param back_compatible: sigproc compatibility flag (legacy code)
+        :type back_compatible: bool
+        
+        :return: name of output file
+        :return type: :func:`str`
+        .. note::
+        
+                Based on Presto implementation of Eatough, Keane & Lyne 2009
+        """
+        if filename is None:
+            filename = f"{self.header.basename}_noZeroDM.fil"
+
+        bpass   = self.bandpass(gulp=gulp)
+        chanwts = bpass/bpass.sum()
+        out_ar  = np.empty(self.header.nsamples*self.header.nchans, 
+                           dtype=self.header.dtype)
+        out_file = self.header.prepOutfile(filename, nbits=self.header.nbits,
+                                           back_compatible=back_compatible)
+        for nsamps,ii,data in self.readPlan(gulp):
+            self.lib.removeZeroDM(as_c(data),
+                                  as_c(out_ar),
+                                  as_c(bpass),
+                                  as_c(chanwts),
+                                  C.c_int(self.header.nchans),
+                                  C.c_int(nsamps))
             out_file.cwrite(out_ar[:nsamps*self.header.nchans])
         out_file.close()
         return out_file.name
