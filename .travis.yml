@@ -9,7 +9,7 @@ install:
   - sudo apt-get install -qq git curl wget make cmake fftw3 fftw3-dev pkg-config libiomp-dev libopenmpi-dev
   - pip install --upgrade pip
   - pip install --upgrade setuptools
-  - pip install numpy matplotlib ipython
+  - pip install numpy matplotlib ipython tqdm
   - pip install .
 
 # Run tests

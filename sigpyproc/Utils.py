@@ -60,7 +60,7 @@ class File(io.FileIO):
         else:
             return data
 
-    def cwrite(self,ar):
+    def cwrite(self, ar):
         """Write an array to file.
 
         :param ar: a numpy array
@@ -112,7 +112,7 @@ def rollArray(y, shift, axis):
     y = np.asanyarray(y)
     n = y.shape[axis]
     shift %= n 
-    return y.take(np.concatenate((np.arange(shift,n),np.arange(shift))), axis)
+    return y.take(np.concatenate((np.arange(shift,n), np.arange(shift))), axis)
 
 def _flattenList(n):
     new = []
@@ -126,7 +126,7 @@ def stackRecarrays(arrays):
     """Wrapper for stacking :class:`numpy.recarrays`"""
     return arrays[0].__array_wrap__(np.hstack(arrays))
 
-def nearestFactor(n,val):
+def nearestFactor(n, val):
     """Find nearest factor.
     
     :param n: number that we wish to factor
@@ -138,15 +138,15 @@ def nearestFactor(n,val):
     :return: nearest factor
     :rtype: int
     """
-    fact=[1,n]
-    check=2
-    rootn=np.sqrt(n)
-    while check<rootn:
-        if n%check==0:
+    fact  = [1,n]
+    check = 2
+    rootn = np.sqrt(n)
+    while check < rootn:
+        if n%check == 0:
             fact.append(check)
             fact.append(n//check)
-        check+=1
-    if rootn==check:
+        check += 1
+    if rootn == check:
         fact.append(check)
     fact.sort()
     return fact[np.abs(np.array(fact)-val).argmin()]

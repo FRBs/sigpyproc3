@@ -1,6 +1,6 @@
-from numpy.ctypeslib import as_ctypes as as_c
 import numpy as np
 import ctypes as C
+from numpy.ctypeslib import as_ctypes as as_c
 
 from .ctype_helper import load_lib
 lib = load_lib("libSigPyProcTim.so")
@@ -14,7 +14,7 @@ class TimeSeries(np.ndarray):
     :param header: observational metadata
     :type header: :class:`~sigpyproc.Header.Header`
     """
-    def __new__(cls,input_array,header):
+    def __new__(cls, input_array, header):
         if getattr(input_array,"dtype",False) == np.dtype("float32"):
             obj = input_array.view(cls)
         else:
@@ -22,12 +22,12 @@ class TimeSeries(np.ndarray):
         obj.header = header
         return obj
 
-    def __array_finalize__(self,obj):
+    def __array_finalize__(self, obj):
         if obj is None: return
-        if hasattr(obj,"header"):
+        if hasattr(obj, "header"):
             self.header = obj.header
             
-    def fold(self,period,accel=0,nbins=50,nints=32):
+    def fold(self, period, accel=0, nbins=50, nints=32):
         """Fold time series into discrete phase and subintegration bins.
 
         :param period: period in seconds to fold with
@@ -44,8 +44,8 @@ class TimeSeries(np.ndarray):
         """
         if self.size//(nbins*nints) < 10: 
             raise ValueError("nbins x nints is too large for length of data")
-        fold_ar  = np.zeros(nbins*nints,dtype="float64")
-        count_ar = np.zeros(nbins*nints,dtype="int32")
+        fold_ar  = np.zeros(nbins*nints, dtype="float64")
+        count_ar = np.zeros(nbins*nints, dtype="int32")
         lib.foldTim(as_c(self),
                     as_c(fold_ar),
                     as_c(count_ar),
@@ -55,8 +55,8 @@ class TimeSeries(np.ndarray):
                     C.c_int(self.size),
                     C.c_int(nbins),
                     C.c_int(nints))
-        fold_ar/=count_ar
-        fold_ar = fold_ar.reshape(nints,1,nbins)
+        fold_ar /= count_ar
+        fold_ar  = fold_ar.reshape(nints, 1, nbins)
         return FoldedData(fold_ar,
                           self.header.newHeader(),
                           period,
@@ -73,13 +73,13 @@ class TimeSeries(np.ndarray):
             fftsize = self.size
         else:
             fftsize = self.size-1
-        fft_ar = np.empty(fftsize+2,dtype="float32")
+        fft_ar = np.empty(fftsize+2, dtype="float32")
         lib.rfft(as_c(self),
                  as_c(fft_ar),
                  fftsize)
-        return FourierSeries(fft_ar,self.header.newHeader())
+        return FourierSeries(fft_ar, self.header.newHeader())
 
-    def runningMean(self,window=10001):
+    def runningMean(self, window=10001):
         """Filter time series with a running mean. 
         
         :param window: width in bins of running mean filter
@@ -93,14 +93,14 @@ class TimeSeries(np.ndarray):
                 Window edges will be dealt with only at the start of the time series.
 
         """
-        tim_ar  = np.empty_like(self)
+        tim_ar = np.empty_like(self)
         lib.runningMean(as_c(self),
                         as_c(tim_ar),
                         C.c_int(window),
                         C.c_int(self.size))
         return tim_ar.view(TimeSeries)
 
-    def runningMedian(self,window=10001):
+    def runningMedian(self, window=10001):
         """Filter time series with a running median.
         
         :param window: width in bins of running median filter
@@ -113,14 +113,14 @@ class TimeSeries(np.ndarray):
         
                 Window edges will be dealt with only at the start of the time series.
         """
-        tim_ar  = np.empty_like(self)
+        tim_ar = np.empty_like(self)
         lib.runningMedian(as_c(self),
                           as_c(tim_ar),
                           C.c_int(window),
                           C.c_int(self.size))
         return tim_ar.view(TimeSeries)
 
-    def applyBoxcar(self,width):
+    def applyBoxcar(self, width):
         """Apply a boxcar filter to the time series.
 
         :param width: width in bins of filter
@@ -133,14 +133,14 @@ class TimeSeries(np.ndarray):
         
                 Time series returned is of size nsamples-width with width/2 removed removed from either end.
         """
-        tim_ar  = np.empty_like(self)
+        tim_ar = np.empty_like(self)
         lib.runBoxcar(as_c(self),
                       as_c(tim_ar),
                       C.c_int(width),
                       C.c_int(self.size))
         return tim_ar.view(TimeSeries)
 
-    def downsample(self,factor):
+    def downsample(self, factor):
         """Downsample the time series.
 
         :param factor: factor by which time series will be downsampled
@@ -155,14 +155,14 @@ class TimeSeries(np.ndarray):
         """
         if factor == 1: return self
         newLen = self.size//factor
-        tim_ar  = np.zeros(newLen,dtype="float32")
+        tim_ar = np.zeros(newLen, dtype="float32")
         lib.downsampleTim(as_c(self),
                           as_c(tim_ar),
                           C.c_int(factor),
                           C.c_int(newLen))
-        return TimeSeries(tim_ar,self.header.newHeader({'tsamp':self.header.tsamp*factor}))
+        return TimeSeries(tim_ar, self.header.newHeader({'tsamp':self.header.tsamp*factor}))
            
-    def toDat(self,basename):
+    def toDat(self, basename):
         """Write time series in presto ``.dat`` format.
 
         :param basename: file basename for output ``.dat`` and ``.inf`` files
@@ -183,7 +183,7 @@ class TimeSeries(np.ndarray):
                 self.tofile(datfile)
         return f"{basename}.dat", f"{basename}.inf"
 
-    def toFile(self,filename):
+    def toFile(self, filename):
         """Write time series in sigproc format.
 
         :param filename: output file name
@@ -196,7 +196,7 @@ class TimeSeries(np.ndarray):
         self.tofile(outfile)
         return outfile.name
         
-    def pad(self,npad):
+    def pad(self, npad):
         """Pad a time series with mean valued data.
 
         :param npad: number of padding points
@@ -205,10 +205,10 @@ class TimeSeries(np.ndarray):
         :return: padded time series
         :rtype: :class:`~sigpyproc.TimeSeries.TimeSeries`
         """        
-        new_ar = np.hstack((self,self.mean()*np.ones(npad)))
-        return TimeSeries(new_ar,self.header.newHeader())
+        new_ar = np.hstack((self, self.mean()*np.ones(npad)))
+        return TimeSeries(new_ar, self.header.newHeader())
 
-    def resample(self,accel,jerk=0):
+    def resample(self, accel, jerk=0):
         """Perform time domain resampling to remove acceleration and jerk.
 
         :param accel: The acceleration to remove from the time series
@@ -228,7 +228,7 @@ class TimeSeries(np.ndarray):
             new_size = self.size-1
         else:
             new_size = self.size
-        out_ar = np.zeros(new_size,dtype="float32")
+        out_ar = np.zeros(new_size, dtype="float32")
         lib.resample(as_c(self),
                      as_c(out_ar),
                      C.c_int(new_size),
@@ -239,7 +239,7 @@ class TimeSeries(np.ndarray):
                                             "accel":accel})
         return TimeSeries(out_ar,new_header)
 
-    def correlate(self,other):
+    def correlate(self, other):
         """Cross correlate with another time series of the same length.
 
         :param other: array to correlate with
@@ -250,7 +250,7 @@ class TimeSeries(np.ndarray):
         """
         if type(self) != type(other):
             try:
-                other = TimeSeries(other,self.header.newHeader())
+                other = TimeSeries(other, self.header.newHeader())
             except:
                 raise Exception("Could not convert argument to TimeSeries instance")
         return (self.rFFT()*other.rFFT()).iFFT()

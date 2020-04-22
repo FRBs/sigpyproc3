@@ -3,8 +3,8 @@ from setuptools import setup, Extension #find_packages
 __version__ = '0.1.1'
 
 def describe(filename):
-    f = open(filename, "r")
-    lines = f.readlines()
+    with open(filename, "r") as f:
+        lines = f.readlines()
     return "".join(lines)
 
 
@@ -55,10 +55,16 @@ ext5 = Extension('libSigPyProc',
                  extra_compile_args=["-fopenmp", "-Wno-unused-variable", "-Wno-strict-prototypes"],
                  )
 
+
+install_requires = [
+        'numpy',
+        'tqdm',
+]
+
 setup(name='sigpyproc',
         version=__version__,
         description='Python pulsar data toolbox',
-        install_requires = ['numpy'],
+        install_requires = install_requires,
         python_requires = '>=3.6',
         author='Ewan Barr',
         author_email='ewan.d.barr@googlemail.com',

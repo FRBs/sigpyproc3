@@ -44,8 +44,8 @@ class Header(dict):
             # However, if fch1 the frequency of the middle of the bottom channel and foff 
             # positive you should run an Filterbank.Filterbank.invertFreq on the data
         self.tobs    = self.tsamp * self.nsamples
-        self.src_raj = getattr(self,"src_raj",0)
-        self.src_dej = getattr(self,"src_dej",0)
+        self.src_raj = getattr(self, "src_raj", 0)
+        self.src_dej = getattr(self, "src_dej", 0)
         self.ra      = radec_to_str(self.src_raj)
         self.dec     = radec_to_str(self.src_dej)
         self.ra_rad  = ra_to_rad(self.ra)
@@ -60,7 +60,7 @@ class Header(dict):
         if hasattr(self,"nbits"):
             self.dtype = conf.nbits_to_dtype[self.nbits]
 
-    def mjdAfterNsamps(self,nsamps):
+    def mjdAfterNsamps(self, nsamps):
         """Find the Modified Julian Date after nsamps have elapsed.
 
         :param nsamps: number of samples elapsed since start of observation.
@@ -71,7 +71,7 @@ class Header(dict):
         """
         return self.tstart+((nsamps*self.tsamp)/86400.)
 
-    def newHeader(self,update_dict=None):
+    def newHeader(self, update_dict=None):
         """Create a new instance of :class:`~sigpyproc.Header.Header` from the current instance.
         
         :param update_dict: values to overide existing header values
@@ -85,7 +85,7 @@ class Header(dict):
             new.update(update_dict)
         return Header(new)
 
-    def dedispersedHeader(self,dm):
+    def dedispersedHeader(self, dm):
         """Get a dedispersed version of the current header.
         
         :param dm: dispersion measure we are dedispersing to
@@ -100,7 +100,7 @@ class Header(dict):
                                'nbits':32})
 
     
-    def SPPHeader(self,back_compatible=True):
+    def SPPHeader(self, back_compatible=True):
         """Get Sigproc/sigpyproc format binary header.
         
         :param back_compatible: Flag for returning Sigproc compatible header (legacy code)
@@ -122,16 +122,16 @@ class Header(dict):
                 continue
 
             if conf.header_keys[key] == "str":
-                header = b"".join([header, _write_string(key,self[key])])
+                header = b"".join([header, _write_string(key, self[key])])
             elif conf.header_keys[key] == "I":
-                header = b"".join([header, _write_int(key,self[key])])
+                header = b"".join([header, _write_int(key, self[key])])
             elif conf.header_keys[key] == "d":
-                header = b"".join([header, _write_double(key,self[key])])
+                header = b"".join([header, _write_double(key, self[key])])
             elif conf.header_keys[key] == "b":
-                header = b"".join([header, _write_char(key,self[key])])
-        return b"".join([header, pack("I",len(hend)), hend])
+                header = b"".join([header, _write_char(key, self[key])])
+        return b"".join([header, pack("I", len(hend)), hend])
 
-    def makeInf(self,outfile=None):
+    def makeInf(self, outfile=None):
         """Make a presto format .inf file.
 
         :param outfile: a filename to write to. 
@@ -175,7 +175,7 @@ class Header(dict):
                 f.write(inf)
             return None
 
-    def getDMdelays(self,dm,in_samples=True):
+    def getDMdelays(self, dm, in_samples=True):
         """For a given dispersion measure get the dispersive ISM delay for each frequency channel.
 
         :param dm: dispersion measure to calculate delays for 
@@ -188,14 +188,14 @@ class Header(dict):
         :rtype: :class:`numpy.ndarray`
         """
         self.updateHeader()
-        chanFreqs  = (np.arange(self.nchans,dtype="float128")*self.foff)+self.fch1
+        chanFreqs = (np.arange(self.nchans, dtype="float128")*self.foff)+self.fch1
         delays = dm * 4.148808e3 *((chanFreqs**-2)-(self.fch1**-2))
         if in_samples:
             return (delays/self.tsamp).round().astype("int32")
         else:
             return delays
 
-    def prepOutfile(self,filename,updates=None,nbits=None,back_compatible=True):
+    def prepOutfile(self, filename, updates=None, nbits=None, back_compatible=True):
         """Prepare a file to have sigproc format data written to it.
 
         :param filename: filename of new file
@@ -215,7 +215,7 @@ class Header(dict):
         """
         self.updateHeader()
         if nbits is None: nbits = self.nbits
-        out_file = File(filename,"w+",nbits)
+        out_file = File(filename, "w+", nbits)
         new = self.newHeader(updates)
         new["nbits"] = nbits
         out_file.write(new.SPPHeader(back_compatible=back_compatible))

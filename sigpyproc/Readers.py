@@ -2,11 +2,12 @@ import os, sys
 import time
 import numpy as np
 import inspect, struct
+from tqdm import tqdm
 
 import sigpyproc.HeaderParams as conf
 from sigpyproc.Utils import File
 from sigpyproc.Header import Header
-from sigpyproc.Filterbank import Filterbank,FilterbankBlock
+from sigpyproc.Filterbank import Filterbank, FilterbankBlock
 from sigpyproc.TimeSeries import TimeSeries
 from sigpyproc.FourierSeries import FourierSeries
 
@@ -21,10 +22,10 @@ class FilReader(Filterbank):
        To be considered as a Sigproc format filterbank file the header must only 
        contain keywords found in the ``HeaderParams.header_keys`` dictionary. 
     """
-    def __init__(self,filename):
+    def __init__(self, filename):
         self.filename = filename
-        self.header = parseSigprocHeader(self.filename)
-        self._file = File(filename,"r",self.header.nbits)
+        self.header   = parseSigprocHeader(self.filename)
+        self._file    = File(filename, "r", self.header.nbits)
         self.itemsize = np.dtype(self.header.dtype).itemsize
         if self.header.nbits in [1,2,4]:
             self.bitfact = 8//self.header.nbits
@@ -33,7 +34,7 @@ class FilReader(Filterbank):
         self.sampsize = self.header.nchans*self.itemsize//self.bitfact
         super().__init__()
 
-    def readBlock(self,start,nsamps):
+    def readBlock(self, start, nsamps, as_filterbankBlock=True):
         """Read a block of filterbank data.
         
         :param start: first time sample of the block to be read
@@ -42,6 +43,9 @@ class FilReader(Filterbank):
         :param nsamps: number of samples in the block (i.e. block will be nsamps*nchans in size)
         :type nsamps: int
 
+        :param as_filterbankBlock: whether to read data as filterbankBlock or numpy array
+        :type as_filterbankBlock: bool
+
         :return: 2-D array of filterbank data
         :rtype: :class:`~sigpyproc.Filterbank.FilterbankBlock`
         """
@@ -49,11 +53,14 @@ class FilReader(Filterbank):
         data = self._file.cread(self.header.nchans*nsamps)
         nsamps_read = data.size // self.header.nchans
         data = data.reshape(nsamps_read, self.header.nchans).transpose()
-        start_mjd = self.header.mjdAfterNsamps(start)
+        start_mjd  = self.header.mjdAfterNsamps(start)
         new_header = self.header.newHeader({'tstart':start_mjd})
-        return FilterbankBlock(data,new_header)
+        if as_filterbankBlock:
+            return FilterbankBlock(data, new_header)
+        else:
+            return data
                 
-    def readPlan(self,gulp,skipback=0,start=0,nsamps=None,verbose=True):
+    def readPlan(self, gulp, skipback=0, start=0, nsamps=None, tqdm_desc=None, verbose=True):
         """A generator used to perform filterbank reading.
  
         :param gulp: number of samples in each read
@@ -92,50 +99,43 @@ class FilReader(Filterbank):
            where data always has contains ``nchans*nsamps`` points. 
 
         """
-
         if nsamps is None:
             nsamps = self.header.nsamples-start
-        if nsamps<gulp:
-            gulp = nsamps
-        tstart = time.time()
+        gulp     = min(nsamps, gulp)
         skipback = abs(skipback)
         if skipback >= gulp:
             raise ValueError("readsamps must be > skipback value")
         self._file.seek(self.header.hdrlen+start*self.sampsize)
-        nreads = nsamps//(gulp-skipback)
+        nreads   = nsamps//(gulp-skipback)
         lastread = nsamps-(nreads*(gulp-skipback))
-        if lastread<skipback:
-            nreads -= 1
+        if lastread < skipback:
+            nreads  -= 1
             lastread = nsamps-(nreads*(gulp-skipback))
-        blocks = [(ii,gulp*self.header.nchans,-skipback*self.header.nchans) for ii in range(nreads)]
-        blocks.append((nreads,lastread*self.header.nchans,0))
+        blocks = [(ii, gulp*self.header.nchans, -skipback*self.header.nchans) 
+                  for ii in range(nreads)]
+        if lastread != 0:
+            blocks.append((nreads, lastread*self.header.nchans, 0))
         
         if verbose:
-            print()
-            print("Filterbank reading plan:")
-            print("------------------------")
-            print("Called on file:       ",self.filename)      
-            print("Called by:            ",inspect.stack()[1][3])
-            print("Number of samps:      ",nsamps)
-            print("Number of reads:      ",nreads)
-            print("Nsamps per read:      ",blocks[0][1]//self.header.nchans)
-            print("Nsamps of final read: ",blocks[-1][1]//self.header.nchans)
-            print("Nsamps to skip back:  ",-1*blocks[0][2]//self.header.nchans)
-            print()
+            print(f"\nFilterbank reading plan:")
+            print(f"------------------------")
+            print(f"Called on file:       {self.filename}")      
+            print(f"Called by:            {inspect.stack()[1][3]}")
+            print(f"Number of samps:      {nsamps}")
+            print(f"Number of reads:      {nreads}")
+            print(f"Nsamps per read:      {blocks[0][1]//self.header.nchans}")
+            print(f"Nsamps of final read: {blocks[-1][1]//self.header.nchans}")
+            print(f"Nsamps to skip back:  {-1*blocks[0][2]//self.header.nchans}\n")
         
-        for ii,block,skip in blocks:
-            if verbose:
-                sys.stdout.write(f"Percentage complete: {100*ii/nreads:.2f}%\r")
-                sys.stdout.flush()
+        if tqdm_desc is None: tqdm_desc = f'{inspect.stack()[1][3]} : '
+        for ii, block, skip in tqdm(blocks, desc=tqdm_desc):           
             data = self._file.cread(block)
-            self._file.seek(skip*self.itemsize//self.bitfact,os.SEEK_CUR)
-            yield int(block/self.header.nchans),int(ii),data
-        if verbose:
-            print(f"Execution time: {time.time()-tstart:.2f} seconds     \n")
+            self._file.seek(skip*self.itemsize//self.bitfact, os.SEEK_CUR)
+            yield int(block//self.header.nchans), int(ii), data
 
 
 
-def readDat(filename,inf=None):
+def readDat(filename, inf=None):
     """Read a presto format .dat file.
 
     :param filename: the name of the file to read
@@ -159,13 +159,13 @@ def readDat(filename,inf=None):
     if not os.path.isfile(inf):
         raise IOError("No corresponding inf file found")
     header = parseInfHeader(inf)
-    f = File(filename,"r",nbits=32)
-    data = np.fromfile(f,dtype="float32")
+    f = File(filename, "r", nbits=32)
+    data = np.fromfile(f, dtype="float32")
     header["basename"] = basename
-    header["inf"] = inf
+    header["inf"]      = inf
     header["filename"] = filename
     header["nsamples"] = data.size
-    return TimeSeries(data,header)
+    return TimeSeries(data, header)
 
 def readTim(filename):
     """Read a sigproc format time series from file.
@@ -176,13 +176,13 @@ def readTim(filename):
     :return: an array containing the whole file contents
     :rtype: :class:`~sigpyproc.TimeSeries.TimeSeries`
     """
-    header   = parseSigprocHeader(filename)
-    nbits    = header["nbits"]
-    hdrlen   = header["hdrlen"]
-    f = File(filename,"r",nbits=nbits)
+    header = parseSigprocHeader(filename)
+    nbits  = header["nbits"]
+    hdrlen = header["hdrlen"]
+    f = File(filename, "r", nbits=nbits)
     f.seek(hdrlen)
-    data = np.fromfile(f,dtype=header["dtype"]).astype("float32")
-    return TimeSeries(data,header)
+    data = np.fromfile(f, dtype=header["dtype"]).astype("float32")
+    return TimeSeries(data, header)
 
 def readFFT(filename,inf=None):
     """Read a presto .fft format file.
@@ -207,12 +207,12 @@ def readFFT(filename,inf=None):
     if not os.path.isfile(inf):
         raise IOError("No corresponding inf file found")
     header = parseInfHeader(inf)
-    f = File(filename,"r",nbits=32)
-    data = np.fromfile(f,dtype="float32")
+    f = File(filename, "r", nbits=32)
+    data = np.fromfile(f, dtype="float32")
     header["basename"] = basename
-    header["inf"] = inf
+    header["inf"]      = inf
     header["filename"] = filename
-    return FourierSeries(data,header)
+    return FourierSeries(data, header)
 
 def readSpec(filename):
     """Read a sigpyproc format spec file.
@@ -230,11 +230,11 @@ def readSpec(filename):
        a new header parser for that file format.
     """
     header = parseSigprocHeader(filename)
-    hdrlen   = header["hdrlen"]
-    f = File(filename,"r",nbits=32)
+    hdrlen = header["hdrlen"]
+    f = File(filename, "r", nbits=32)
     f.seek(hdrlen)
-    data = np.fromfile(f,dtype="complex32")
-    return FourierSeries(data,header)
+    data = np.fromfile(f, dtype="complex32")
+    return FourierSeries(data, header)
 
 def parseInfHeader(filename):
     """Parse the metadata from a presto ``.inf`` file.
@@ -245,10 +245,10 @@ def parseInfHeader(filename):
     :return: observational metadata
     :rtype: :class:`~sigpyproc.Header.Header`
     """
-    f = open(filename,"r")
     header = {}
-    lines = f.readlines()
-    f.close()
+    with open(filename, "r") as f:
+        lines = f.readlines()
+
     for line in lines:
         key = line.split("=")[0].strip()
         val = line.split("=")[-1].strip()
@@ -278,17 +278,17 @@ def parseSigprocHeader(filename):
     :return: observational metadata
     :rtype: :class:`~sigpyproc.Header.Header`
     """
-    f = open(filename,"rb")
+    f = open(filename, "rb")
     header = {}
     try:
-        keylen = struct.unpack("I",f.read(4))[0]
+        keylen = struct.unpack("I", f.read(4))[0]
     except struct.error:
         raise IOError("File Header is not in sigproc format... Is file empty?")
     key = f.read(keylen)
     if key != b"HEADER_START":
         raise IOError("File Header is not in sigproc format")
     while True:
-        keylen = struct.unpack("I",f.read(4))[0]
+        keylen = struct.unpack("I", f.read(4))[0]
         key = f.read(keylen)
       
         # convert bytestring to unicode (Python 3)
@@ -312,7 +312,7 @@ def parseSigprocHeader(filename):
         if key == "HEADER_END":
             break
 
-    header["hdrlen"] = f.tell()
+    header["hdrlen"]   = f.tell()
     f.seek(0,2)
     header["filelen"]  = f.tell()
     header["nbytes"]   = header["filelen"]-header["hdrlen"]
@@ -324,15 +324,15 @@ def parseSigprocHeader(filename):
     return Header(header) 
         
 def _read_char(f):
-    return struct.unpack("b",f.read(1))[0]
+    return struct.unpack("b", f.read(1))[0]
 
 def _read_string(f):
-    strlen = struct.unpack("I",f.read(4))[0]
+    strlen = struct.unpack("I", f.read(4))[0]
     return f.read(strlen).decode()
 
 def _read_int(f):
-    return struct.unpack("I",f.read(4))[0]
+    return struct.unpack("I", f.read(4))[0]
 
 def _read_double(f):
-    return struct.unpack("d",f.read(8))[0]
+    return struct.unpack("d", f.read(8))[0]
 
