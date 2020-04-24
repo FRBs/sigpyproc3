@@ -296,8 +296,10 @@ class Filterbank(object):
             filename = f"{self.header.basename}_f{ffactor:d}_t{tfactor:d}.fil"
         if not self.header.nchans%ffactor == 0:
             raise ValueError("Bad frequency factor given")
-        if not gulp%tfactor == 0:
-            raise ValueError("Gulp must be a multiple of tfactor")
+            
+        # Gulp must be a multiple of tfactor
+        gulp = int(np.ceil(gulp/tfactor) * tfactor)
+            
         out_file = self.header.prepOutfile(filename,
                                    {"tsamp":self.header.tsamp*tfactor,
                                     "nchans":self.header.nchans//ffactor,
