@@ -315,7 +315,7 @@ class Filterbank(object):
                                 C.c_int(ffactor),
                                 C.c_int(self.header.nchans),
                                 C.c_int(nsamps))
-            out_file.cwrite(write_ar)
+            out_file.cwrite(write_ar[:nsamps*self.header.nchans//ffactor//tfactor])
         return out_file.name
 
     def fold(self, period, dm, accel=0, nbins=50, nints=32, nbands=32, gulp=10000, **kwargs):
@@ -626,7 +626,7 @@ class Filterbank(object):
             filename = f"{self.header.basename}_bpcorr.fil"
 
         if self.chan_stdevs is None:
-            self.getStats(gulp=gulp)
+            self.getStats(gulp=gulp, **kwargs)
 
         out_ar   = np.empty(self.header.nsamples*self.header.nchans, dtype=self.header.dtype)
         out_file = self.header.prepOutfile(filename, nbits=self.header.nbits,
@@ -669,7 +669,7 @@ class Filterbank(object):
         if filename is None:
             filename = f"{self.header.basename}_noZeroDM.fil"
 
-        bpass   = self.bandpass(gulp=gulp)
+        bpass   = self.bandpass(gulp=gulp, **kwargs)
         chanwts = bpass/bpass.sum()
         out_ar  = np.empty(self.header.nsamples*self.header.nchans, dtype=self.header.dtype)
         out_file = self.header.prepOutfile(filename, nbits=self.header.nbits,
