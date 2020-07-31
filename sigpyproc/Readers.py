@@ -59,6 +59,76 @@ class FilReader(Filterbank):
             return FilterbankBlock(data, new_header)
         else:
             return data
+
+    def readDedispersedBlock(self, start, nsamps, dm, as_filterbankBlock=True, small_reads = True):
+        """Read a block of dedispersed filterbank data, best used in cases where
+            I/O time dominates reading a block of data.
+        
+        :param start: first time sample of the block to be read
+        :type start: int
+
+        :param nsamps: number of samples in the block (i.e. block will be nsamps*nchans in size)
+        :type nsamps: int
+
+        :param dm: dispersion measure to dedisperse at
+        :type dm: float
+
+        :param as_filterbankBlock: whether to read data as filterbankBlock or numpy array
+        :type as_filterbankBlock: bool
+
+        :param small_reads: if the datum size is greater than 1 byte, only read the data needed
+            instead of every frequency of every sample
+        :type small_reads: bool
+
+        :return: 2-D array of filterbank data
+        :rtype: :class:`~sigpyproc.Filterbank.FilterbankBlock`
+        """
+        data = np.zeros((self.header.nchans, nsamps), dtype = self._file.dtype)
+        min_sample = start + self.header.getDMdelays(dm)
+        max_sample = min_sample + nsamps
+        curr_sample = np.zeros(self.header.nchans, dtype = int)
+
+
+        start_mjd  = self.header.mjdAfterNsamps(start)
+        new_header = self.header.newHeader({'tstart':start_mjd})
+
+        lowest_chan, highest_chan, sample_offset = (0, 0, start) 
+        with tqdm(total = nsamps * self.header.nchans) as progress:
+            while curr_sample[-1] < nsamps:
+                relevant_channels = np.argwhere(np.logical_and(max_sample > sample_offset, min_sample <= sample_offset)).flatten()
+                lowest_chan = np.min(relevant_channels)
+                highest_chan = np.max(relevant_channels)
+                sampled_chans = np.arange(lowest_chan, highest_chan + 1, dtype = int)
+                read_length = sampled_chans.size
+
+                if self.bitfact == 1 and small_reads:
+                    next_offset = sample_offset * self.sampsize + lowest_chan * self.itemsize
+                    self._file.seek(self.header.hdrlen + next_offset)
+                   
+                    data[sampled_chans, curr_sample[sampled_chans]] = self._file.cread(read_length)
+               
+                else:
+                    next_offset = sample_offset * self.sampsize
+                    self._file.seek(self.header.hdrlen + next_offset)
+
+                    sample = self._file.cread(self.sampsize)
+                    data[sampled_chans, curr_sample[sampled_chans]] = sample[sampled_chans]
+
+                curr_sample[sampled_chans] += 1
+
+                if curr_sample[highest_chan] > nsamps:
+                    sample_offset = min_sample[highest_chan + 1]
+                else:
+                    sample_offset += 1
+
+                progress.update(read_length)
+
+        if as_filterbankBlock:
+            data = FilterbankBlock(data, new_header)
+            data.dm = dm
+            return data
+        else:
+            return data
                 
     def readPlan(self, gulp, skipback=0, start=0, nsamps=None, tqdm_desc=None, verbose=True):
         """A generator used to perform filterbank reading.
