@@ -782,11 +782,15 @@ class FilterbankBlock(np.ndarray):
     def get_bandpass(self):
         return self.sum(axis=1)
     
-    def dedisperse(self,dm):
+    def dedisperse(self,dm, only_valid_samples = False):
         """Dedisperse the block.
 
         :param dm: dm to dedisperse to
         :type dm: float
+
+        :param only_valid_samples: return a FilterbankBlock with only time samples that 
+            contain the full bandwidth
+        : type only_valid_samples: bool
 
         :return: a dedispersed version of the block
         :rtype: :class:`~sigpyproc.Filterbank.FilterbankBlock`
@@ -796,10 +800,21 @@ class FilterbankBlock(np.ndarray):
                 Frequency dependent delays are applied as rotations to each
                 channel in the block.
         """
-        new_ar = self.copy()
         delays = self.header.getDMdelays(dm)
-        for ii in range(self.shape[0]):
-            new_ar[ii] = rollArray(self[ii], delays[ii]%self.shape[1], 0)
+        if not only_valid_samples:
+            new_ar = self.copy()
+            for ii in range(self.shape[0]):
+                new_ar[ii] = rollArray(self[ii], delays[ii]%self.shape[1], 0)
+        else:
+            if self.shape[1] < delays[-1]:
+                raise ValueError(f"Insufficient time samples to dedisperse to {dm} (requires at least {delays[-1]} samples, given {self.shape[1]}).")
+            new_ar = FilterbankBlock(np.zeros((self.header.nchans, self.shape[1] - delays[-1]), dtype = self.dtype), self.header)
+            end_samples = delays + new_ar.shape[1]
+
+            slices = [np.arange(delay, end_sample) for delay, end_sample in zip(delays, end_samples)]
+            for idx, timeSlice in enumerate(slices):
+                new_ar[idx, :] = self[idx, timeSlice] 
+            
         new_ar.dm = dm
         return new_ar
         
