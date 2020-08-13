@@ -2,7 +2,7 @@
 
 `sigpyproc` is a pulsar and FRB data analysis library for python.
 
-[![Build Status](https://travis-ci.com/pravirkr/sigpyproc3.svg?branch=master)](https://travis-ci.com/pravirkr/sigpyproc3)
+[![GitHub CI](https://github.com/FRBs/sigpyproc3/workflows/GitHub%20CI/badge.svg)](https://github.com/FRBs/sigpyproc3/actions)
 
 
 Usage
@@ -29,7 +29,7 @@ You need Python 3.6 or later to run sigpyproc.
 Once you have all the requirements installed, you can install this via pip:
 
 ```
-pip install git+https://github.com/pravirkr/sigpyproc3
+pip install git+https://github.com/FRBs/sigpyproc3
 ```
 
 Or, download / clone this repository, and then run
