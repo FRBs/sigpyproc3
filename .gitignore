@@ -54,6 +54,8 @@ pytestdebug.log
 
 # Sphinx documentation
 docs/_build/
+docs/_static/
+docs/_templates/
 doc/_build/
 
 # Jupyter Notebook

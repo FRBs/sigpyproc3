@@ -170,7 +170,7 @@ def editInplace(inst, key, value):
        header that was previously in the file.
     """
     temp = File(inst.header.filename, "r+")
-    if key is "source_name":
+    if key == "source_name":
         oldlen = len(inst.header.source_name)
         value  = value[:oldlen]+" "*(oldlen-len(value))
     inst.header[key] = value
