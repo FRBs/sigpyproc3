@@ -4,6 +4,7 @@ from os.path import splitext
 from struct import pack
 from sigpyproc.Utils import File
 
+
 class Header(dict):
     """Container object to handle observation metadata.
 

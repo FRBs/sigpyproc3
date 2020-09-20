@@ -30,10 +30,13 @@ jobs:
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
     - name: Install it
       run: |
-        pip install .
+        python setup.py install
     - name: Simple test
       run: |
         python examples/dedisperse.py examples/tutorial.fil 300
+    - name: Copy shared libs 
+      run: |
+        find build/ -type f -name "*.so" -exec cp {} . \;
     - name: Lint with flake8
       run: |
         pip install flake8 flake8-import-order

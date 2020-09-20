@@ -1,6 +1,7 @@
-from setuptools import setup, Extension #find_packages
+from setuptools import Extension, setup  # find_packages
 
 __version__ = '0.1.1'
+
 
 def describe(filename):
     with open(filename, "r") as f:
@@ -62,14 +63,13 @@ install_requires = [
 ]
 
 setup(name='sigpyproc',
-        version=__version__,
-        description='Python pulsar data toolbox',
-        install_requires = install_requires,
-        python_requires = '>=3.6',
-        author='Ewan Barr',
-        author_email='ewan.d.barr@googlemail.com',
-        long_description=describe('README.md'),
-        ext_modules=[ext0, ext1, ext2, ext3, ext4, ext5],
-        packages=['sigpyproc'],
-        zip_safe=False
-        )
+      version=__version__,
+      description='Python pulsar data toolbox',
+      install_requires=install_requires,
+      python_requires='>=3.6',
+      author='Ewan Barr',
+      author_email='ewan.d.barr@googlemail.com',
+      long_description=describe('README.md'),
+      ext_modules=[ext0, ext1, ext2, ext3, ext4, ext5],
+      packages=['sigpyproc'],
+      zip_safe=False)
