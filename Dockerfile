@@ -18,18 +18,15 @@ ENV TERM xterm
 ######
 # Do docker apt-installs
 RUN docker-apt-install build-essential python-setuptools python-pip python-tk
-RUN docker-apt-install git
-RUN docker-apt-install curl wget
-RUN docker-apt-install make cmake
+RUN docker-apt-install git make
 RUN docker-apt-install fftw3 fftw3-dev pkg-config
 RUN docker-apt-install libomp-dev
 
 #####
 # Pip installation of python packages
-# Q. Would using CONDA be better?
 RUN pip install --upgrade pip
 RUN pip install --upgrade setuptools
-RUN pip install numpy matplotlib ipython
+RUN pip install numpy matplotlib ipython tqdm
 
 # Finally, install sigpyproc!
 COPY . .

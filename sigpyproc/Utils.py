@@ -4,8 +4,8 @@ import numpy as np
 import warnings
 from numpy.ctypeslib import as_ctypes as as_c
 from sigpyproc.HeaderParams import nbits_to_dtype
+from sigpyproc.ctype_helper import load_lib
 
-from .ctype_helper import load_lib
 lib  = load_lib("libSigPyProc.so")
 
 class File(io.FileIO):

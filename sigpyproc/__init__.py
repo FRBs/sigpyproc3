@@ -1,1 +1,1 @@
-from .Readers import FilReader
+from sigpyproc.Readers import FilReader

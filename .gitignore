@@ -1,43 +1,73 @@
+### Python ###
+# Byte-compiled / optimized / DLL files
+__pycache__/
 *.py[cod]
-*~
+*$py.class
 
 # C extensions
 *.so
 *.o
 
-# Packages
-*.egg
-*.egg-info
-dist
-build
-eggs
-parts
-bin
-var
-sdist
-develop-eggs
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
 .installed.cfg
-lib
-lib64
+*.egg
+MANIFEST
 
 # Installer logs
 pip-log.txt
+pip-delete-this-directory.txt
 
 # Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
 .coverage
-.tox
+.coverage.*
+.cache
 nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+pytestdebug.log
 
 # Translations
 *.mo
+*.pot
+
+# Sphinx documentation
+docs/_build/
+doc/_build/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
 
 # Mr Developer
 .mr.developer.cfg
 .project
 .pydevproject
-
-#sigpyproc specific
-working_dir/
-Docs/
-build/
-lib/

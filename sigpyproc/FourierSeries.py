@@ -2,8 +2,10 @@ import numpy as np
 import ctypes as C
 from numpy.ctypeslib import as_ctypes as as_c
 from sigpyproc.Utils import File
+from sigpyproc import TimeSeries
+from sigpyproc import FoldedData
 
-from .ctype_helper import load_lib
+from sigpyproc.ctype_helper import load_lib
 lib  = load_lib("libSigPyProcSpec.so")
 
 
@@ -176,7 +178,7 @@ class FourierSeries(np.ndarray):
         lib.ifft(as_c(self),
                  as_c(tim_ar),
                  C.c_int(self.size-2))
-        return TimeSeries(tim_ar, self.header.newHeader())
+        return TimeSeries.TimeSeries(tim_ar, self.header.newHeader())
 
     def rednoise(self, startwidth=6, endwidth=100, endfreq=1.0):
         """Perform rednoise removal via Presto style method.
@@ -245,7 +247,7 @@ class FourierSeries(np.ndarray):
         imag_ids = real_ids+1
         harms   = self[real_ids] + 1j*self[imag_ids]
         harm_ar = np.hstack((harms, np.conj(harms[1:][::-1])))
-        return Profile(abs(np.fft.ifft(harm_ar)))
+        return FoldedData.Profile(abs(np.fft.ifft(harm_ar)))
         
     def toFile(self, filename=None):
         """Write spectrum to file in sigpyproc format.
@@ -276,6 +278,3 @@ class FourierSeries(np.ndarray):
         fftfile = File(f"{basename}.fft", "w+")
         self.tofile(fftfile)
         return f"{basename}.fft", f"{basename}.inf"
-
-from sigpyproc.TimeSeries import TimeSeries
-from sigpyproc.FoldedData import Profile

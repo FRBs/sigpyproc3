@@ -5,8 +5,7 @@ from numpy.ctypeslib import as_ctypes as as_c
 from sigpyproc.Utils import rollArray
 from sigpyproc.FoldedData import FoldedData
 from sigpyproc.TimeSeries import TimeSeries
-
-from .ctype_helper import load_lib
+from sigpyproc.ctype_helper import load_lib
 
 class Filterbank(object):
     """Class exporting methods for the manipulation of frequency-major

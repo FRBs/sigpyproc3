@@ -1,8 +1,10 @@
 import numpy as np
 import ctypes as C
 from numpy.ctypeslib import as_ctypes as as_c
+from sigpyproc import FoldedData
+from sigpyproc import FourierSeries
 
-from .ctype_helper import load_lib
+from sigpyproc.ctype_helper import load_lib
 lib = load_lib("libSigPyProcTim.so")
 
 class TimeSeries(np.ndarray):
@@ -57,7 +59,7 @@ class TimeSeries(np.ndarray):
                     C.c_int(nints))
         fold_ar /= count_ar
         fold_ar  = fold_ar.reshape(nints, 1, nbins)
-        return FoldedData(fold_ar,
+        return FoldedData.FoldedData(fold_ar,
                           self.header.newHeader(),
                           period,
                           self.header.refdm,
@@ -77,7 +79,7 @@ class TimeSeries(np.ndarray):
         lib.rfft(as_c(self),
                  as_c(fft_ar),
                  fftsize)
-        return FourierSeries(fft_ar, self.header.newHeader())
+        return FourierSeries.FourierSeries(fft_ar, self.header.newHeader())
 
     def runningMean(self, window=10001):
         """Filter time series with a running mean. 
@@ -254,7 +256,3 @@ class TimeSeries(np.ndarray):
             except:
                 raise Exception("Could not convert argument to TimeSeries instance")
         return (self.rFFT()*other.rFFT()).iFFT()
-            
-
-from sigpyproc.FoldedData import FoldedData
-from sigpyproc.FourierSeries import FourierSeries
