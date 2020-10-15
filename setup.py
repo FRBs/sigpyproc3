@@ -24,9 +24,9 @@ class get_pybind_include(object):
 ext_modules = [
     Extension(
         'sigpyproc.libSigPyProc',
-        ['src/libSigPyProc.cpp'],
+        ['c_src/libSigPyProc.cpp'],
         include_dirs=[
-            'src/',
+            'c_src/',
             # Path to pybind11 headers
             get_pybind_include(),
             get_pybind_include(user=True)
@@ -35,9 +35,9 @@ ext_modules = [
     ),
     Extension(
         'sigpyproc.libSigPyProcTim',
-        ['src/libSigPyProcTim.cpp'],
+        ['c_src/libSigPyProcTim.cpp'],
         include_dirs=[
-            'src/',
+            'c_src/',
             # Path to pybind11 headers
             get_pybind_include(),
             get_pybind_include(user=True)
@@ -46,9 +46,9 @@ ext_modules = [
     ),
     Extension(
         'sigpyproc.libSigPyProcSpec',
-        ['src/libSigPyProcSpec.cpp'],
+        ['c_src/libSigPyProcSpec.cpp'],
         include_dirs=[
-            'src/',
+            'c_src/',
             # Path to pybind11 headers
             get_pybind_include(),
             get_pybind_include(user=True)

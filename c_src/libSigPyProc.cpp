@@ -616,6 +616,11 @@ void removeZeroDM(py::array_t<T> inarray, py::array_t<T> outarray,
 PYBIND11_MODULE(libSigPyProc, m) {
     m.doc() = "libSigPyProc functions";
 
+    m.def("_omp_get_max_threads", 
+        []() { return omp_get_max_threads(); });
+    m.def("_omp_set_num_threads", 
+        [](int nthread) { omp_set_num_threads(nthread); });
+
     m.def("unpack", &unpack, 
         "Unpack 1, 2 and 4 bit data into an 8-bit numpy array",
         py::arg("inarray"), py::arg("nbits"));
