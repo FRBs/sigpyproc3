@@ -1,6 +1,7 @@
 #include <cmath>
 #include <random>
 #include <vector>
+#include <cstdlib>
 
 
 unsigned char getRand(float mean, float std) {
@@ -106,7 +107,7 @@ inline int maxSortUp(Mediator* m, int i) {
 // mallocs single block of memory, caller must free.
 Mediator* MediatorNew(int nItems) {
     int size    = sizeof(Mediator) + nItems * (sizeof(Item) + sizeof(int) * 2);
-    Mediator* m = malloc(size);
+    Mediator* m = (Mediator*)std::malloc(size);
     m->data     = (Item*)(m + 1);
     m->pos      = (int*)(m->data + nItems);
     m->heap  = m->pos + nItems + (nItems / 2);  // points to middle of storage.
@@ -173,7 +174,7 @@ Item MediatorMedian(Mediator* m) {
 
 
 
-#define ELEM_SWAP(a,b) { register float t=(a);(a)=(b);(b)=t; }
+#define ELEM_SWAP(a,b) { float t=(a);(a)=(b);(b)=t; }
 
 float median(float arr[], int n) {
     int low, high;
@@ -234,36 +235,3 @@ float median(float arr[], int n) {
 }
 #undef ELEM_SWAP
 
-
-
-
-
-/**
-* Experimental
-* Find the median value of a std::vector (code from armadillo)
-*/
-template<class T>
-T median_vector(std::vector<T>& X){
-	const uword n_elem = uword(X.size());
-  	const uword half   = n_elem/2;
-  
-  	typename std::vector<T>::iterator first    = X.begin();
-  	typename std::vector<T>::iterator nth      = first + half;
-  	typename std::vector<T>::iterator pastlast = X.end();
-  
-  	std::nth_element(first, nth, pastlast);
-  
-  	if((n_elem % 2) == 0){
-  		// even number of elements
-    	typename std::vector<T>::iterator start   = X.begin();
-    	typename std::vector<T>::iterator pastend = start + half;
-    
-    	const T val1 = (*nth);
-    	const T val2 = (*(std::max_element(start, pastend)));
-    
-    	return (val1 + val2) / 2;
-    } else {
-    	// odd number of elements
-    	return (*nth);
-    }
-}

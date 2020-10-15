@@ -129,27 +129,27 @@ py::array_t<uint8_t> pack(py::array_t<uint8_t> inarray, int nbits) {
         case 1:
             for (int ii = 0; ii < nbytes / bitfact; ii++) {
                 pos = ii * 8;
-                val = (buffer[pos + 7] << 7) | (buffer[pos + 6] << 6) |
-                      (buffer[pos + 5] << 5) | (buffer[pos + 4] << 4) |
-                      (buffer[pos + 3] << 3) | (buffer[pos + 2] << 2) |
-                      (buffer[pos + 1] << 1) | buffer[pos + 0];
-                outbuffer[ii] = val;
+                val = (indata[pos + 7] << 7) | (indata[pos + 6] << 6) |
+                      (indata[pos + 5] << 5) | (indata[pos + 4] << 4) |
+                      (indata[pos + 3] << 3) | (indata[pos + 2] << 2) |
+                      (indata[pos + 1] << 1) | indata[pos + 0];
+                outdata[ii] = val;
             }
             break;
         case 2:
             for (int ii = 0; ii < nbytes / bitfact; ii++) {
                 pos = ii * 4;
-                val = (buffer[pos] << 6) | (buffer[pos + 1] << 4) |
-                      (buffer[pos + 2] << 2) | buffer[pos + 3];
-                outbuffer[ii] = val;
+                val = (indata[pos] << 6) | (indata[pos + 1] << 4) |
+                      (indata[pos + 2] << 2) | indata[pos + 3];
+                outdata[ii] = val;
             }
             break;
         case 4:
             for (int ii = 0; ii < nbytes / bitfact; ii++) {
                 pos = ii * 2;
-                val = (buffer[pos] << 4) | buffer[pos + 1];
+                val = (indata[pos] << 4) | indata[pos + 1];
 
-                outbuffer[ii] = val;
+                outdata[ii] = val;
             }
             break;
     }
@@ -212,7 +212,7 @@ void to8bit(py::array_t<float> inarray, py::array_t<uint8_t> outarray,
                     plusbuf = plus.request(), flagMaxbuf = flagMax.request(),
                     flagMinbuf = flagMin.request();
 
-    T*       indata      = (T*)inbuf.ptr;
+    float*   indata      = (float*)inbuf.ptr;
     uint8_t* outdata     = (uint8_t*)outbuf.ptr;
     uint8_t* flag_arr    = (uint8_t*)flagbuf.ptr;
     float*   fact_arr    = (float*)factbuf.ptr;
@@ -239,6 +239,7 @@ void to8bit(py::array_t<float> inarray, py::array_t<uint8_t> outarray,
 /**
  * TODO: This code is very slow compared to python slicing.
  */
+template <class T>
 void splitToBands(py::array_t<T> inarray, py::array_t<T> outarray, int nchans,
                   int nsamps, int nsub, int chanpersub, int chanstart) {
     py::buffer_info inbuf = inarray.request(), outbuf = outarray.request();
@@ -464,7 +465,7 @@ void getStats(py::array_t<T> inarray, py::array_t<float> M1,
 
     T val;
     if (startflag == 0) {
-        for (jj = 0; jj < nchans; jj++) {
+        for (int jj = 0; jj < nchans; jj++) {
             max_arr[jj] = indata[jj];
             min_arr[jj] = indata[jj];
         }
@@ -474,8 +475,8 @@ void getStats(py::array_t<T> inarray, py::array_t<float> M1,
         double delta, delta_n, delta_n2, term1;
         for (int ii = 0; ii < nsamps; ii++) {
             val = indata[(nchans * ii) + jj];
-            count[jj] += 1;
-            long long n = count[jj];
+            count_arr[jj] += 1;
+            long long n = count_arr[jj];
 
             delta    = val - M1_arr[jj];
             delta_n  = delta / n;
@@ -599,7 +600,7 @@ void removeZeroDM(py::array_t<T> inarray, py::array_t<T> outarray,
         for (int jj = 0; jj < nchans; jj++) {
             zerodm += indata[(nchans * ii) + jj];
         }
-        for (jj = 0; jj < nchans; jj++) {
+        for (int jj = 0; jj < nchans; jj++) {
             if (std::is_same<T, uint8_t*>::value) {
                 zerodm = zerodm + 0.5;
             }
@@ -608,4 +609,61 @@ void removeZeroDM(py::array_t<T> inarray, py::array_t<T> outarray,
                     bpass_arr[jj]);
         }
     }
+}
+
+
+
+PYBIND11_MODULE(libSigPyProc, m) {
+    m.doc() = "libSigPyProc functions";
+
+    m.def("unpack", &unpack, 
+        "Unpack 1, 2 and 4 bit data into an 8-bit numpy array",
+        py::arg("inarray"), py::arg("nbits"));
+
+    m.def("unpackInPlace", &unpackInPlace, 
+        "Unpack 1, 2 and 4 bit data into 8-bit in the same numpy array",
+        py::arg("inarray"), py::arg("nbits"));
+    
+    m.def("pack", &pack, 
+        "Pack 1, 2 and 4 bit data into an 8-bit numpy array",
+        py::arg("inarray"), py::arg("nbits"));
+
+    m.def("packInPlace", &packInPlace, 
+        "Pack 1, 2 and 4 bit data into 8-bit in the same numpy array",
+        py::arg("inarray"), py::arg("nbits"));
+
+    m.def("to8bit", &to8bit, 
+        "Convert 1, 2 and 4 bit data to 8-bit",
+        py::arg("inarray"), py::arg("outarray"), py::arg("flag"), 
+        py::arg("fact"), py::arg("plus"), py::arg("flagMax"), 
+        py::arg("flagMin"), py::arg("nsamps"), py::arg("nchans"));
+
+    m.def("splitToBands", &splitToBands<float>);
+    m.def("splitToBands", &splitToBands<uint8_t>);
+    m.def("getTim", &getTim<float>);
+    m.def("getTim", &getTim<uint8_t>);
+    m.def("getBpass", &getBpass<float>);
+    m.def("getBpass", &getBpass<uint8_t>);
+    m.def("dedisperse", &dedisperse<float>);
+    m.def("dedisperse", &dedisperse<uint8_t>);
+    m.def("maskChannels", &maskChannels<float>);
+    m.def("maskChannels", &maskChannels<uint8_t>);
+    m.def("subband", &subband<float>);
+    m.def("subband", &subband<uint8_t>);
+    m.def("getChan", &getChan<float>);
+    m.def("getChan", &getChan<uint8_t>);
+    m.def("splitToChans", &splitToChans<float>);
+    m.def("splitToChans", &splitToChans<uint8_t>);
+    m.def("invertFreq", &invertFreq<float>);
+    m.def("invertFreq", &invertFreq<uint8_t>);
+    m.def("foldFil", &foldFil<float>);
+    m.def("foldFil", &foldFil<uint8_t>);
+    m.def("getStats", &getStats<float>);
+    m.def("getStats", &getStats<uint8_t>);
+    m.def("removeBandpass", &removeBandpass<float>);
+    m.def("removeBandpass", &removeBandpass<uint8_t>);
+    m.def("downsample", &downsample<float>);
+    m.def("downsample", &downsample<uint8_t>);
+    m.def("removeZeroDM", &removeZeroDM<float>);
+    m.def("removeZeroDM", &removeZeroDM<uint8_t>);
 }

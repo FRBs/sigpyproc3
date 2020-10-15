@@ -3,7 +3,12 @@
 #include <fftw3.h>
 #include <complex.h>
 
+#include <pybind11/pybind11.h>
+#include <pybind11/numpy.h>
+
 #include <libUtils.hpp>
+
+namespace py = pybind11;
 
 void ccfft(py::array_t<float> inarray, py::array_t<float> outarray, int size) {
     py::buffer_info inbuf = inarray.request(), outbuf = outarray.request();
@@ -210,7 +215,7 @@ void sumHarms(py::array_t<float> specarray, py::array_t<float> sumarray,
 void multiply_fs(py::array_t<float> inarray, py::array_t<float> otherarray,
     py::array_t<float> outarray, int size) {
     py::buffer_info inbuf = inarray.request(), outbuf = outarray.request();
-    py::buffer_info otherbuf = otherarray.request()
+    py::buffer_info otherbuf = otherarray.request();
 
     float* indata    = (float*)inbuf.ptr;
     float* outdata   = (float*)outbuf.ptr;
@@ -226,4 +231,19 @@ void multiply_fs(py::array_t<float> inarray, py::array_t<float> otherarray,
         outdata[ii]     = sr * orr -si * oi;
         outdata[ii + 1] = sr * oi + si * orr ;
     }
+}
+
+
+
+PYBIND11_MODULE(libSigPyProcSpec, m) {
+    m.doc() = "libSigPyProcSpec functions";
+
+    m.def("ccfft", &ccfft);
+    m.def("ifft", &ifft);
+    m.def("formSpecInterpolated", &formSpecInterpolated);
+    m.def("formSpec", &formSpec);
+    m.def("rednoise", &rednoise);
+    m.def("conjugate", &conjugate);
+    m.def("sumHarms", &sumHarms);
+    m.def("multiply_fs", &multiply_fs);
 }

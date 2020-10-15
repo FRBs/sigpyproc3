@@ -3,15 +3,25 @@
 #include <fftw3.h>
 #include <complex.h>
 
+#include <pybind11/pybind11.h>
+#include <pybind11/numpy.h>
+
 #include <libUtils.hpp>
 
+namespace py = pybind11;
 
-void runningMedian(float* inbuffer, float* outbuffer, int window, int nsamps) {
-    int       ii;
+
+void runningMedian(py::array_t<float> inarray, py::array_t<float> outarray,
+    int window, int nsamps) {
+    py::buffer_info inbuf = inarray.request(), outbuf = outarray.request();
+
+    float* indata  = (float*)inbuf.ptr;
+    float* outdata = (float*)outbuf.ptr;
+
     Mediator* m = MediatorNew(window);
-    for (ii = 0; ii < nsamps; ii++) {
-        MediatorInsert(m, inbuffer[ii]);
-        outbuffer[ii] = inbuffer[ii] - (float)MediatorMedian(m);
+    for (int ii = 0; ii < nsamps; ii++) {
+        MediatorInsert(m, indata[ii]);
+        outdata[ii] = indata[ii] - (float)MediatorMedian(m);
     }
 }
 
@@ -86,7 +96,7 @@ void foldTim(py::array_t<float> inarray, py::array_t<double> foldarray,
     int32_t* count_arr = (int32_t*)countbuf.ptr;
 
     int   phasebin, subbint, factor1;
-    float tobs, factor2, tj;
+    float tobs, tj;
     float c = 299792458.0;
 
     tobs    = nsamps * tsamp;
@@ -135,4 +145,15 @@ void resample(py::array_t<float> inarray, py::array_t<float> outarray,
             outdata[index - 1] = indata[ii];
         last_bin = index;
     }
+}
+
+PYBIND11_MODULE(libSigPyProcTim, m) {
+    m.doc() = "libSigPyProcTim functions";
+
+    m.def("runningMedian", &runningMedian);
+    m.def("runningMean", &runningMean);
+    m.def("runBoxcar", &runBoxcar);
+    m.def("foldTim", &foldTim);
+    m.def("rfft", &rfft);
+    m.def("resample", &resample);
 }
