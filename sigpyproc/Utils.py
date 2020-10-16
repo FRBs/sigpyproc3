@@ -48,11 +48,7 @@ class File(io.FileIO):
         count = int(nunits*self.bitfact)
         data  = np.fromfile(self, count=count, dtype=self.dtype)
         if self.unpack:
-            unpacked = np.empty(nunits, dtype=self.dtype)
-            lib.unpack(data,
-                       unpacked,
-                       self.nbits,
-                       data.size)
+            unpacked = lib.unpack(data, self.nbits)
             return unpacked
         else:
             return data
@@ -83,11 +79,7 @@ class File(io.FileIO):
         #is, say 2-bit, then the output will be garbage, hence the casting above is
         #necessary.
         if self.unpack:
-            packed = np.empty(int(ar.size*self.bitfact), dtype=self.dtype)
-            lib.pack(ar,
-                    packed,
-                     self.nbits,
-                     ar.size)
+            packed = lib.pack(ar, self.nbits)
             packed.tofile(self)
         else:
             ar.tofile(self)
