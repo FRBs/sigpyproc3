@@ -291,7 +291,7 @@ class Filterbank(object):
         write_ar   = np.zeros(gulp*self.header.nchans//ffactor//tfactor, dtype=self.header.dtype)
         for nsamps, ii, data in self.readPlan(gulp, **kwargs):
             lib.downsample(data,
-                                write_ar_c,
+                                write_ar,
                                 tfactor,
                                 ffactor,
                                 self.header.nchans,
@@ -381,7 +381,7 @@ class Filterbank(object):
         tim_ar   = np.empty(self.header.nsamples, dtype="float32")
         for nsamps, ii, data in self.readPlan(gulp, **kwargs):
             lib.getChan(data,
-                             tim_ar_c,
+                             tim_ar,
                              chan,
                              self.header.nchans,
                              nsamps,
@@ -670,7 +670,6 @@ class FilterbankBlock(np.ndarray):
     def __new__(cls, input_array, header):
         obj = input_array.astype("float32").view(cls)
         obj.header = header
-        obj.lib = load_lib("libSigPyProc32.so")
         obj.dm = 0.0
         return obj
     
@@ -678,7 +677,6 @@ class FilterbankBlock(np.ndarray):
         if obj is None: return
         if hasattr(obj,"header"):
             self.header = obj.header
-        self.lib = load_lib("libSigPyProc32.so")
         self.dm = getattr(obj, "dm", 0.0)
         
     def downsample(self, tfactor=1, ffactor=1):

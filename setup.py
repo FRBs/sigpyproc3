@@ -133,22 +133,10 @@ class BuildExt(build_ext):
         build_ext.build_extensions(self)
 
 
-install_requires = [
-    'pybind11',
-    'numpy',
-    'tqdm',
-]
 
 setup(name='sigpyproc', 
     version=__version__,
-    author='Ewan Barr',
-    author_email='ewan.d.barr@googlemail.com',
-    description='Python FRB/pulsar data toolbox',
-    install_requires=install_requires,
-    python_requires='>=3.6',
-    long_description='sigpyproc is a pulsar and FRB data analysis library.',
     ext_modules=ext_modules,
     packages=['sigpyproc'],
-    setup_requires=['pybind11>=2.5.0'],
-    cmdclass={'build_ext': BuildExt},
-    zip_safe=False,)
+    cmdclass={'build_ext': BuildExt}
+    )
