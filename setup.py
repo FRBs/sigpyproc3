@@ -134,7 +134,7 @@ class BuildExt(build_ext):
 
 
 install_requires = [
-    'pybind11'
+    'pybind11',
     'numpy',
     'tqdm',
 ]
