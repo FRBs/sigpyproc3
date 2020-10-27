@@ -121,12 +121,14 @@ class Filterbank(object):
         """
         bpass_ar = np.zeros(self.header.nchans, dtype="float64")
         bpass_ar_c = as_c(bpass_ar)
+        num_samples = 0
         for nsamps, ii, data in self.readPlan(gulp, **kwargs):
             self.lib.getBpass(as_c(data),
                               bpass_ar_c,
                               C.c_int(self.header.nchans),
                               C.c_int(nsamps))
-        bpass_ar = bpass_ar/self.header.nsamples
+            num_samples += nsamps
+        bpass_ar = bpass_ar/num_samples
         return TimeSeries(bpass_ar, self.header.newHeader({"nchans":1}))
 
     def dedisperse(self, dm, gulp=10000, **kwargs):
