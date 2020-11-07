@@ -109,12 +109,14 @@ class Filterbank(object):
         :rtype: :class:`~sigpyproc.TimeSeries.TimeSeries`
         """
         bpass_ar = np.zeros(self.header.nchans, dtype="float64")
+        num_samples = 0
         for nsamps, ii, data in self.readPlan(gulp, **kwargs):
             lib.getBpass(data,
                               bpass_ar,
                               self.header.nchans,
                               nsamps)
-        bpass_ar = bpass_ar/self.header.nsamples
+            num_samples += nsamps
+        bpass_ar = bpass_ar/num_samples
         return TimeSeries(bpass_ar, self.header.newHeader({"nchans":1}))
 
     def dedisperse(self, dm, gulp=10000, **kwargs):
