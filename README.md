@@ -38,7 +38,7 @@ Or, download / clone this repository, and then run
 python setup.py install
 ```
 
-<!--- 
+<!---
 ### Docker
 
 This repo now comes with a `Dockerfile`, so you can build a simple docker container with `sigpyproc` in it. To do so, clone this directory, cd into it, and then run on your command line:

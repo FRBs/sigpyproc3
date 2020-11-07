@@ -3,6 +3,7 @@
 #include <vector>
 #include <cstdlib>
 
+#define MACRO_STRINGIFY(x) #x
 
 unsigned char getRand(float mean, float std) {
     unsigned char randval;

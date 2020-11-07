@@ -26,7 +26,7 @@ void runningMedian(py::array_t<float> inarray, py::array_t<float> outarray,
 }
 
 
-void runningMean(py::array_t<float> inarray, py::array_t<float> outarray, 
+void runningMean(py::array_t<float> inarray, py::array_t<float> outarray,
     int window, int nsamps){
     py::buffer_info inbuf = inarray.request(), outbuf = outarray.request();
 
@@ -71,7 +71,7 @@ void runBoxcar(py::array_t<float> inarray, py::array_t<float> outarray,
     }
 }
 
-void downsampleTim(py::array_t<float> inarray, py::array_t<float> outarray, 
+void downsampleTim(py::array_t<float> inarray, py::array_t<float> outarray,
     int factor, int newLen) {
     py::buffer_info inbuf = inarray.request(), outbuf = outarray.request();
 
@@ -86,7 +86,7 @@ void downsampleTim(py::array_t<float> inarray, py::array_t<float> outarray,
 }
 
 void foldTim(py::array_t<float> inarray, py::array_t<double> foldarray,
-             py::array_t<int32_t> countarray, double tsamp, double period, 
+             py::array_t<int32_t> countarray, double tsamp, double period,
              double accel, int nsamps, int nbins, int nints) {
     py::buffer_info inbuf = inarray.request(), foldbuf = foldarray.request();
     py::buffer_info countbuf = countarray.request();
@@ -119,21 +119,21 @@ void rfft(py::array_t<float> inarray, py::array_t<float> outarray, int size) {
     float* outdata = (float*)outbuf.ptr;
 
     fftwf_plan plan;
-    plan = fftwf_plan_dft_r2c_1d(size, 
-                                 indata, 
-                                 (fftwf_complex*)outdata, 
+    plan = fftwf_plan_dft_r2c_1d(size,
+                                 indata,
+                                 (fftwf_complex*)outdata,
                                  FFTW_ESTIMATE);
     fftwf_execute(plan);
     fftwf_destroy_plan(plan);
 }
 
-void resample(py::array_t<float> inarray, py::array_t<float> outarray, 
+void resample(py::array_t<float> inarray, py::array_t<float> outarray,
     int nsamps, float accel, float tsamp) {
     py::buffer_info inbuf = inarray.request(), outbuf = outarray.request();
 
     float* indata  = (float*)inbuf.ptr;
     float* outdata = (float*)outbuf.ptr;
-    
+
     int   nsamps_by_2  = nsamps / 2;
     float partial_calc = (accel * tsamp) / (2 * 299792458.0);
     float tot_drift    = partial_calc * pow(nsamps_by_2, 2);
@@ -149,6 +149,7 @@ void resample(py::array_t<float> inarray, py::array_t<float> outarray,
 
 PYBIND11_MODULE(libSigPyProcTim, m) {
     m.doc() = "libSigPyProcTim functions";
+    m.attr("__version__") = MACRO_STRINGIFY(VERSION_INFO);
 
     m.def("runningMedian", &runningMedian);
     m.def("runningMean", &runningMean);

@@ -615,32 +615,33 @@ void removeZeroDM(py::array_t<T> inarray, py::array_t<T> outarray,
 
 PYBIND11_MODULE(libSigPyProc, m) {
     m.doc() = "libSigPyProc functions";
+    m.attr("__version__") = MACRO_STRINGIFY(VERSION_INFO);
 
-    m.def("_omp_get_max_threads", 
+    m.def("_omp_get_max_threads",
         []() { return omp_get_max_threads(); });
-    m.def("_omp_set_num_threads", 
+    m.def("_omp_set_num_threads",
         [](int nthread) { omp_set_num_threads(nthread); });
 
-    m.def("unpack", &unpack, 
+    m.def("unpack", &unpack,
         "Unpack 1, 2 and 4 bit data into an 8-bit numpy array",
         py::arg("inarray"), py::arg("nbits"));
 
-    m.def("unpackInPlace", &unpackInPlace, 
+    m.def("unpackInPlace", &unpackInPlace,
         "Unpack 1, 2 and 4 bit data into 8-bit in the same numpy array",
         py::arg("inarray"), py::arg("nbits"));
-    
-    m.def("pack", &pack, 
+
+    m.def("pack", &pack,
         "Pack 1, 2 and 4 bit data into an 8-bit numpy array",
         py::arg("inarray"), py::arg("nbits"));
 
-    m.def("packInPlace", &packInPlace, 
+    m.def("packInPlace", &packInPlace,
         "Pack 1, 2 and 4 bit data into 8-bit in the same numpy array",
         py::arg("inarray"), py::arg("nbits"));
 
-    m.def("to8bit", &to8bit, 
+    m.def("to8bit", &to8bit,
         "Convert 1, 2 and 4 bit data to 8-bit",
-        py::arg("inarray"), py::arg("outarray"), py::arg("flag"), 
-        py::arg("fact"), py::arg("plus"), py::arg("flagMax"), 
+        py::arg("inarray"), py::arg("outarray"), py::arg("flag"),
+        py::arg("fact"), py::arg("plus"), py::arg("flagMax"),
         py::arg("flagMin"), py::arg("nsamps"), py::arg("nchans"));
 
     m.def("splitToBands", &splitToBands<float>);

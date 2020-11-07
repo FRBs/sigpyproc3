@@ -41,7 +41,7 @@ void ifft(py::array_t<float> inarray, py::array_t<float> outarray, int size) {
     fftwf_destroy_plan(plan);
 }
 
-void formSpecInterpolated(py::array_t<float> fftarray, py::array_t<float> specarray, 
+void formSpecInterpolated(py::array_t<float> fftarray, py::array_t<float> specarray,
     int nsamps) {
     py::buffer_info fftbuf = fftarray.request(), specbuf = specarray.request();
 
@@ -80,7 +80,7 @@ void formSpec(py::array_t<float> fftarray, py::array_t<float> specarray, int poi
 
 void rednoise(py::array_t<float> fftarray, py::array_t<float> outarray,
     py::array_t<float> oldinarray, py::array_t<float> newinarray,
-    py::array_t<float> realarray, int nsamps, float tsamp, int startwidth, 
+    py::array_t<float> realarray, int nsamps, float tsamp, int startwidth,
     int endwidth, float endfreq) {
     py::buffer_info fftbuf = fftarray.request(), outbuf = outarray.request(),
                     oldinbuf = oldinarray.request(), newinbuf = newinarray.request(),
@@ -237,6 +237,7 @@ void multiply_fs(py::array_t<float> inarray, py::array_t<float> otherarray,
 
 PYBIND11_MODULE(libSigPyProcSpec, m) {
     m.doc() = "libSigPyProcSpec functions";
+    m.attr("__version__") = MACRO_STRINGIFY(VERSION_INFO);
 
     m.def("ccfft", &ccfft);
     m.def("ifft", &ifft);
