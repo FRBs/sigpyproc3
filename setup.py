@@ -40,23 +40,7 @@ package_version = get_version("sigpyproc/__init__.py")
 ext_modules = [
     Pybind11Extension(
         'sigpyproc.libSigPyProc',
-        sources=['c_src/libSigPyProc.cpp'],
-        include_dirs=['c_src/'],
-        define_macros=[('VERSION_INFO', package_version)],
-        extra_link_args=['-lgomp', '-lm'],
-        extra_compile_args=['-fopenmp'],
-    ),
-    Pybind11Extension(
-        'sigpyproc.libSigPyProcTim',
-        sources=['c_src/libSigPyProcTim.cpp'],
-        include_dirs=['c_src/'],
-        define_macros=[('VERSION_INFO', package_version)],
-        extra_link_args=['-lgomp', '-lm', '-lfftw3', '-lfftw3f'],
-        extra_compile_args=['-fopenmp'],
-    ),
-    Pybind11Extension(
-        'sigpyproc.libSigPyProcSpec',
-        sources=['c_src/libSigPyProcSpec.cpp'],
+        sources=['c_src/bindings.cpp'],
         include_dirs=['c_src/'],
         define_macros=[('VERSION_INFO', package_version)],
         extra_link_args=['-lgomp', '-lm', '-lfftw3', '-lfftw3f'],

@@ -2,7 +2,7 @@ import numpy as np
 from sigpyproc import FoldedData
 from sigpyproc import FourierSeries
 
-import sigpyproc.libSigPyProcSpec as libTim
+import sigpyproc.libSigPyProc as lib
 
 class TimeSeries(np.ndarray):
     """Class for handling pulsar data in time series.
@@ -45,7 +45,7 @@ class TimeSeries(np.ndarray):
             raise ValueError("nbins x nints is too large for length of data")
         fold_ar  = np.zeros(nbins*nints, dtype="float64")
         count_ar = np.zeros(nbins*nints, dtype="int32")
-        libTim.foldTim(self,
+        lib.foldTim(self,
                     fold_ar,
                     count_ar,
                     self.header.tsamp,
@@ -73,7 +73,7 @@ class TimeSeries(np.ndarray):
         else:
             fftsize = self.size-1
         fft_ar = np.empty(fftsize+2, dtype="float32")
-        libTim.rfft(self,
+        lib.rfft(self,
                  fft_ar,
                  fftsize)
         return FourierSeries.FourierSeries(fft_ar, self.header.newHeader())
@@ -93,7 +93,7 @@ class TimeSeries(np.ndarray):
 
         """
         tim_ar = np.empty_like(self)
-        libTim.runningMean(self,
+        lib.runningMean(self,
                         tim_ar,
                         window,
                         self.size)
@@ -113,7 +113,7 @@ class TimeSeries(np.ndarray):
                 Window edges will be dealt with only at the start of the time series.
         """
         tim_ar = np.empty_like(self)
-        libTim.runningMedian(self,
+        lib.runningMedian(self,
                           tim_ar,
                           window,
                           self.size)
@@ -133,7 +133,7 @@ class TimeSeries(np.ndarray):
                 Time series returned is of size nsamples-width with width/2 removed removed from either end.
         """
         tim_ar = np.empty_like(self)
-        libTim.runBoxcar(self,
+        lib.runBoxcar(self,
                       tim_ar,
                       width,
                       self.size)
@@ -155,7 +155,7 @@ class TimeSeries(np.ndarray):
         if factor == 1: return self
         newLen = self.size//factor
         tim_ar = np.zeros(newLen, dtype="float32")
-        libTim.downsampleTim(self,
+        lib.downsampleTim(self,
                           tim_ar,
                           factor,
                           newLen)
@@ -228,7 +228,7 @@ class TimeSeries(np.ndarray):
         else:
             new_size = self.size
         out_ar = np.zeros(new_size, dtype="float32")
-        libTim.resample(self,
+        lib.resample(self,
                      out_ar,
                      new_size,
                      accel,

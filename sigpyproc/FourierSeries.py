@@ -3,7 +3,7 @@ from sigpyproc.Utils import File
 from sigpyproc import TimeSeries
 from sigpyproc import FoldedData
 
-import sigpyproc.libSigPyProcSpec as libSpec
+import sigpyproc.libSigPyProc as lib
 
 class PowerSpectrum(np.ndarray):
     """Class to handle power spectra.
@@ -93,7 +93,7 @@ class PowerSpectrum(np.ndarray):
             facts_ar = np.array([(kk*nfoldi+nharm//2)/nharm 
                                 for kk in range(1, nharm, 2)]).astype("int32")
 
-            libSpec.sumHarms(self,
+            lib.sumHarms(self,
                          sum_ar,
                          harm_ar,
                          facts_ar,
@@ -131,7 +131,7 @@ class FourierSeries(np.ndarray):
                 raise Exception("Instances must be the same size")
             else:
                 out_ar = np.empty_like(self)
-                libSpec.multiply_fs(self,
+                lib.multiply_fs(self,
                                 other,
                                 out_ar,
                                 self.size)
@@ -153,11 +153,11 @@ class FourierSeries(np.ndarray):
         """
         spec_ar = np.empty(self.size//2, dtype="float32")
         if interpolated:
-            libSpec.formSpecInterpolated(self,
+            lib.formSpecInterpolated(self,
                                      spec_ar,
                                      self.size//2)
         else:
-            libSpec.formSpec(self,
+            lib.formSpec(self,
                          spec_ar,
                          self.size)
         
@@ -170,7 +170,7 @@ class FourierSeries(np.ndarray):
         :rtype: :class:`~sigpyproc.TimeSeries.TimeSeries`
         """
         tim_ar = np.empty(self.size-2, dtype="float32")
-        libSpec.ifft(self,
+        lib.ifft(self,
                  tim_ar,
                  self.size-2)
         return TimeSeries.TimeSeries(tim_ar, self.header.newHeader())
@@ -195,7 +195,7 @@ class FourierSeries(np.ndarray):
         buf_c1 = np.empty(2*endwidth, dtype="float32")
         buf_c2 = np.empty(2*endwidth, dtype="float32")
         buf_f1 = np.empty(endwidth, dtype="float32")
-        libSpec.rednoise(self,
+        lib.rednoise(self,
                      out_ar,
                      buf_c1,
                      buf_c2,
@@ -219,7 +219,7 @@ class FourierSeries(np.ndarray):
            product of a real to complex FFT.
         """
         out_ar = np.empty(2*self.size-2, dtype="float32")
-        libSpec.conjugate(self,
+        lib.conjugate(self,
                       out_ar,
                       self.size)
         return FourierSeries(out_ar, self.header.newHeader())
