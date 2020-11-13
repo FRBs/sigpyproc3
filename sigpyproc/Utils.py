@@ -1,12 +1,9 @@
 import io
-import ctypes as C
 import numpy as np
 import warnings
-from numpy.ctypeslib import as_ctypes as as_c
 from sigpyproc.HeaderParams import nbits_to_dtype
-from sigpyproc.ctype_helper import load_lib
 
-lib  = load_lib("libSigPyProc.so")
+import sigpyproc.libSigPyProc as lib
 
 class File(io.FileIO):
     """A class to handle writing of arbitrary bit size data to file.
@@ -51,11 +48,7 @@ class File(io.FileIO):
         count = int(nunits*self.bitfact)
         data  = np.fromfile(self, count=count, dtype=self.dtype)
         if self.unpack:
-            unpacked = np.empty(nunits, dtype=self.dtype)
-            lib.unpack(as_c(data),
-                       as_c(unpacked),
-                       C.c_int(self.nbits),
-                       C.c_int(data.size))
+            unpacked = lib.unpack(data, self.nbits)
             return unpacked
         else:
             return data
@@ -86,11 +79,7 @@ class File(io.FileIO):
         #is, say 2-bit, then the output will be garbage, hence the casting above is
         #necessary.
         if self.unpack:
-            packed = np.empty(int(ar.size*self.bitfact), dtype=self.dtype)
-            lib.pack(as_c(ar),
-                     as_c(packed),
-                     C.c_int(self.nbits),
-                     C.c_int(ar.size))
+            packed = lib.pack(ar, self.nbits)
             packed.tofile(self)
         else:
             ar.tofile(self)

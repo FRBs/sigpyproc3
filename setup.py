@@ -1,75 +1,55 @@
-from setuptools import Extension, setup  # find_packages
+import codecs
+import os.path
 
-__version__ = '0.1.1'
+from setuptools import setup
 
-
-def describe(filename):
-    with open(filename, "r") as f:
-        lines = f.readlines()
-    return "".join(lines)
-
-
-ext0 = Extension('MersenneTwister',
-                 sources=['./c_src/MersenneTwister.c'],
-                 extra_link_args=["-lm"],
-                 extra_compile_args=["-Wno-strict-prototypes"]
-                 )
-
-ext1 = Extension('libSigPyProc8',
-                 sources=[
-                    './c_src/libSigPyProc8.c',
-                    './c_src/MersenneTwister.c',
-                 ],
-                 extra_link_args=["-lgomp", "-lm"],
-                 extra_compile_args=["-fopenmp", "-Wno-unused-variable", "-Wno-strict-prototypes"],
-                 )
-
-ext2 = Extension('libSigPyProc32',
-                 sources=[
-                    './c_src/libSigPyProc32.c',
-                 ],
-                 extra_link_args=["-lgomp", "-lm"],
-                 extra_compile_args=["-fopenmp", "-Wno-unused-variable", "-Wno-strict-prototypes"],
-                 )
-
-ext3 = Extension('libSigPyProcSpec',
-                 sources=[
-                    './c_src/libSigPyProcSpec.c',
-                 ],
-                 extra_link_args=["-lgomp", "-lm", "-lfftw3", "-lfftw3f"],
-                 extra_compile_args=["-fopenmp", "-Wno-unused-variable", "-Wno-strict-prototypes"],
-                 )
-
-ext4 = Extension('libSigPyProcTim',
-                 sources=[
-                    './c_src/libSigPyProcTim.c',
-                 ],
-                 extra_link_args=["-lgomp", "-lm", "-lfftw3", "-lfftw3f"],
-                 extra_compile_args=["-fopenmp", "-Wno-unused-variable", "-Wno-strict-prototypes"],
-                 )
-
-ext5 = Extension('libSigPyProc',
-                 sources=[
-                    './c_src/libSigPyProc.c',
-                 ],
-                 extra_link_args=["-lgomp"],
-                 extra_compile_args=["-fopenmp", "-Wno-unused-variable", "-Wno-strict-prototypes"],
-                 )
+# With setup_requires, this runs twice - once without setup_requires, and once
+# with. The build only happens the second time.
+try:
+    from pybind11.setup_helpers import Pybind11Extension, build_ext
+except ImportError:
+    from setuptools import Extension as Pybind11Extension
+    from setuptools.command.build_ext import build_ext
 
 
-install_requires = [
-        'numpy',
-        'tqdm',
+def read(rel_path):
+    here = os.path.abspath(os.path.dirname(__file__))
+    with codecs.open(os.path.join(here, rel_path), 'r') as fp:
+        return fp.read()
+
+
+def get_version(rel_path):
+    for line in read(rel_path).splitlines():
+        if line.startswith('__version__'):
+            delim = '"' if '"' in line else "'"
+            return line.split(delim)[1]
+    raise RuntimeError("Unable to find version string.")
+
+
+package_version = get_version("sigpyproc/__init__.py")
+
+# The main interface is through Pybind11Extension.
+# * You can add cxx_std=11/14/17, and then build_ext can be removed.
+# * You can set include_pybind11=false to add the include directory yourself,
+#   say from a submodule.
+#
+# Note:
+#   Sort input source files if you glob sources to ensure bit-for-bit
+#   reproducible builds (https://github.com/pybind/python_example/pull/53)
+
+ext_modules = [
+    Pybind11Extension(
+        'sigpyproc.libSigPyProc',
+        sources=['c_src/bindings.cpp'],
+        include_dirs=['c_src/'],
+        define_macros=[('VERSION_INFO', package_version)],
+        extra_link_args=['-lgomp', '-lm', '-lfftw3', '-lfftw3f'],
+        extra_compile_args=['-fopenmp'],
+    ),
 ]
 
 setup(name='sigpyproc',
-      version=__version__,
-      description='Python pulsar data toolbox',
-      install_requires=install_requires,
-      python_requires='>=3.6',
-      author='Ewan Barr',
-      author_email='ewan.d.barr@googlemail.com',
-      long_description=describe('README.md'),
-      ext_modules=[ext0, ext1, ext2, ext3, ext4, ext5],
-      packages=['sigpyproc'],
-      zip_safe=False)
+      version=package_version,
+      ext_modules=ext_modules,
+      cmdclass={"build_ext": build_ext},
+      )

@@ -1,13 +1,9 @@
 import numpy as np
-import ctypes as C
-from numpy.ctypeslib import as_ctypes as as_c
 from sigpyproc.Utils import File
 from sigpyproc import TimeSeries
 from sigpyproc import FoldedData
 
-from sigpyproc.ctype_helper import load_lib
-lib  = load_lib("libSigPyProcSpec.so")
-
+import sigpyproc.libSigPyProc as lib
 
 class PowerSpectrum(np.ndarray):
     """Class to handle power spectra.
@@ -84,7 +80,6 @@ class PowerSpectrum(np.ndarray):
         """
 
         sum_ar    = self.copy()
-        sum_ar_c  = as_c(sum_ar)
         
         nfold1 = 0 #int(self.header.tsamp*2*self.size/maxperiod)
         folds = [] 
@@ -98,13 +93,13 @@ class PowerSpectrum(np.ndarray):
             facts_ar = np.array([(kk*nfoldi+nharm//2)/nharm 
                                 for kk in range(1, nharm, 2)]).astype("int32")
 
-            lib.sumHarms(as_c(self),
-                         sum_ar_c,
-                         as_c(harm_ar),
-                         as_c(facts_ar),
-                         C.c_int(nharm),
-                         C.c_int(self.size),
-                         C.c_int(nfoldi))
+            lib.sumHarms(self,
+                         sum_ar,
+                         harm_ar,
+                         facts_ar,
+                         nharm,
+                         self.size,
+                         nfoldi)
             
             new_header = self.header.newHeader({"tsamp":self.header.tsamp*nharm})
             folds.append(PowerSpectrum(sum_ar, new_header))
@@ -136,10 +131,10 @@ class FourierSeries(np.ndarray):
                 raise Exception("Instances must be the same size")
             else:
                 out_ar = np.empty_like(self)
-                lib.multiply_fs(as_c(self),
-                                as_c(other),
-                                as_c(out_ar),
-                                C.c_int(self.size))
+                lib.multiply_fs(self,
+                                other,
+                                out_ar,
+                                self.size)
                 return FourierSeries(out_ar, self.header.newHeader())
         else:
             return super().__mul__(other)
@@ -158,13 +153,13 @@ class FourierSeries(np.ndarray):
         """
         spec_ar = np.empty(self.size//2, dtype="float32")
         if interpolated:
-            lib.formSpecInterpolated(as_c(self),
-                                     as_c(spec_ar),
-                                     C.c_int(self.size//2))
+            lib.formSpecInterpolated(self,
+                                     spec_ar,
+                                     self.size//2)
         else:
-            lib.formSpec(as_c(self),
-                         as_c(spec_ar),
-                         C.c_int(self.size))
+            lib.formSpec(self,
+                         spec_ar,
+                         self.size)
         
         return PowerSpectrum(spec_ar, self.header.newHeader())
 
@@ -175,9 +170,9 @@ class FourierSeries(np.ndarray):
         :rtype: :class:`~sigpyproc.TimeSeries.TimeSeries`
         """
         tim_ar = np.empty(self.size-2, dtype="float32")
-        lib.ifft(as_c(self),
-                 as_c(tim_ar),
-                 C.c_int(self.size-2))
+        lib.ifft(self,
+                 tim_ar,
+                 self.size-2)
         return TimeSeries.TimeSeries(tim_ar, self.header.newHeader())
 
     def rednoise(self, startwidth=6, endwidth=100, endfreq=1.0):
@@ -200,16 +195,16 @@ class FourierSeries(np.ndarray):
         buf_c1 = np.empty(2*endwidth, dtype="float32")
         buf_c2 = np.empty(2*endwidth, dtype="float32")
         buf_f1 = np.empty(endwidth, dtype="float32")
-        lib.rednoise(as_c(self),
-                     as_c(out_ar),
-                     as_c(buf_c1),
-                     as_c(buf_c2),
-                     as_c(buf_f1),
-                     C.c_int(self.size//2),
-                     C.c_float(self.header.tsamp),
-                     C.c_int(startwidth),
-                     C.c_int(endwidth),
-                     C.c_float(endfreq))
+        lib.rednoise(self,
+                     out_ar,
+                     buf_c1,
+                     buf_c2,
+                     buf_f1,
+                     self.size//2,
+                     self.header.tsamp,
+                     startwidth,
+                     endwidth,
+                     endfreq)
         return FourierSeries(out_ar, self.header.newHeader())
 
     def conjugate(self):
@@ -224,9 +219,9 @@ class FourierSeries(np.ndarray):
            product of a real to complex FFT.
         """
         out_ar = np.empty(2*self.size-2, dtype="float32")
-        lib.conjugate(as_c(self),
-                      as_c(out_ar),
-                      C.c_int(self.size))
+        lib.conjugate(self,
+                      out_ar,
+                      self.size)
         return FourierSeries(out_ar, self.header.newHeader())
 
    

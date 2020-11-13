@@ -1,11 +1,8 @@
 import numpy as np
-import ctypes as C
-from numpy.ctypeslib import as_ctypes as as_c
 from sigpyproc import FoldedData
 from sigpyproc import FourierSeries
 
-from sigpyproc.ctype_helper import load_lib
-lib = load_lib("libSigPyProcTim.so")
+import sigpyproc.libSigPyProc as lib
 
 class TimeSeries(np.ndarray):
     """Class for handling pulsar data in time series.
@@ -48,15 +45,15 @@ class TimeSeries(np.ndarray):
             raise ValueError("nbins x nints is too large for length of data")
         fold_ar  = np.zeros(nbins*nints, dtype="float64")
         count_ar = np.zeros(nbins*nints, dtype="int32")
-        lib.foldTim(as_c(self),
-                    as_c(fold_ar),
-                    as_c(count_ar),
-                    C.c_double(self.header.tsamp),
-                    C.c_double(period),
-                    C.c_double(accel),
-                    C.c_int(self.size),
-                    C.c_int(nbins),
-                    C.c_int(nints))
+        lib.foldTim(self,
+                    fold_ar,
+                    count_ar,
+                    self.header.tsamp,
+                    period,
+                    accel,
+                    self.size,
+                    nbins,
+                    nints)
         fold_ar /= count_ar
         fold_ar  = fold_ar.reshape(nints, 1, nbins)
         return FoldedData.FoldedData(fold_ar,
@@ -76,8 +73,8 @@ class TimeSeries(np.ndarray):
         else:
             fftsize = self.size-1
         fft_ar = np.empty(fftsize+2, dtype="float32")
-        lib.rfft(as_c(self),
-                 as_c(fft_ar),
+        lib.rfft(self,
+                 fft_ar,
                  fftsize)
         return FourierSeries.FourierSeries(fft_ar, self.header.newHeader())
 
@@ -96,10 +93,10 @@ class TimeSeries(np.ndarray):
 
         """
         tim_ar = np.empty_like(self)
-        lib.runningMean(as_c(self),
-                        as_c(tim_ar),
-                        C.c_int(window),
-                        C.c_int(self.size))
+        lib.runningMean(self,
+                        tim_ar,
+                        window,
+                        self.size)
         return tim_ar.view(TimeSeries)
 
     def runningMedian(self, window=10001):
@@ -116,10 +113,10 @@ class TimeSeries(np.ndarray):
                 Window edges will be dealt with only at the start of the time series.
         """
         tim_ar = np.empty_like(self)
-        lib.runningMedian(as_c(self),
-                          as_c(tim_ar),
-                          C.c_int(window),
-                          C.c_int(self.size))
+        lib.runningMedian(self,
+                          tim_ar,
+                          window,
+                          self.size)
         return tim_ar.view(TimeSeries)
 
     def applyBoxcar(self, width):
@@ -136,10 +133,10 @@ class TimeSeries(np.ndarray):
                 Time series returned is of size nsamples-width with width/2 removed removed from either end.
         """
         tim_ar = np.empty_like(self)
-        lib.runBoxcar(as_c(self),
-                      as_c(tim_ar),
-                      C.c_int(width),
-                      C.c_int(self.size))
+        lib.runBoxcar(self,
+                      tim_ar,
+                      width,
+                      self.size)
         return tim_ar.view(TimeSeries)
 
     def downsample(self, factor):
@@ -158,10 +155,10 @@ class TimeSeries(np.ndarray):
         if factor == 1: return self
         newLen = self.size//factor
         tim_ar = np.zeros(newLen, dtype="float32")
-        lib.downsampleTim(as_c(self),
-                          as_c(tim_ar),
-                          C.c_int(factor),
-                          C.c_int(newLen))
+        lib.downsampleTim(self,
+                          tim_ar,
+                          factor,
+                          newLen)
         return TimeSeries(tim_ar, self.header.newHeader({'tsamp':self.header.tsamp*factor}))
            
     def toDat(self, basename):
@@ -231,11 +228,11 @@ class TimeSeries(np.ndarray):
         else:
             new_size = self.size
         out_ar = np.zeros(new_size, dtype="float32")
-        lib.resample(as_c(self),
-                     as_c(out_ar),
-                     C.c_int(new_size),
-                     C.c_float(accel),
-                     C.c_float(self.header.tsamp))
+        lib.resample(self,
+                     out_ar,
+                     new_size,
+                     accel,
+                     self.header.tsamp)
 
         new_header = self.header.newHeader({"nsamples":out_ar.size,
                                             "accel":accel})

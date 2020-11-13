@@ -9,8 +9,9 @@ on:
 jobs:
   build:
 
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     strategy:
+      fail-fast: false
       matrix:
         python-version: [3.6, 3.7, 3.8]
 
@@ -24,9 +25,8 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get -y install build-essential fftw3 fftw3-dev
-        python -m pip install --upgrade pip
-        pip install --upgrade setuptools
-        pip install numpy matplotlib ipython tqdm
+        python -m pip install --upgrade pip setuptools wheel
+        pip install numpy matplotlib ipython tqdm pybind11
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
     - name: Install it
       run: |
@@ -36,7 +36,7 @@ jobs:
         python examples/dedisperse.py examples/tutorial.fil 300
     - name: Copy shared libs 
       run: |
-        find build/ -type f -name "*.so" -exec cp {} . \;
+        find build/ -type f -name "*.so" -exec cp {} sigpyproc/ \;
     - name: Lint with flake8
       run: |
         pip install flake8 flake8-import-order
