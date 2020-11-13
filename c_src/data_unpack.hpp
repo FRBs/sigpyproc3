@@ -21,7 +21,7 @@ void unpack(uint8_t* inbuffer, uint8_t* outbuffer, int nbits, int nbytes) {
         case 1:
             for (int ii = 0; ii < nbytes; ii++) {
                 for (int jj = 0; jj < 8; jj++) {
-                    outbuffer[(ii * 8) + jj] = (indata[ii] >> jj) & 1;
+                    outbuffer[(ii * 8) + jj] = (inbuffer[ii] >> jj) & 1;
                 }
             }
             break;

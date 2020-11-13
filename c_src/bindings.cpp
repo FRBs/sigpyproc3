@@ -77,7 +77,7 @@ void to8bit(py::array_t<float> inarray, py::array_t<uint8_t> outarray,
     float*   flagMin_arr = (float*)flagMinbuf.ptr;
 
     sigpyproc::to8bit(indata, outdata, flag_arr, fact_arr, plus_arr,
-                      flagMax_arr, flagMin_arr);
+                      flagMax_arr, flagMin_arr, nsamps, nchans);
 }
 
 template <class T>
@@ -229,7 +229,7 @@ void getStats(py::array_t<T> inarray, py::array_t<float> M1,
     float*   M4_arr    = (float*)M4buf.ptr;
     float*   max_arr   = (float*)maxbuf.ptr;
     float*   min_arr   = (float*)minbuf.ptr;
-    int32_t* count_arr = (int32_t*)countbuf.ptr;
+    int64_t* count_arr = (int64_t*)countbuf.ptr;
 
     sigpyproc::getStats(indata, M1_arr, M2_arr, M3_arr, M4_arr, max_arr,
                         min_arr, count_arr, nchans, nsamps, startflag);

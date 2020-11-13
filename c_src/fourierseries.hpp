@@ -11,6 +11,9 @@
 
 namespace sigpyproc {
 
+/**
+ * Complex One-Dimensional DFTs
+ */
 void ccfft(float* inbuffer, float* outbuffer, int size) {
     fftwf_plan    plan;
     plan = fftwf_plan_dft_1d(size,
@@ -135,7 +138,7 @@ void rednoise(float* fftbuffer, float* outbuffer, float* oldinbuf,
 
         for (int ii = 0; ii < 2 * numread_new; ii++) {
             oldinbuf[ii] = 0;
-            oldinbuf[ii] = newin_arr[ii];
+            oldinbuf[ii] = newinbuf[ii];
         }
     }
     for (int ii = 0; ii < 2 * numread_old; ii++) {
