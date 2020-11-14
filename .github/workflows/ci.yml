@@ -26,15 +26,13 @@ jobs:
         sudo apt-get update
         sudo apt-get -y install build-essential fftw3 fftw3-dev
         python -m pip install --upgrade pip setuptools wheel
-        pip install numpy matplotlib ipython tqdm pybind11
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
     - name: Install it
       run: |
-        python setup.py install
+        python -m pip install -e .
     - name: Simple test
       run: |
         python examples/dedisperse.py examples/tutorial.fil 300
-    - name: Copy shared libs 
+    - name: Copy shared libs
       run: |
         find build/ -type f -name "*.so" -exec cp {} sigpyproc/ \;
     - name: Lint with flake8
@@ -43,7 +41,7 @@ jobs:
         # stop the build if there are Python syntax errors or undefined names
         flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
         # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
-        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+        flake8 . --count --exit-zero --statistics
     - name: Run pytest and Generate coverage report
       run: |
         pip install pytest pytest-cov

@@ -3,10 +3,10 @@
 `sigpyproc` is a pulsar and FRB data analysis library for python.
 
 [![GitHub CI](https://github.com/FRBs/sigpyproc3/workflows/GitHub%20CI/badge.svg)](https://github.com/FRBs/sigpyproc3/actions)
+[![Docs](https://readthedocs.org/projects/sigpyproc3/badge/?version=latest)](https://sigpyproc3.readthedocs.io/en/latest/?badge=latest)
+[![codecov](https://codecov.io/gh/FRBs/sigpyproc3/branch/master/graph/badge.svg)](https://codecov.io/gh/FRBs/sigpyproc3)
 
-
-Usage
------
+## Usage
 
 ```python
 from sigpyproc.Readers import FilReader
@@ -14,28 +14,24 @@ myFil = FilReader("tutorial.fil")
 
 ```
 
-Installation
-------------
+## Installation
 
-### Requirements
-
-You need Python 3.6 or later to run sigpyproc.
-
-    * FFTW3
-    * OpenMP
+You need Python 3.6 or later to run sigpyproc. Additionally,
+[FFTW3](http://www.fftw.org) and [OpenMP](https://www.openmp.org)
+should be installed/enabled on your system.
 
 ### Step-by-step guide
 
 Once you have all the requirements installed, you can install this via pip:
 
-```
+```bash
 pip install git+https://github.com/FRBs/sigpyproc3
 ```
 
 Or, download / clone this repository, and then run
 
-```
-python setup.py install
+```bash
+python -m pip install -e .
 ```
 
 <!---
