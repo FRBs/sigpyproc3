@@ -23,6 +23,7 @@ class FilReader(Filterbank):
        To be considered as a Sigproc format filterbank file the header must only
        contain keywords found in the ``HeaderParams.header_keys`` dictionary.
     """
+
     def __init__(self, filename):
         self.filename = filename
         self.header   = parseSigprocHeader(self.filename)
@@ -55,13 +56,14 @@ class FilReader(Filterbank):
         nsamps_read = data.size // self.header.nchans
         data = data.reshape(nsamps_read, self.header.nchans).transpose()
         start_mjd  = self.header.mjdAfterNsamps(start)
-        new_header = self.header.newHeader({'tstart': start_mjd})
+        new_header = self.header.newHeader({"tstart": start_mjd})
         if as_filterbankBlock:
             return FilterbankBlock(data, new_header)
         else:
             return data
 
-    def readDedispersedBlock(self, start, nsamps, dm, as_filterbankBlock=True, small_reads=True):
+    def readDedispersedBlock(self, start, nsamps, dm, as_filterbankBlock=True,
+                             small_reads=True):
         """Read a block of dedispersed filterbank data, best used in cases where
             I/O time dominates reading a block of data.
 
@@ -90,30 +92,39 @@ class FilReader(Filterbank):
         curr_sample = np.zeros(self.header.nchans, dtype=int)
 
         start_mjd  = self.header.mjdAfterNsamps(start)
-        new_header = self.header.newHeader({'tstart': start_mjd})
+        new_header = self.header.newHeader({"tstart": start_mjd})
 
         lowest_chan, highest_chan, sample_offset = (0, 0, start)
         with tqdm(total=nsamps * self.header.nchans) as progress:
             while curr_sample[-1] < nsamps:
-                relevant_channels = np.argwhere(np.logical_and(max_sample > sample_offset,
-                                                min_sample <= sample_offset)).flatten()
+                relevant_channels = np.argwhere(
+                    np.logical_and(
+                        max_sample > sample_offset, min_sample <= sample_offset
+                    )
+                ).flatten()
                 lowest_chan = np.min(relevant_channels)
                 highest_chan = np.max(relevant_channels)
                 sampled_chans = np.arange(lowest_chan, highest_chan + 1, dtype=int)
                 read_length = sampled_chans.size
 
                 if self.bitfact == 1 and small_reads:
-                    next_offset = sample_offset * self.sampsize + lowest_chan * self.itemsize
+                    next_offset = (
+                        sample_offset * self.sampsize + lowest_chan * self.itemsize
+                    )
                     self._file.seek(self.header.hdrlen + next_offset)
 
-                    data[sampled_chans, curr_sample[sampled_chans]] = self._file.cread(read_length)
+                    data[sampled_chans, curr_sample[sampled_chans]] = self._file.cread(
+                        read_length
+                    )
 
                 else:
                     next_offset = sample_offset * self.sampsize
                     self._file.seek(self.header.hdrlen + next_offset)
 
                     sample = self._file.cread(self.sampsize)
-                    data[sampled_chans, curr_sample[sampled_chans]] = sample[sampled_chans]
+                    data[sampled_chans, curr_sample[sampled_chans]] = sample[
+                        sampled_chans
+                    ]
 
                 curr_sample[sampled_chans] += 1
 
@@ -131,7 +142,8 @@ class FilReader(Filterbank):
         else:
             return data
 
-    def readPlan(self, gulp, skipback=0, start=0, nsamps=None, tqdm_desc=None, verbose=True):
+    def readPlan(self, gulp, skipback=0, start=0, nsamps=None,
+                 tqdm_desc=None, verbose=True):
         """A generator used to perform filterbank reading.
 
         :param gulp: number of samples in each read
@@ -182,8 +194,10 @@ class FilReader(Filterbank):
         if lastread < skipback:
             nreads  -= 1
             lastread = nsamps - (nreads * (gulp - skipback))
-        blocks = [(ii, gulp * self.header.nchans, -skipback * self.header.nchans)
-                  for ii in range(nreads)]
+        blocks = [
+            (ii, gulp * self.header.nchans, -skipback * self.header.nchans)
+            for ii in range(nreads)
+        ]
         if lastread != 0:
             blocks.append((nreads, lastread * self.header.nchans, 0))
 
@@ -199,7 +213,7 @@ class FilReader(Filterbank):
             print(f"Nsamps to skip back:  {-1*blocks[0][2]//self.header.nchans}\n")
 
         if tqdm_desc is None:
-            tqdm_desc = f'{inspect.stack()[1][3]} : '
+            tqdm_desc = f"{inspect.stack()[1][3]} : "
         for ii, block, skip in tqdm(blocks, desc=tqdm_desc):
             data = self._file.cread(block)
             self._file.seek(skip * self.itemsize // self.bitfact, os.SEEK_CUR)

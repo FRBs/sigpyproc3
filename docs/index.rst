@@ -54,12 +54,11 @@ new modules and extensions.
   :maxdepth: 2
   :caption: Contents
 
-  install.rst
-  modules.rst
-
+  install
+  modules
 
 .. toctree::
-  :maxdepth: 1
-  :caption: Tutorials
+   :maxdepth: 2
+   :caption: Tutorials
 
-  _static/notebooks/quickstart
+   tutorials/quickstart.ipynb

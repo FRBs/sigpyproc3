@@ -30,7 +30,7 @@ class File(io.FileIO):
         self.nbits = nbits
         self.dtype = nbits_to_dtype[self.nbits]
         if nbits in [1, 2, 4]:
-            self.bitfact = nbits / 8.
+            self.bitfact = nbits / 8.0
             self.unpack  = True
         else:
             self.bitfact = 1
@@ -70,10 +70,12 @@ class File(io.FileIO):
            attribute.
         """
         if self.dtype != ar.dtype:
-            warnings.warn(f"Given data (dtype={ar.dtype}) will be unsafely cast to the"
-                          f"requested dtype={self.dtype} before being written out to file",
-                          stacklevel=2)
-            ar = ar.astype(self.dtype, casting='unsafe')
+            warnings.warn(
+                f"Given data (dtype={ar.dtype}) will be unsafely cast to the"
+                f"requested dtype={self.dtype} before being written out to file",
+                stacklevel=2
+            )
+            ar = ar.astype(self.dtype, casting="unsafe")
 
         # The lib.pack function has an assumption that the given array has 8-bit
         # data. If the given array was, say 32-bit floats and the requested nbits

@@ -14,6 +14,7 @@ class TimeSeries(np.ndarray):
     :param header: observational metadata
     :type header: :class:`~sigpyproc.Header.Header`
     """
+
     def __new__(cls, input_array, header):
         if getattr(input_array, "dtype", False) == np.dtype("float32"):
             obj = input_array.view(cls)
@@ -47,18 +48,22 @@ class TimeSeries(np.ndarray):
             raise ValueError("nbins x nints is too large for length of data")
         fold_ar  = np.zeros(nbins * nints, dtype="float64")
         count_ar = np.zeros(nbins * nints, dtype="int32")
-        lib.foldTim(self,
-                    fold_ar,
-                    count_ar,
-                    self.header.tsamp,
-                    period,
-                    accel,
-                    self.size,
-                    nbins,
-                    nints)
+        lib.foldTim(
+            self,
+            fold_ar,
+            count_ar,
+            self.header.tsamp,
+            period,
+            accel,
+            self.size,
+            nbins,
+            nints,
+        )
         fold_ar /= count_ar
         fold_ar  = fold_ar.reshape(nints, 1, nbins)
-        return FoldedData.FoldedData(fold_ar, self.header.newHeader(), period, self.header.refdm, accel)
+        return FoldedData.FoldedData(
+            fold_ar, self.header.newHeader(), period, self.header.refdm, accel
+        )
 
     def rFFT(self):
         """Perform 1-D real to complex forward FFT.
@@ -71,9 +76,7 @@ class TimeSeries(np.ndarray):
         else:
             fftsize = self.size - 1
         fft_ar = np.empty(fftsize + 2, dtype="float32")
-        lib.rfft(self,
-                 fft_ar,
-                 fftsize)
+        lib.rfft(self, fft_ar, fftsize)
         return FourierSeries.FourierSeries(fft_ar, self.header.newHeader())
 
     def runningMean(self, window=10001):
@@ -91,10 +94,7 @@ class TimeSeries(np.ndarray):
 
         """
         tim_ar = np.empty_like(self)
-        lib.runningMean(self,
-                        tim_ar,
-                        window,
-                        self.size)
+        lib.runningMean(self, tim_ar, window, self.size)
         return tim_ar.view(TimeSeries)
 
     def runningMedian(self, window=10001):
@@ -111,10 +111,7 @@ class TimeSeries(np.ndarray):
                 Window edges will be dealt with only at the start of the time series.
         """
         tim_ar = np.empty_like(self)
-        lib.runningMedian(self,
-                          tim_ar,
-                          window,
-                          self.size)
+        lib.runningMedian(self, tim_ar, window, self.size)
         return tim_ar.view(TimeSeries)
 
     def applyBoxcar(self, width):
@@ -131,10 +128,7 @@ class TimeSeries(np.ndarray):
                 Time series returned is of size nsamples-width with width/2 removed removed from either end.
         """
         tim_ar = np.empty_like(self)
-        lib.runBoxcar(self,
-                      tim_ar,
-                      width,
-                      self.size)
+        lib.runBoxcar(self, tim_ar, width, self.size)
         return tim_ar.view(TimeSeries)
 
     def downsample(self, factor):
@@ -154,11 +148,10 @@ class TimeSeries(np.ndarray):
             return self
         newLen = self.size // factor
         tim_ar = np.zeros(newLen, dtype="float32")
-        lib.downsampleTim(self,
-                          tim_ar,
-                          factor,
-                          newLen)
-        return TimeSeries(tim_ar, self.header.newHeader({'tsamp': self.header.tsamp * factor}))
+        lib.downsampleTim(self, tim_ar, factor, newLen)
+        return TimeSeries(
+            tim_ar, self.header.newHeader({'tsamp': self.header.tsamp * factor})
+        )
 
     def toDat(self, basename):
         """Write time series in presto ``.dat`` format.
@@ -227,14 +220,9 @@ class TimeSeries(np.ndarray):
         else:
             new_size = self.size
         out_ar = np.zeros(new_size, dtype="float32")
-        lib.resample(self,
-                     out_ar,
-                     new_size,
-                     accel,
-                     self.header.tsamp)
+        lib.resample(self, out_ar, new_size, accel, self.header.tsamp)
 
-        new_header = self.header.newHeader({"nsamples": out_ar.size,
-                                            "accel": accel})
+        new_header = self.header.newHeader({"nsamples": out_ar.size, "accel": accel})
         return TimeSeries(out_ar, new_header)
 
     def correlate(self, other):

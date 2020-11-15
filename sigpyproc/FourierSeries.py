@@ -81,27 +81,26 @@ class PowerSpectrum(np.ndarray):
         :rtype: :func:`list` of :class:`~sigpyproc.FourierSeries.PowerSpectrum`
         """
 
-        sum_ar    = self.copy()
+        sum_ar = self.copy()
 
         nfold1 = 0  # int(self.header.tsamp*2*self.size/maxperiod)
         folds = []
         for ii in range(nfolds):
-            nharm   = 2**(ii + 1)
-            nfoldi  = int(max(1, min(nharm * nfold1 - nharm // 2, self.size)))
-            harm_ar = np.array([int(kk * ll / float(nharm))
-                                for ll in range(nharm)
-                                for kk in range(1, nharm, 2)]).astype("int32")
+            nharm = 2**(ii + 1)
+            nfoldi = int(max(1, min(nharm * nfold1 - nharm // 2, self.size)))
+            harm_ar = np.array(
+                [
+                    int(kk * ll / float(nharm))
+                    for ll in range(nharm)
+                    for kk in range(1, nharm, 2)
+                ]
+            ).astype("int32")
 
-            facts_ar = np.array([(kk * nfoldi + nharm // 2) / nharm
-                                for kk in range(1, nharm, 2)]).astype("int32")
+            facts_ar = np.array(
+                [(kk * nfoldi + nharm // 2) / nharm for kk in range(1, nharm, 2)]
+            ).astype("int32")
 
-            lib.sumHarms(self,
-                         sum_ar,
-                         harm_ar,
-                         facts_ar,
-                         nharm,
-                         self.size,
-                         nfoldi)
+            lib.sumHarms(self, sum_ar, harm_ar, facts_ar, nharm, self.size, nfoldi)
 
             new_header = self.header.newHeader({"tsamp": self.header.tsamp * nharm})
             folds.append(PowerSpectrum(sum_ar, new_header))
@@ -117,6 +116,7 @@ class FourierSeries(np.ndarray):
     :param header: observational metadata
     :type header: :class:`~sigpyproc.Header.Header`
     """
+
     def __new__(cls, input_array, header):
         obj = input_array.astype("float32").view(cls)
         obj.header = header
@@ -134,10 +134,7 @@ class FourierSeries(np.ndarray):
                 raise Exception("Instances must be the same size")
             else:
                 out_ar = np.empty_like(self)
-                lib.multiply_fs(self,
-                                other,
-                                out_ar,
-                                self.size)
+                lib.multiply_fs(self, other, out_ar, self.size)
                 return FourierSeries(out_ar, self.header.newHeader())
         else:
             return super().__mul__(other)
@@ -192,16 +189,18 @@ class FourierSeries(np.ndarray):
         buf_c1 = np.empty(2 * endwidth, dtype="float32")
         buf_c2 = np.empty(2 * endwidth, dtype="float32")
         buf_f1 = np.empty(endwidth, dtype="float32")
-        lib.rednoise(self,
-                     out_ar,
-                     buf_c1,
-                     buf_c2,
-                     buf_f1,
-                     self.size // 2,
-                     self.header.tsamp,
-                     startwidth,
-                     endwidth,
-                     endfreq)
+        lib.rednoise(
+            self,
+            out_ar,
+            buf_c1,
+            buf_c2,
+            buf_f1,
+            self.size // 2,
+            self.header.tsamp,
+            startwidth,
+            endwidth,
+            endfreq,
+        )
         return FourierSeries(out_ar, self.header.newHeader())
 
     def conjugate(self):
@@ -216,9 +215,7 @@ class FourierSeries(np.ndarray):
            product of a real to complex FFT.
         """
         out_ar = np.empty(2 * self.size - 2, dtype="float32")
-        lib.conjugate(self,
-                      out_ar,
-                      self.size)
+        lib.conjugate(self, out_ar, self.size)
         return FourierSeries(out_ar, self.header.newHeader())
 
     def reconProf(self, freq, nharms=32):
@@ -236,7 +233,7 @@ class FourierSeries(np.ndarray):
         bin_ = freq * self.header.tobs
         real_ids = np.array([int(round(ii * 2 * bin_)) for ii in range(1, nharms + 1)])
         imag_ids = real_ids + 1
-        harms   = self[real_ids] + 1j * self[imag_ids]
+        harms = self[real_ids] + 1j * self[imag_ids]
         harm_ar = np.hstack((harms, np.conj(harms[1:][::-1])))
         return FoldedData.Profile(abs(np.fft.ifft(harm_ar)))
 

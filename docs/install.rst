@@ -23,7 +23,7 @@ or clone the source repository and install from there
 
     git clone https://github.com/FRBs/sigpyproc3.git
     cd sigpyproc3
-    python -m pip install -e .
+    python -m pip install .
 
 
 Test the installation

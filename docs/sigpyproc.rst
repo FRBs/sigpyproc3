@@ -76,6 +76,14 @@ sigpyproc.ctype\_helper module
    :undoc-members:
    :show-inheritance:
 
+sigpyproc.libSigPyProc module
+-----------------------------
+
+.. automodule:: sigpyproc.libSigPyProc
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Module contents
 ---------------
 

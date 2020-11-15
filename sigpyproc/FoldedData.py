@@ -21,8 +21,12 @@ class Profile(np.ndarray):
     def _getWidth(self):
         self -= np.median(self)
         trial_widths = np.arange(1, self.size)
-        convmaxs = np.array([np.convolve(np.ones(ii), self, mode="same").max()
-                             / np.sqrt(ii) for ii in trial_widths])
+        convmaxs = np.array(
+            [
+                np.convolve(np.ones(ii), self, mode="same").max() / np.sqrt(ii)
+                for ii in trial_widths
+            ]
+        )
         return trial_widths[convmaxs.argmax()]
 
     def _getPosition(self, width):
@@ -30,8 +34,8 @@ class Profile(np.ndarray):
 
     def _getBaseline(self, width):
         pos = self._getPosition(width)
-        wing = np.ceil(width / 2.)
-        return np.hstack((self[:pos - wing], self[pos + wing + 1:]))
+        wing = np.ceil(width / 2.0)
+        return np.hstack((self[: pos - wing], self[pos + wing + 1:]))
 
     def SN(self):
         """Return a rudimentary signal-to-noise measure for the profile.
@@ -62,7 +66,7 @@ class Profile(np.ndarray):
            This function requires a system call to the Linux/Unix ``stty`` command.
         """
 
-        rows, columns = popen('stty size', 'r').read().split()
+        rows, columns = popen("stty size", "r").read().split()
         rows = int(int(rows) * height)
         columns = int(int(columns) * width)
         bins = np.linspace(0, self.size - 1, columns)
@@ -80,6 +84,7 @@ class FoldSlice(np.ndarray):
     :param input_array: a 2-D array with phase in x axis.
     :type input_array: :class:`numpy.ndarray`
     """
+
     def __new__(cls, input_array):
         obj = input_array.astype("float32").view(cls)
         return obj
@@ -226,9 +231,13 @@ class FoldedData(np.ndarray):
             return drifts
         else:
             chan_width = self.header.foff * self.header.nchans / self.nbands
-            freqs  = (np.arange(self.nbands) * chan_width) + self.header.fch1
-            fact   = delta_dm * 4.148808e3
-            drifts = (fact * ((freqs**-2) - (self.header.fch1**-2)) / ((self.period / self.nbins)))
+            freqs = (np.arange(self.nbands) * chan_width) + self.header.fch1
+            fact = delta_dm * 4.148808e3
+            drifts = (
+                fact
+                * ((freqs**-2) - (self.header.fch1**-2))
+                / ((self.period / self.nbins))
+            )
             drifts = drifts.round().astype("int32")
             bin_drifts = drifts - self._fph_shifts
             self._fph_shifts = drifts
@@ -241,7 +250,9 @@ class FoldedData(np.ndarray):
             self._tph_shifts[:] = 0
             return drifts
         else:
-            drifts = np.round(np.arange(float(self.nints)) / (self.nints / dbins)).astype("int32")
+            drifts = np.round(
+                np.arange(float(self.nints)) / (self.nints / dbins)
+            ).astype("int32")
             bin_drifts = drifts - self._tph_shifts
             self._tph_shifts = drifts
             return bin_drifts

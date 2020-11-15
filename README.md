@@ -31,7 +31,7 @@ pip install git+https://github.com/FRBs/sigpyproc3
 Or, download / clone this repository, and then run
 
 ```bash
-python -m pip install -e .
+python -m pip install .
 ```
 
 <!---

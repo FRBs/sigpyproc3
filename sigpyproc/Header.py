@@ -13,6 +13,7 @@ class Header(dict):
        Attributes are mirrored as items and vice versa to facilitate cleaner code.
 
     """
+
     def __init__(self, info):
         super().__init__(info)
         self._mirror()
@@ -30,28 +31,27 @@ class Header(dict):
             super().__setattr__(key, value)
 
     def updateHeader(self):
-        """Check for changes in header and recalculate all derived quantaties.
-        """
+        """Check for changes in header and recalculate all derived quantaties."""
         if hasattr(self, "filename"):
             self.basename, self.extension = splitext(self.filename)
 
         if hasattr(self, "foff") and hasattr(self, "nchans") and hasattr(self, "fch1"):
-            self.bandwidth  = abs(self.foff) * self.nchans
-            self.ftop       = self.fch1     - 0.5 * self.foff
-            self.fbottom    = self.ftop     + self.foff * self.nchans
-            self.fcenter    = self.ftop     + 0.5 * self.foff * self.nchans
+            self.bandwidth = abs(self.foff) * self.nchans
+            self.ftop = self.fch1 - 0.5 * self.foff
+            self.fbottom = self.ftop + self.foff * self.nchans
+            self.fcenter = self.ftop + 0.5 * self.foff * self.nchans
             # If fch1 is the frequency of the middle of the top
             # channel and foff negative, this is fine.
             # However, if fch1 the frequency of the middle of the bottom channel and foff
             # positive you should run an Filterbank.Filterbank.invertFreq on the data
-        self.tobs    = self.tsamp * self.nsamples
+        self.tobs = self.tsamp * self.nsamples
         self.src_raj = getattr(self, "src_raj", 0)
         self.src_dej = getattr(self, "src_dej", 0)
-        self.ra      = radec_to_str(self.src_raj)
-        self.dec     = radec_to_str(self.src_dej)
-        self.ra_rad  = ra_to_rad(self.ra)
+        self.ra = radec_to_str(self.src_raj)
+        self.dec = radec_to_str(self.src_dej)
+        self.ra_rad = ra_to_rad(self.ra)
         self.dec_rad = dec_to_rad(self.dec)
-        self.ra_deg  = (self.ra_rad * 180.) / np.pi
+        self.ra_deg = (self.ra_rad * 180.) / np.pi
         self.dec_deg = (self.dec_rad * 180.) / np.pi
 
         if hasattr(self, "tstart"):
@@ -69,7 +69,7 @@ class Header(dict):
         :return: Modified Julian Date
         :rtype:
         """
-        return self.tstart + ((nsamps * self.tsamp) / 86400.)
+        return self.tstart + ((nsamps * self.tsamp) / 86400.0)
 
     def newHeader(self, update_dict=None):
         """Create a new instance of :class:`~sigpyproc.Header.Header` from the current instance.
@@ -94,10 +94,7 @@ class Header(dict):
         :return: A dedispersed version of the header
         :rtype: :class:`~sigpyproc.Header.Header`
         """
-        return self.newHeader({'refdm': dm,
-                               'nchans': 1,
-                               'data_type': 2,
-                               'nbits': 32})
+        return self.newHeader({'refdm': dm, 'nchans': 1, 'data_type': 2, 'nbits': 32})
 
     def SPPHeader(self, back_compatible=True):
         """Get Sigproc/sigpyproc format binary header.
@@ -110,9 +107,9 @@ class Header(dict):
         """
 
         self.updateHeader()
-        hstart  = b"HEADER_START"
-        hend    = b"HEADER_END"
-        header  = b"".join([pack("I", len(hstart)), hstart])
+        hstart = b"HEADER_START"
+        hend   = b"HEADER_END"
+        header = b"".join([pack("I", len(hstart)), hstart])
 
         for key in list(self.keys()):
             if back_compatible and key not in conf.sigproc_keys:
@@ -140,37 +137,43 @@ class Header(dict):
         :rtype: :func:`str`
         """
         self.updateHeader()
-        inf = (f" Data file name without suffix          =  {self.basename}\n"
-               f" Telescope used                         =  Effelsberg\n"
-               f" Instrument used                        =  PFFTS\n"
-               f" Object being observed                  =  {self.source_name}\n",
-               f" J2000 Right Ascension (hh:mm:ss.ssss)  =  {radec_to_str(self.src_raj)}\n"
-               f" J2000 Declination     (dd:mm:ss.ssss)  =  {radec_to_str(self.src_dej)}\n"
-               f" Data observed by                       =  Robotic overlords\n"
-               f" Epoch of observation (MJD)             =  {self.tstart:.09f}\n"
-               f" Barycentered?           (1=yes, 0=no)  =  {getattr(self,'barycentric',0):d}\n"
-               f" Number of bins in the time series      =  {self.nsamples:d}\n"
-               f" Width of each time series bin (sec)    =  {self.tsamp:.17g}\n"
-               f" Any breaks in the data? (1=yes, 0=no)  =  0\n"
-               f" Type of observation (EM band)          =  Radio\n"
-               f" Beam diameter (arcsec)                 =  9.22\n"
-               f" Dispersion measure (cm-3 pc)           =  {getattr(self, 'refdm', 0.0):.03f}\n"
-               f" Number of channels                     =  {getattr(self, 'nchans', 1):d}\n"
-               f" Data analyzed by                       =  sigpyproc\n")
+        inf = (
+            f" Data file name without suffix          =  {self.basename}\n"
+            f" Telescope used                         =  Effelsberg\n"
+            f" Instrument used                        =  PFFTS\n"
+            f" Object being observed                  =  {self.source_name}\n",
+            f" J2000 Right Ascension (hh:mm:ss.ssss)  =  {radec_to_str(self.src_raj)}\n"
+            f" J2000 Declination     (dd:mm:ss.ssss)  =  {radec_to_str(self.src_dej)}\n"
+            f" Data observed by                       =  Robotic overlords\n"
+            f" Epoch of observation (MJD)             =  {self.tstart:.09f}\n"
+            f" Barycentered?           (1=yes, 0=no)  =  {getattr(self,'barycentric',0):d}\n"
+            f" Number of bins in the time series      =  {self.nsamples:d}\n"
+            f" Width of each time series bin (sec)    =  {self.tsamp:.17g}\n"
+            f" Any breaks in the data? (1=yes, 0=no)  =  0\n"
+            f" Type of observation (EM band)          =  Radio\n"
+            f" Beam diameter (arcsec)                 =  9.22\n"
+            f" Dispersion measure (cm-3 pc)           =  {getattr(self, 'refdm', 0.0):.03f}\n"
+            f" Number of channels                     =  {getattr(self, 'nchans', 1):d}\n"
+            f" Data analyzed by                       =  sigpyproc\n"
+        )
 
         if hasattr(self, "foff") and hasattr(self, "nchans") and hasattr(self, "fch1"):
-            inf += (f" Central freq of low channel (Mhz)      =  {self.fbottom+0.5*abs(self.foff):.05f}\n"
-                    f" Total bandwidth (Mhz)                  =  {self.bandwidth:.05f}\n"
-                    f" Channel bandwidth (Mhz)                =  {abs(self.foff):.09f}\n")
+            inf += (
+                f" Central freq of low channel (Mhz)      =  {self.fbottom+0.5*abs(self.foff):.05f}\n"
+                f" Total bandwidth (Mhz)                  =  {self.bandwidth:.05f}\n"
+                f" Channel bandwidth (Mhz)                =  {abs(self.foff):.09f}\n"
+            )
         else:
-            inf += (f" Central freq of low channel (Mhz)      =  {0.0:.05f}\n"
-                    f" Total bandwidth (Mhz)                  =  {0.0:.05f}\n"
-                    f" Channel bandwidth (Mhz)                =  {0.0:.09f}\n")
+            inf += (
+                f" Central freq of low channel (Mhz)      =  {0.0:.05f}\n"
+                f" Total bandwidth (Mhz)                  =  {0.0:.05f}\n"
+                f" Channel bandwidth (Mhz)                =  {0.0:.09f}\n"
+            )
 
         if outfile is None:
             return inf
         else:
-            with open(outfile, 'w+') as f:
+            with open(outfile, "w+") as f:
                 f.write(inf)
             return None
 
@@ -188,7 +191,7 @@ class Header(dict):
         """
         self.updateHeader()
         chanFreqs = (np.arange(self.nchans, dtype="float128") * self.foff) + self.fch1
-        delays = dm * 4.148808e3 * ((chanFreqs**-2) - (self.fch1**-2))
+        delays = dm * 4.148808e3 * ((chanFreqs ** -2) - (self.fch1 ** -2))
         if in_samples:
             return (delays / self.tsamp).round().astype("int32")
         else:
@@ -223,28 +226,24 @@ class Header(dict):
 
 
 def _write_string(key, value):
-    key   = key.encode()
+    key = key.encode()
     value = value.encode()
-    return b"".join([pack("I", len(key)), key,
-                     pack('I', len(value)), value])
+    return b"".join([pack("I", len(key)), key, pack('I', len(value)), value])
 
 
 def _write_int(key, value):
-    key   = key.encode()
-    return b"".join([pack('I', len(key)), key,
-                     pack('I', value)])
+    key = key.encode()
+    return b"".join([pack('I', len(key)), key, pack('I', value)])
 
 
 def _write_double(key, value):
-    key   = key.encode()
-    return b"".join([pack('I', len(key)), key,
-                     pack('d', value)])
+    key = key.encode()
+    return b"".join([pack('I', len(key)), key, pack('d', value)])
 
 
 def _write_char(key, value):
-    key   = key.encode()
-    return b"".join([pack('I', len(key)), key,
-                     pack('b', value)])
+    key = key.encode()
+    return b"".join([pack('I', len(key)), key, pack('b', value)])
 
 
 def radec_to_str(val):
@@ -273,9 +272,9 @@ def MJD_to_Gregorian(mjd):
     :returns: date and time
     :rtype: :func:`tuple` of :func:`str`
     """
-    hh = np.fmod(mjd, 1) * 24.
-    mm = np.fmod(hh, 1) * 60.
-    ss = np.fmod(mm, 1) * 60.
+    hh = np.fmod(mjd, 1) * 24.0
+    mm = np.fmod(hh, 1) * 60.0
+    ss = np.fmod(mm, 1) * 60.0
     j = mjd + 2400000.5
     j = int(j)
     j = j - 1721119
@@ -313,13 +312,17 @@ def rad_to_dms(rad):
 
 def dms_to_rad(deg, min_, sec):
     """Convert (degrees, arcminutes, arcseconds) to radians."""
-    if (deg < 0.0):
+    if deg < 0.0:
         sign = -1
-    elif (deg == 0.0 and (min_ < 0.0 or sec < 0.0)):
+    elif deg == 0.0 and (min_ < 0.0 or sec < 0.0):
         sign = -1
     else:
         sign = 1
-    return sign * (np.pi / 180 / 60. / 60.) * (60.0 * (60.0 * np.fabs(deg) + np.fabs(min_)) + np.fabs(sec))
+    return (
+        sign
+        * (np.pi / 180 / 60. / 60.)
+        * (60.0 * (60.0 * np.fabs(deg) + np.fabs(min_)) + np.fabs(sec))
+    )
 
 
 def dms_to_deg(deg, min_, sec):
@@ -330,7 +333,7 @@ def dms_to_deg(deg, min_, sec):
 def rad_to_hms(rad):
     """Convert radians to (hours, minutes, seconds)."""
     rad = np.fmod(rad, 2 * np.pi)
-    if (rad < 0.0):
+    if rad < 0.0:
         rad = rad + 2 * np.pi
     arc = (12 / np.pi) * rad
     h = int(arc)
@@ -343,12 +346,15 @@ def rad_to_hms(rad):
 def hms_to_rad(hour, min_, sec):
     """Convert (hours, minutes, seconds) to radians."""
     sign = -1 if hour < 0 else 1
-    return sign * np.pi / 12 / 60. / 60. * (60.0 * (60.0 * np.fabs(hour) + np.fabs(min_)) + np.fabs(sec))
+    return (
+        sign * np.pi / 12 / 60.0 / 60.0
+        * (60.0 * (60.0 * np.fabs(hour) + np.fabs(min_)) + np.fabs(sec))
+    )
 
 
 def hms_to_hrs(hour, min_, sec):
     """Convert (hours, minutes, seconds) to hours."""
-    return (12. / np.pi) * hms_to_rad(hour, min_, sec)
+    return (12.0 / np.pi) * hms_to_rad(hour, min_, sec)
 
 
 def ra_to_rad(ra_string):
@@ -361,5 +367,5 @@ def dec_to_rad(dec_string):
     """Convert declination string to radians."""
     d, m, s = dec_string.split(":")
     if "-" in d and int(d) == 0:
-        m, s = '-' + m, '-' + s
+        m, s = "-" + m, "-" + s
     return dms_to_rad(int(d), int(m), float(s))

@@ -10,26 +10,12 @@
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
+
+# import os
+# import sys
+# sys.path.insert(0, os.path.abspath('../'))
+
 import sigpyproc
-
-import os
-import sys
-import glob
-import shutil
-sys.path.insert(0, os.path.abspath('../'))
-
-# Make the dir for tutorials
-try:
-    os.makedirs("_static/notebooks")
-except OSError:
-    pass
-
-for notebook in glob.glob("../examples/*ipynb"):
-    # os.symlink(os.path.abspath(notebook),
-    #           "_static/notebooks/" + os.path.basename(notebook))
-    shutil.copyfile(os.path.abspath(notebook),
-                    "_static/notebooks/" + os.path.basename(notebook))
-
 # -- Project information -----------------------------------------------------
 
 project = 'sigpyproc3'
@@ -39,8 +25,8 @@ author = 'Ewan Barr'
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the
 # built documents.
-#
-# The short X.Y version.
+
+# The full version, including alpha/beta/rc tags.
 version = sigpyproc.__version__
 release = version
 
@@ -50,7 +36,18 @@ release = version
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
-extensions = ['nbsphinx', 'sphinx.ext.autodoc', 'sphinx.ext.coverage', 'sphinx.ext.napoleon']
+extensions = [
+    "sphinx.ext.autodoc",
+    "sphinx.ext.autosummary",
+    "sphinx.ext.napoleon",
+    "sphinx.ext.intersphinx",
+    "sphinx.ext.mathjax",
+    "sphinx.ext.viewcode",
+    'sphinx.ext.coverage',
+    'nbsphinx',
+    'IPython.sphinxext.ipython_console_highlighting',
+    'IPython.sphinxext.ipython_directive'
+]
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
@@ -58,7 +55,7 @@ templates_path = ['_templates']
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
-exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
+exclude_patterns = ['_build', '**.ipynb_checkpoints', 'Thumbs.db', '.DS_Store']
 
 
 # -- Options for HTML output -------------------------------------------------
