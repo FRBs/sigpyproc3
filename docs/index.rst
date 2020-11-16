@@ -52,13 +52,14 @@ new modules and extensions.
 
 .. toctree::
   :maxdepth: 2
-  :caption: Contents
+  :caption: Documentation
 
   install
   modules
+  dev
 
 .. toctree::
-   :maxdepth: 2
-   :caption: Tutorials
+  :maxdepth: 2
+  :caption: Tutorials
 
-   tutorials/quickstart.ipynb
+  tutorials/quickstart.ipynb

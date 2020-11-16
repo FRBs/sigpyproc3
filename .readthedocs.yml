@@ -5,15 +5,18 @@
 # Required
 version: 2
 
-# Build documentation in the docs/ directory with Sphinx
-# Build documentation in the docs/ directory with Sphinx
-sphinx:
-  configuration: docs/conf.py
-
 # Build PDF & ePub
 formats:
   - pdf
   - epub
+
+# Build documentation in the docs/ directory with Sphinx
+sphinx:
+  builder: html
+  configuration: docs/conf.py
+
+conda:
+  file: environment_doc.yml
 
 # Optionally set the version of Python and requirements required to build your docs
 python:
@@ -23,3 +26,6 @@ python:
       path: .
       extra_requirements:
         - docs
+
+build:
+  image: latest

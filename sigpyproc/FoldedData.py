@@ -6,8 +6,15 @@ from sigpyproc.Utils import rollArray
 class Profile(np.ndarray):
     """Class to handle a 1-D pulse profile.
 
-    :param input_array: a pulse profile in array form
-    :type input_array: :class:`numpy.ndarray`
+    Parameters
+    ----------
+    input_array : :py:obj:`numpy.ndarray`
+        a pulse profile in array form
+
+    Returns
+    -------
+    :py:obj:`numpy.ndarray`
+        pulse profile
     """
 
     def __new__(cls, input_array):
@@ -40,10 +47,15 @@ class Profile(np.ndarray):
     def SN(self):
         """Return a rudimentary signal-to-noise measure for the profile.
 
-        .. note::
+        Returns
+        -------
+        float
+            calculated signal-to-noise ratio
 
-           This is a bare-bones, quick-n'-dirty algorithm that should not be used for
-           high quality signal-to-noise measurements.
+        Notes
+        -----
+        This is a bare-bones, quick-n'-dirty algorithm that should not be used for
+        high quality signal-to-noise measurements.
         """
         tmp_ar   = self.copy()
         width    = self._getWidth()
@@ -55,17 +67,17 @@ class Profile(np.ndarray):
     def retroProf(self, height=0.7, width=0.7):
         """Display the profile in ASCII formay in the terminal window.
 
-        :param height: fraction of terminal rows to use
-        :type height: float
+        Parameters
+        ----------
+        height : float, optional
+            fraction of terminal rows to use, by default 0.7
+        width : float, optional
+            fraction of terminal columns to use, by default 0.7
 
-        :param width: fraction of terminal columns to use
-        :param width:
-
-        .. note::
-
-           This function requires a system call to the Linux/Unix ``stty`` command.
+        Notes
+        -----
+        This function requires a system call to the Linux/Unix ``stty`` command.
         """
-
         rows, columns = popen("stty size", "r").read().split()
         rows = int(int(rows) * height)
         columns = int(int(columns) * width)
@@ -79,12 +91,19 @@ class Profile(np.ndarray):
 
 
 class FoldSlice(np.ndarray):
-    """Class to handle a 2-D slice of a :class:`~sigpyproc.FoldedData.FoldedData` instance.
+    """Class to handle a 2-D slice of a :class:`~sigpyproc.FoldedData.FoldedData`
+    instance.
 
-    :param input_array: a 2-D array with phase in x axis.
-    :type input_array: :class:`numpy.ndarray`
+    Parameters
+    ----------
+    input_array : :py:obj:`numpy.ndarray`
+        a 2-D array with phase in x axis.
+
+    Returns
+    -------
+    :py:obj:`numpy.ndarray`
+        2-D array
     """
-
     def __new__(cls, input_array):
         obj = input_array.astype("float32").view(cls)
         return obj
@@ -96,16 +115,20 @@ class FoldSlice(np.ndarray):
     def normalise(self):
         """Normalise the slice by dividing each row by its mean.
 
-        :return: normalised version of slice
-        :rtype: :class:`~sigpyproc.FoldedData.FoldSlice`
+        Returns
+        -------
+        :class:`~sigpyproc.FoldedData.FoldSlice`
+            normalised version of slice
         """
         return self / self.mean(axis=1).reshape(self.shape[0], 1)
 
     def getProfile(self):
         """Return the pulse profile from the slice.
 
-        :return: a pulse profile
-        :rtype: :class:`~sigpyproc.FoldedData.Profile`
+        Returns
+        -------
+        :class:`~sigpyproc.FoldedData.Profile`
+            a pulse profile
         """
         return self.sum(axis=0).view(Profile)
 
@@ -113,27 +136,28 @@ class FoldSlice(np.ndarray):
 class FoldedData(np.ndarray):
     """Class to handle a data cube produced by any of the sigpyproc folding methods.
 
-    :param input_array: 3-D array of folded data
-    :type input_array: :class:`numpy.ndarray`
+    Parameters
+    ----------
+    input_array : :py:obj:`numpy.ndarray`
+        3-D array of folded data
+    header : :class:`~sigpyproc.Header.Header`
+        observational metadata
+    period : float
+        period that data was folded with
+    dm : float
+        DM that data was folded with
+    accel : float
+        accleration that data was folded with, by default 0
+    Returns
+    -------
+    :py:obj:`numpy.ndarray`
+        3-D array of folded data with header metadata
 
-    :param header: observational metadata
-    :type header: :class:`~sigpyproc.Header.Header`
-
-    :param period: period that data was folded with
-    :type period: float
-
-    :param dm: DM that data was folded with
-    :type dm: float
-
-    :param accel: accleration that data was folded with (def=0)
-    :type accel: float
-
-    .. note::
-
-       Data cube should have the shape:
-       (number of subintegrations, number of subbands, number of profile bins)
+    Notes
+    -----
+    Data cube should have the shape:
+    (number of subintegrations, number of subbands, number of profile bins)
     """
-
     def __new__(cls, input_array, header, period, dm, accel=0):
         obj = input_array.astype("float32").view(cls)
         obj.header = header
@@ -164,51 +188,66 @@ class FoldedData(np.ndarray):
     def getSubint(self, n):
         """Return a single subintegration from the data cube.
 
-        :param n: subintegration number (n=0 is first subintegration)
-        :type n: int
+        Parameters
+        ----------
+        n : int
+            subintegration number (n=0 is first subintegration
 
-        :return: a 2-D array containing the subintegration
-        :rtype: :class:`~sigpyproc.FoldedData.FoldSlice`
+        Returns
+        -------
+        :class:`~sigpyproc.FoldedData.FoldSlice`
+            a 2-D array containing the subintegration
         """
         return self[n].view(FoldSlice)
 
     def getSubband(self, n):
         """Return a single subband from the data cube.
 
-        :param n: subband number (n=0 is first subband)
-        :type n: int
+        Parameters
+        ----------
+        n : int
+            subband number (n=0 is first subband)
 
-        :return: a 2-D array containing the subband
-        :rtype: :class:`~sigpyproc.FoldedData.FoldSlice`
+        Returns
+        -------
+        :class:`~sigpyproc.FoldedData.FoldSlice`
+            a 2-D array containing the subband
         """
         return self[:, n].view(FoldSlice)
 
     def getProfile(self):
         """Return a the data cube summed in time and frequency.
 
-        :return: a 1-D array containing the power as a function of phase (pulse profile)
-        :rtype: :class:`~sigpyproc.FoldedData.Profile`
+        Returns
+        -------
+        :class:`~sigpyproc.FoldedData.Profile`
+            a 1-D array containing the power as a function of phase (pulse profile)
         """
         return self.sum(axis=0).sum(axis=0).view(Profile)
 
     def getTimePhase(self):
         """Return the data cube collapsed in frequency.
 
-        :return: a 2-D array containing the time vs. phase plane
-        :rtype: :class:`~sigpyproc.FoldedData.FoldSlice`
+        Returns
+        -------
+        :class:`~sigpyproc.FoldedData.FoldSlice`
+            a 2-D array containing the time vs. phase plane
         """
         return self.sum(axis=1).view(FoldSlice)
 
     def getFreqPhase(self):
         """Return the data cube collapsed in time.
 
-        :return: a 2-D array containing the frequency vs. phase plane
-        :rtype: :class:`~sigpyproc.FoldedData.FoldSlice`
+        Returns
+        -------
+        :class:`~sigpyproc.FoldedData.FoldSlice`
+            a 2-D array containing the frequency vs. phase plane
         """
         return self.sum(axis=0).view(FoldSlice)
 
     def centre(self):
-        """Try and roll the data cube to center the pulse."""
+        """Try and roll the data cube to center the pulse.
+        """
         p    = self.getProfile()
         pos  = p._getPosition(p._getWidth())
         self = rollArray(self, (pos - self.nbins / 2), 2)
@@ -260,13 +299,13 @@ class FoldedData(np.ndarray):
     def updateParams(self, dm=None, period=None):
         """Install a new folding period and/or DM in the data cube.
 
-        :param dm: the new DM to dedisperse to
-        :type dm: float
-
-        :param period: the new period to fold with
-        :type period: float
+        Parameters
+        ----------
+        dm : float, optional
+            the new DM to dedisperse to, by default None
+        period : float, optional
+            the new period to fold with, by default None
         """
-
         if dm is None:
             dm = self.dm
         if period is None:

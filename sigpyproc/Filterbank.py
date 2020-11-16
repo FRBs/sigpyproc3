@@ -7,13 +7,13 @@ import sigpyproc.libSigPyProc as lib
 
 
 class Filterbank(object):
-    """Class exporting methods for the manipulation of frequency-major
+    """New Class exporting methods for the manipulation of frequency-major
     order pulsar data.
 
-    .. note::
-
-       The Filterbank class should never be instantiated directly. Instead it
-       should be inherited by data reading classes.
+    Notes
+    -----
+    The Filterbank class should never be instantiated directly. Instead it
+    should be inherited by data reading classes.
     """
 
     def __init__(self):
@@ -28,8 +28,10 @@ class Filterbank(object):
     def setNthreads(self, nthreads=None):
         """Set the number of threads available to OpenMP.
 
-        :param nthreads: number of threads to use (def = 4)
-        :type nthreads: int
+        Parameters
+        ----------
+        nthreads : int, optional
+            number of threads to use, by default 4
         """
         if nthreads is None:
             nthreads = 4
@@ -38,11 +40,19 @@ class Filterbank(object):
     def collapse(self, gulp=512, start=0, nsamps=None, **kwargs):
         """Sum across all frequencies for each time sample.
 
-        :param gulp: number of samples in each read
-        :type gulp: int
+        Parameters
+        ----------
+        gulp : int, optional
+            number of samples in each read, by default 512
+        start : int, optional
+            start sample, by default 0
+        nsamps : int, optional
+            number of samples to read, by default all
 
-        :return: A zero-DM time series
-        :rtype: :class:`~sigpyproc.TimeSeries.TimeSeries`
+        Returns
+        -------
+        :class:`~sigpyproc.TimeSeries.TimeSeries`
+            A zero-DM time series
         """
         if nsamps is None:
             size = self.header.nsamples - start
@@ -59,23 +69,23 @@ class Filterbank(object):
                    back_compatible=True, **kwargs):
         """Invert the frequency ordering of the data and write new data to a new file.
 
-        :param gulp: number of samples in each read
-        :type gulp: int
+        Parameters
+        ----------
+        gulp : int, optional
+            number of samples in each read, by default 512
+        start : int, optional
+            start sample, by default 0
+        nsamps : int, optional
+            number of samples to read, by default all
+        filename : str, optional
+            name of output file, by default ``basename_inverted.fil``
+        back_compatible : bool, optional
+            sigproc compatibility flag (legacy code), by default True
 
-        :param start: start sample
-        :type start: int
-
-        :param nsamps: number of samples in split
-        :type nsamps: int
-
-        :param filename: name of output file (defaults to ``basename_inverted.fil``)
-        :type filename: string
-
-        :param back_compatible: sigproc compatibility flag (legacy code)
-        :type back_compatible: bool
-
-        :return: name of output file
-        :return type: :func:`str`
+        Returns
+        -------
+        str
+            name of output file
         """
         if filename is None:
             filename = f"{self.header.basename}_inverted.fil"
@@ -107,11 +117,15 @@ class Filterbank(object):
     def bandpass(self, gulp=512, **kwargs):
         """Average across each time sample for all frequencies.
 
-        :param gulp: number of samples in each read
-        :type gulp: int
+        Parameters
+        ----------
+        gulp : int, optional
+            number of samples in each read, by default 512
 
-        :return: the bandpass of the data
-        :rtype: :class:`~sigpyproc.TimeSeries.TimeSeries`
+        Returns
+        -------
+        :class:`~sigpyproc.TimeSeries.TimeSeries`
+            the bandpass of the data
         """
         bpass_ar = np.zeros(self.header.nchans, dtype="float64")
         num_samples = 0
@@ -124,19 +138,22 @@ class Filterbank(object):
     def dedisperse(self, dm, gulp=10000, **kwargs):
         """Dedisperse the data to a time series.
 
-        :param dm: dispersion measure to dedisperse to
-        :type dm: float
+        Parameters
+        ----------
+        dm : float
+            dispersion measure to dedisperse to
+        gulp : int, optional
+            number of samples in each read, by default 10000
 
-        :param gulp: number of samples in each read
-        :type gulp: int
+        Returns
+        -------
+        :class:`~sigpyproc.TimeSeries.TimeSeries`
+            a dedispersed time series
 
-        :return: a dedispersed time series
-        :rtype: :class:`~sigpyproc.TimeSeries.TimeSeries`
-
-        .. note::
-
-               If gulp < maximum dispersion delay, gulp is taken to be twice the maximum dispersion delay.
-
+        Notes
+        -----
+        If gulp < maximum dispersion delay, gulp is taken to be twice the
+        maximum dispersion delay.
         """
         chan_delays   = self.header.getDMdelays(dm)
         max_delay     = int(chan_delays.max())
@@ -158,22 +175,22 @@ class Filterbank(object):
     def subband(self, dm, nsub, filename=None, gulp=10000, **kwargs):
         """Produce a set of dedispersed subbands from the data.
 
-        :param dm: the DM of the subbands
-        :type dm: float
+        Parameters
+        ----------
+        dm : float
+            the DM of the subbands
+        nsub : int
+            the number of subbands to produce
+        filename : str, optional
+            output file name of subbands, by default ``basename_DM.subbands``
+        gulp : int, optional
+            number of samples in each read, by default 10000
 
-        :param nsub: the number of subbands to produce
-        :type nsub: int
-
-        :param filename: output file name of subbands (def=basename_DM.subbands)
-        :type filename: :func:`str`
-
-        :param gulp: number of samples in each read
-        :type gulp: int
-
-        :return: name of output subbands file
-        :rtype: :func:`str`
+        Returns
+        -------
+        str
+            name of output subbands file
         """
-
         subfactor     = self.header.nchans // nsub
         chan_delays   = self.header.getDMdelays(dm)
         max_delay     = int(chan_delays.max())
@@ -213,18 +230,19 @@ class Filterbank(object):
     def upTo8bit(self, filename=None, gulp=512, back_compatible=True, **kwargs):
         """Convert 1-,2- or 4-bit data to 8-bit data and write to file.
 
-        :param filename: name of file to write to (defaults to ``basename_8bit.fil`` )
-        :type filename: str
+        Parameters
+        ----------
+        filename : str, optional
+            name of file to write to, by default ``basename_8bit.fil``
+        gulp : int, optional
+            number of samples in each read, by default 512
+        back_compatible : bool, optional
+            sigproc compatibility flag, by default True
 
-        :param gulp: number of samples in each read
-        :type gulp: int
-
-        :param back_compatible: sigproc compatibility flag
-        :type back_compatible: bool
-
-        :return: name of output file
-        :rtype: :func:`str`
-
+        Returns
+        -------
+        str
+            name of output file
         """
         if filename is None:
             filename = f"{self.header.basename}_8bit.fil"
@@ -240,20 +258,21 @@ class Filterbank(object):
                          back_compatible=True, **kwargs):
         """Set the data in the given channels to zero.
 
-        :param outfilename: name of the output filterbank file
-        :type outfilename: str
+        Parameters
+        ----------
+        chanmask : list
+            binary channel mask (0 for bad channel, 1 for good)
+        outfilename : str, optional
+            name of the output filterbank file, by default ``basename_masked.fil``
+        gulp : int, optional
+            number of samples in each read, by default 512
+        back_compatible : bool, optional
+            sigproc compatibility flag, by default True
 
-        :param chanmask: binary channel mask (0 for bad channel, 1 for good)
-        :type chanmask: list
-
-        :param gulp: number of samples in each read
-        :type gulp: int
-
-        :param back_compatible: sigproc compatibility flag
-        :type back_compatible: bool
-
-        :return: outfile name
-        :rtype: str
+        Returns
+        -------
+        str
+            name of output file
         """
         if outfilename is None:
             outfilename = f"{self.header.basename}_masked.fil"
@@ -268,23 +287,28 @@ class Filterbank(object):
                    back_compatible=True, **kwargs):
         """Downsample data in time and/or frequency and write to file.
 
-        :param tfactor: factor by which to downsample in time
-        :type tfactor: int
+        Parameters
+        ----------
+        tfactor : int, optional
+            factor by which to downsample in time, by default 1
+        ffactor : int, optional
+            factor by which to downsample in frequency, by default 1
+        gulp : int, optional
+            number of samples in each read, by default 512
+        filename : str, optional
+            name of file to write to, by default ``basename_tfactor_ffactor.fil``
+        back_compatible : bool, optional
+            sigproc compatibility flag (legacy code), by default True
 
-        :param ffactor: factor by which to downsample in frequency
-        :type ffactor: int
+        Returns
+        -------
+        str
+            output file name
 
-        :param gulp: number of samples in each read
-        :type gulp: int
-
-        :param filename: name of file to write to (defaults to ``basename_tfactor_ffactor.fil``)
-        :type filename: str
-
-        :param back_compatible: sigproc compatibility flag (legacy code)
-        :type back_compatible: bool
-
-        :return: output file name
-        :rtype: :func:`str`
+        Raises
+        ------
+        ValueError
+            If number of channels is not divisible by `ffactor`.
         """
         if filename is None:
             filename = f"{self.header.basename}_f{ffactor:d}_t{tfactor:d}.fil"
@@ -318,34 +342,37 @@ class Filterbank(object):
              gulp=10000, **kwargs):
         """Fold data into discrete phase, subintegration and subband bins.
 
-        :param period: period in seconds to fold with
-        :type period: float
+        Parameters
+        ----------
+        period : float
+            period in seconds to fold with
+        dm : float
+            dispersion measure to dedisperse to
+        accel : float, optional
+            acceleration in m/s/s to fold with, by default 0
+        nbins : int, optional
+            number of phase bins in output, by default 50
+        nints : int, optional
+            number of subintegrations in output, by default 32
+        nbands : int, optional
+            number of subbands in output, by default 32
+        gulp : int, optional
+            number of samples in each read, by default 10000
 
-        :param dm: dispersion measure to dedisperse to
-        :type dm: float
+        Returns
+        -------
+        :class:`~sigpyproc.FoldedData.FoldedData`
+            3 dimensional data cube
 
-        :param accel: acceleration in m/s/s to fold with
-        :type accel: float
+        Raises
+        ------
+        ValueError
+            If `nbands * nints * nbins` is too large
 
-        :param nbins: number of phase bins in output
-        :type nbins: int
-
-        :param nints: number of subintegrations in output
-        :type nints: int
-
-        :param nbands: number of subbands in output
-        :type nbands: int
-
-        :param gulp: number of samples in each read
-        :type gulp: int
-
-        :return: 3 dimensional data cube
-        :rtype: :class:`~sigpyproc.FoldedData.FoldedData`
-
-        .. note::
-
-                If gulp < maximum dispersion delay, gulp is taken to be twice the maximum dispersion delay.
-
+        Notes
+        -----
+        If gulp < maximum dispersion delay, gulp is taken to be twice the
+        maximum dispersion delay.
         """
         if np.modf(period / self.header.tsamp)[0] < 0.001:
             print("WARNING: Foldng interval is an integer multiple of the sampling time")
@@ -384,14 +411,22 @@ class Filterbank(object):
     def getChan(self, chan, gulp=512, **kwargs):
         """Retrieve a single frequency channel from the data.
 
-        :param chan: channel to retrieve (0 is the highest frequency channel)
-        :type chan: int
+        Parameters
+        ----------
+        chan : int
+            channel to retrieve (0 is the highest frequency channel)
+        gulp : int, optional
+            number of samples in each read, by default 512
 
-        :param gulp: number of samples in each read
-        :type gulp: int
+        Returns
+        -------
+        :class:`~sigpyproc.TimeSeries.TimeSeries`
+            selected channel as a time series
 
-        :return: selected channel as a time series
-        :rtype: :class:`~sigpyproc.TimeSeries.TimeSeries`
+        Raises
+        ------
+        ValueError
+            If chan is out of range (chan < 0 or chan > total channels).
         """
         if chan >= self.header.nchans or chan < 0:
             raise ValueError("Selected channel out of range.")
@@ -406,23 +441,23 @@ class Filterbank(object):
               back_compatible=True, **kwargs):
         """Split data in time.
 
-        :param start: start sample of split
-        :type start: int
+        Parameters
+        ----------
+        start : int
+            start sample of split
+        nsamps : int
+            number of samples in split
+        filename : str, optional
+            name of output file, by default ``basename_start_start+nsamps.fil``
+        gulp : int, optional
+            number of samples in each read, by default 1024
+        back_compatible : bool, optional
+            sigproc compatibility flag (legacy code), by default True
 
-        :param nsamps: number of samples in split
-        :type nsamps: int
-
-        :param filename: name of output file
-        :type filename: :func:`str`
-
-        :param gulp: number of samples in each read
-        :type gulp: int
-
-        :param back_compatible: sigproc compatibility flag (legacy code)
-        :type back_compatible: bool
-
-        :return: name of new file
-        :rtype: :func:`str`
+        Returns
+        -------
+        str
+            name of new file
         """
         if filename is None:
             filename = f"{self.header.basename}_{start:d}_{start+nsamps:d}.fil"
@@ -440,19 +475,21 @@ class Filterbank(object):
     def splitToChans(self, gulp=1024, back_compatible=True, **kwargs):
         """Split the data into component channels and write each to file.
 
-        :param gulp: number of samples in each read
-        :type gulp: int
+        Parameters
+        ----------
+        gulp : int, optional
+            number of samples in each read, by default 1024
+        back_compatible : bool, optional
+            sigproc compatibility flag (legacy code), by default True
 
-        :param back_compatible: sigproc compatibility flag (legacy code)
-        :type back_compatible: bool
+        Returns
+        -------
+        list of str
+            names of all files written to disk
 
-        :return: names of all files written to disk
-        :rtype: :func:`list` of :func:`str`
-
-        .. note::
-
-                Time series are written to disk with names based on channel number.
-
+        Notes
+        -----
+        Time series are written to disk with names based on channel number.
         """
         tim_ar = np.empty([self.header.nchans, gulp], dtype="float32")
         out_files = [
@@ -476,27 +513,27 @@ class Filterbank(object):
 
     def splitToBands(self, chanpersub, chanstart=0, gulp=1024,
                      back_compatible=True, **kwargs):
-        """Split the data into component Sub-bands and write each to a filterbank file.
+        """Split the data into component Sub-bands and write to disk.
 
-        :param chanpersub: number of channels in each sub-band
-        :type chanpersub: int
+        Parameters
+        ----------
+        chanpersub : int
+            number of channels in each sub-band
+        chanstart : int, optional
+            start channel of split, by default 0
+        gulp : int, optional
+            number of samples in each read, by default 1024
+        back_compatible : bool, optional
+            sigproc compatibility flag (legacy code), by default True
 
-        :param chanstart: start channel of split
-        :type chanstart: int
+        Returns
+        -------
+        list of str
+            names of all files written to disk
 
-        :param gulp: number of samples in each read
-        :type gulp: int
-
-        :param back_compatible: sigproc compatibility flag (legacy code)
-        :type back_compatible: bool
-
-        :return: names of all files written to disk
-        :rtype: :func:`list` of :func:`str`
-
-        .. note::
-
-                Filterbanks are written to disk with names based on sub-band number.
-
+        Notes
+        -----
+        Filterbanks are written to disk with names based on sub-band number.
         """
         # TODO: C version is too slow. Need to fix
         nsub = (self.header.nchans - chanstart) // chanpersub
@@ -515,7 +552,7 @@ class Filterbank(object):
             for ii in range(nsub)
         ]
 
-        # subband_ar    = np.empty([gulp*chanpersub, nsub], dtype=self.header.dtype)
+        # subband_ar = np.empty([gulp*chanpersub, nsub], dtype=self.header.dtype)
         for nsamps, ii, data in self.readPlan(gulp, **kwargs):
             """
             lib.splitToBands(
@@ -544,10 +581,12 @@ class Filterbank(object):
     def getStats(self, gulp=512, **kwargs):
         """Retrieve channelwise statistics of data.
 
-        :param gulp: number of samples in each read
-        :type gulp: int
+        Parameters
+        ----------
+        gulp : int, optional
+            number of samples in each read, by default 512
 
-        Function creates four instance attributes:
+        Function creates following instance attributes:
 
            * :attr:`chan_means`: the mean value of each channel
            * :attr:`chan_vars`: the variance of each channel
@@ -602,23 +641,24 @@ class Filterbank(object):
     def removeBandpass(self, gulp=512, filename=None, back_compatible=True, **kwargs):
         """Remove the bandpass from the data and write new data to a new file.
 
-        :param gulp: number of samples in each read
-        :type gulp: int
+        Parameters
+        ----------
+        gulp : int, optional
+            number of samples in each read, by default 512
+        filename : str, optional
+            name of output file, by default ``basename_bpcorr.fil``
+        back_compatible : bool, optional
+            sigproc compatibility flag (legacy code), by default True
 
-        :param start: start sample
-        :type start: int
+        Returns
+        -------
+        str
+            name of output file
 
-        :param nsamps: number of samples in split
-        :type nsamps: int
-
-        :param filename: name of output file (defaults to ``basename_inverted.fil``)
-        :type filename: string
-
-        :param back_compatible: sigproc compatibility flag (legacy code)
-        :type back_compatible: bool
-
-        :return: name of output file
-        :return type: :func:`str`
+        Raises
+        ------
+        TypeError
+            If `nbits` of input file is < 8.
         """
         if self.header.nbits < 8:
             raise TypeError(f"{self.header.nbits}-bit filterbank not supported yet!")
@@ -648,29 +688,25 @@ class Filterbank(object):
         return out_file.name
 
     def removeZeroDM(self, gulp=512, filename=None, back_compatible=True, **kwargs):
-        """Remove the channel-weighted zero-DM from the data and write new data to a new file.
+        """Remove the channel-weighted zero-DM from the data and write to disk.
 
-        :param gulp: number of samples in each read
-        :type gulp: int
+        Parameters
+        ----------
+        gulp : int, optional
+            number of samples in each read, by default 512
+        filename : str, optional
+            name of output file , by default ``basename_noZeroDM.fil``
+        back_compatible : bool, optional
+            sigproc compatibility flag (legacy code), by default True
 
-        :param start: start sample
-        :type start: int
+        Returns
+        -------
+        str
+            name of output file
 
-        :param nsamps: number of samples in split
-        :type nsamps: int
-
-        :param filename: name of output file (defaults to ``basename_inverted.fil``)
-        :type filename: string
-
-        :param back_compatible: sigproc compatibility flag (legacy code)
-        :type back_compatible: bool
-
-        :return: name of output file
-        :return type: :func:`str`
-
-        .. note::
-
-                Based on Presto implementation of Eatough, Keane & Lyne 2009
+        Notes
+        -----
+        Based on Presto implementation of Eatough, Keane & Lyne 2009
         """
         if filename is None:
             filename = f"{self.header.basename}_noZeroDM.fil"
@@ -693,15 +729,20 @@ class Filterbank(object):
 class FilterbankBlock(np.ndarray):
     """Class to handle a discrete block of data in time-major order.
 
-    :param input_array: 2 dimensional array of shape (nchans,nsamples)
-    :type input_array: :class:`numpy.ndarray`
+    Parameters
+    ----------
+    input_array : :py:obj:`numpy.ndarray`
+        2 dimensional array of shape (nchans, nsamples)
+    header : :class:`~sigpyproc.Header.Header`
+        observational metadata
+    Returns
+    -------
+    :py:obj:`numpy.ndarray`
+        2 dimensional array of shape (nchans, nsamples) with header metadata
 
-    :param header: observational metadata
-    :type header: :class:`~sigpyproc.Header.Header`
-
-    .. note::
-
-            Data is converted to 32 bits regardless of original type.
+    Notes
+    -----
+    Data is converted to 32 bits regardless of original type.
     """
 
     def __new__(cls, input_array, header):
@@ -720,19 +761,22 @@ class FilterbankBlock(np.ndarray):
     def downsample(self, tfactor=1, ffactor=1):
         """Downsample data block in frequency and/or time.
 
-        :param tfactor: factor by which to downsample in time
-        :type tfactor: int
+        Parameters
+        ----------
+        tfactor : int, optional
+            factor by which to downsample in time, by default 1
+        ffactor : int, optional
+            factor by which to downsample in frequency, by default 1
 
-        :param ffactor: factor by which to downsample in frequency
-        :type ffactor: int
+        Returns
+        -------
+        :class:`~sigpyproc.Filterbank.FilterbankBlock`
+            2 dimensional array of downsampled data
 
-        :return: 2 dimensional array of downsampled data
-        :rtype: :class:`~sigpyproc.Filterbank.FilterbankBlock`
-
-        .. note::
-
-                ffactor must be a factor of nchans.
-
+        Raises
+        ------
+        ValueError
+            If number of channels is not divisible by `ffactor`.
         """
         if not self.shape[0] % ffactor == 0:
             raise ValueError("Bad frequency factor given")
@@ -753,14 +797,17 @@ class FilterbankBlock(np.ndarray):
     def toFile(self, filename=None, back_compatible=True):
         """Write the data to file.
 
-        :param filename: name of the output file (defaults to ``basename_split_start_to_end.fil``)
-        :type filename: str
+        Parameters
+        ----------
+        filename : str, optional
+            name of the output file, by default ``basename_split_start_to_end.fil``
+        back_compatible : bool, optional
+            sigproc compatibility flag (legacy code), by default True
 
-        :param back_compatible: sigproc compatibility flag (legacy code)
-        :type back_compatible: bool
-
-        :return: name of output file
-        :rtype: :func:`str`
+        Returns
+        -------
+        str
+            name of output file
         """
         if filename is None:
             filename = (
@@ -777,34 +824,58 @@ class FilterbankBlock(np.ndarray):
     def normalise(self):
         """Divide each frequency channel by its average.
 
-        :return: normalised version of the data
-        :rtype: :class:`~sigpyproc.Filterbank.FilterbankBlock`
+        Returns
+        -------
+        :class:`~sigpyproc.Filterbank.FilterbankBlock`
+            normalised version of the data
         """
         return self / self.mean(axis=1).reshape(self.shape[0], 1)
 
     def get_tim(self):
+        """Sum across all frequencies for each time sample
+
+        Returns
+        -------
+        :class:`~sigpyproc.TimeSeries.TimeSeries`
+            a timeseries
+        """
         return self.sum(axis=0)
 
     def get_bandpass(self):
+        """Average across each time sample for all frequencies.
+
+        Returns
+        -------
+        :class:`~sigpyproc.TimeSeries.TimeSeries`
+            the bandpass of the data
+        """
         return self.sum(axis=1)
 
     def dedisperse(self, dm, only_valid_samples=False):
         """Dedisperse the block.
 
-        :param dm: dm to dedisperse to
-        :type dm: float
+        Parameters
+        ----------
+        dm : float
+            dm to dedisperse to
+        only_valid_samples : bool, optional
+            return a FilterbankBlock with only time samples that
+            contain the full bandwidth, by default False
 
-        :param only_valid_samples: return a FilterbankBlock with only time samples that
-            contain the full bandwidth
-        :type only_valid_samples: bool
+        Returns
+        -------
+        :class:`~sigpyproc.Filterbank.FilterbankBlock`
+            a dedispersed version of the block
 
-        :return: a dedispersed version of the block
-        :rtype: :class:`~sigpyproc.Filterbank.FilterbankBlock`
+        Raises
+        ------
+        ValueError
+            If there are not enough time samples to dedisperse.
 
-        .. note::
-
-                Frequency dependent delays are applied as rotations to each
-                channel in the block.
+        Notes
+        -----
+        Frequency dependent delays are applied as rotations to each
+        channel in the block.
         """
         delays = self.header.getDMdelays(dm)
         if not only_valid_samples:
