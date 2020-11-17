@@ -16,7 +16,7 @@ sphinx:
   configuration: docs/conf.py
 
 conda:
-  environment: environment_doc.yml
+  environment: docs/environment.yml
 
 # Optionally set the version of Python and requirements required to build your docs
 python:
@@ -26,6 +26,8 @@ python:
       path: .
       extra_requirements:
         - docs
+    - method: setuptools
+      path: .
 
 build:
   image: latest

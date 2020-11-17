@@ -1,5 +1,6 @@
 import codecs
 import os.path
+import sysconfig
 
 from setuptools import setup
 
@@ -28,6 +29,45 @@ def get_version(rel_path):
 
 package_version = get_version("sigpyproc/__init__.py")
 
+
+def append_path(dirs_list, *args):
+    entry = os.path.normpath(os.path.join(*args))
+    if os.path.isdir(entry):
+        if entry not in dirs_list:
+            dirs_list.append(entry)
+
+
+def get_include_dirs():
+    prefix_dirs = ['/usr']
+    dirs = []
+    triplet = sysconfig.get_config_var('MULTIARCH') or ''  # x86_64-linux-gnu
+    sys_include = sysconfig.get_config_var('INCLUDEDIR')
+    if 'FFTW_PATH' in os.environ:
+        append_path(dirs, os.environ['FFTW_PATH'], 'include')
+    if sys_include is not None:
+        append_path(dirs, sys_include, triplet)
+        append_path(dirs, sys_include)
+    for prefix in prefix_dirs:
+        append_path(dirs, prefix, 'include', triplet)
+        append_path(dirs, prefix, 'include')
+    return dirs
+
+
+def get_library_dirs():
+    prefix_dirs = ['/usr']
+    dirs = []
+    triplet = sysconfig.get_config_var('MULTIARCH') or ''  # x86_64-linux-gnu
+    sys_lib = sysconfig.get_config_var('LIBDIR')
+    if 'FFTW_PATH' in os.environ:
+        append_path(dirs, os.environ['FFTW_PATH'], 'lib')
+    if sys_lib is not None:
+        append_path(dirs, sys_lib, triplet)
+        append_path(dirs, sys_lib)
+    for prefix in prefix_dirs:
+        append_path(dirs, prefix, 'lib', triplet)
+        append_path(dirs, prefix, 'lib')
+    return dirs
+
 # The main interface is through Pybind11Extension.
 # * You can add cxx_std=11/14/17, and then build_ext can be removed.
 # * You can set include_pybind11=false to add the include directory yourself,
@@ -37,11 +77,13 @@ package_version = get_version("sigpyproc/__init__.py")
 #   Sort input source files if you glob sources to ensure bit-for-bit
 #   reproducible builds (https://github.com/pybind/python_example/pull/53)
 
+
 ext_modules = [
     Pybind11Extension(
         'sigpyproc.libSigPyProc',
         sources=['c_src/bindings.cpp'],
-        include_dirs=['c_src/'],
+        include_dirs=get_include_dirs() + ['c_src/'],
+        library_dirs=get_library_dirs(),
         define_macros=[('VERSION_INFO', package_version)],
         extra_link_args=['-lgomp', '-lm', '-lfftw3', '-lfftw3f'],
         extra_compile_args=['-fopenmp'],
