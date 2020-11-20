@@ -11,27 +11,23 @@
 
 namespace sigpyproc {
 
-void runningMedian(float* inbuffer, float* outbuffer, int window, int nsamps) {
-    Mediator* m = MediatorNew(window);
-    for (int ii = 0; ii < nsamps; ii++) {
-        MediatorInsert(m, inbuffer[ii]);
-        outbuffer[ii] = inbuffer[ii] - (float)MediatorMedian(m);
+template <typename T>
+void running_Median(T* inbuffer, T* outbuffer, int window, int nsamps) {
+    T* arrayWithBoundary = addBoundary<T>(inbuffer, window, nsamps);
+    int outSize = sizeof(arrayWithBoundary)/sizeof(T);
+
+    // Move window through all elements of the extended array
+    RunningMedian<T> rm(window);
+    for (int ii = 0; ii < outSize; ii++) {
+        rm.insert(arrayWithBoundary[ii]);
+        outbuffer[ii] = rm.median();
     }
 }
 
-void runningMean(float* inbuffer, float* outbuffer, int window, int nsamps) {
-    // Allocate memory for new extended array (to deal with window edges)
-    const int boundarySize = window / 2; // integer division
-    const int outSize = nsamps + boundarySize * 2;
 
-    float* arrayWithBoundary = new float[outSize];
-    std::memcpy(arrayWithBoundary + boundarySize, inbuffer,
-                nsamps * sizeof(float));
-    // Extend by reflecting about the edge.
-    for (int ii = 0; ii < boundarySize; ++ii){
-        arrayWithBoundary[ii] = inbuffer[boundarySize - 1 - ii];
-        arrayWithBoundary[nsamps + boundarySize + ii] = inbuffer[nsamps - 1 - ii];
-    }
+void runningMean(float* inbuffer, float* outbuffer, int window, int nsamps) {
+    float* arrayWithBoundary = addBoundary<float>(inbuffer, window, nsamps);
+    int outSize = sizeof(arrayWithBoundary)/sizeof(float);
 
     // Move window through all elements of the extended array
     double sum = 0;

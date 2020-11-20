@@ -375,18 +375,17 @@ py::array_t<float> multiply_fs(py::array_t<float> inarray,
 }
 
 
-
-py::array_t<float> runningMedian(py::array_t<float> inarray,
-    int window, int nsamps) {
+template <class T>
+py::array_t<T> runningMedian(py::array_t<T> inarray, int window, int nsamps) {
     py::buffer_info inbuf = inarray.request();
 
-    auto outarray = py::array_t<float>(nsamps);
+    auto outarray = py::array_t<T>(nsamps);
     py::buffer_info outbuf = outarray.request();
 
-    float* indata  = (float*)inbuf.ptr;
-    float* outdata = (float*)outbuf.ptr;
+    T* indata  = (T*)inbuf.ptr;
+    T* outdata = (T*)outbuf.ptr;
 
-    sigpyproc::runningMedian(indata, outdata, window, nsamps);
+    sigpyproc::running_Median(indata, outdata, window, nsamps);
     return outarray;
 }
 
@@ -568,7 +567,8 @@ PYBIND11_MODULE(libSigPyProc, m) {
     m.def("sumHarms", &sumHarms);
     m.def("multiply_fs", &multiply_fs);
 
-    m.def("runningMedian", &runningMedian);
+    m.def("runningMedian", &runningMedian<float>);
+    m.def("runningMedian", &runningMedian<uint8_t>);
     m.def("runningMean", &runningMean);
     m.def("runBoxcar", &runBoxcar);
     m.def("foldTim", &foldTim);

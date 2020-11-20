@@ -91,7 +91,7 @@ void rednoise(float* fftbuffer, float* outbuffer, float* oldinbuf,
     }
 
     // calculate first median of our data and determine next bufflen
-    mean_old = median(realbuffer, numread_old) / log(2.0);
+    mean_old = median<float>(realbuffer, numread_old) / log(2.0);
     binnum  += numread_old;
     bufflen  = startwidth * log(binnum);
 
@@ -111,7 +111,7 @@ void rednoise(float* fftbuffer, float* outbuffer, float* oldinbuf,
                              newinbuf[ii * 2 + 1] * newinbuf[ii * 2 + 1];
         }
 
-        mean_new = median(realbuffer, numread_new) / log(2.0);
+        mean_new = median<float>(realbuffer, numread_new) / log(2.0);
         slope    = (mean_new - mean_old) / (numread_old + numread_new);
 
         for (int ii = 0; ii < numread_old; ii++) {

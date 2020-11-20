@@ -4,6 +4,9 @@
 #include <random>
 #include <vector>
 #include <cstdlib>
+#include <queue>
+#include <algorithm>
+
 
 #define MACRO_STRINGIFY(x) #x
 
@@ -25,216 +28,103 @@ unsigned char getRand(float mean, float std) {
     return randval;
 }
 
-// RUNNING MEDIAN CODE START
-typedef float Item;
-typedef struct Mediator_t {
-    Item* data;   // circular queue of values
-    int*  pos;    // index into `heap` for each value
-    int*  heap;   // max/median/min heap holding indexes into `data`.
-    int   N;      // allocated size.
-    int   idx;    // position in circular queue
-    int   minCt;  // count of items in min heap
-    int   maxCt;  // count of items in max heap
-} Mediator;
 
+/* find the median value of a std::vector
+*  Taken from https://gitlab.com/conradsnicta/armadillo-code/-/blob/10.1.x/include/armadillo_bits/op_median_meat.hpp
+*/
+template<typename T>
+T direct_median(std::vector<T>& X) {
+    const int n_elem = int(X.size());
+    const int half   = n_elem/2;
 
-/*--- Helper Functions ---*/
+    typename std::vector<T>::iterator first    = X.begin();
+    typename std::vector<T>::iterator nth      = first + half;
+    typename std::vector<T>::iterator pastlast = X.end();
 
-// returns 1 if heap[i] < heap[j]
-inline int mmless(Mediator* m, int i, int j) {
-    return (m->data[m->heap[i]] < m->data[m->heap[j]]);
-}
+    std::nth_element(first, nth, pastlast);
 
-// swaps items i&j in heap, maintains indexes
-int mmexchange(Mediator* m, int i, int j) {
-    int t              = m->heap[i];
-    m->heap[i]         = m->heap[j];
-    m->heap[j]         = t;
-    m->pos[m->heap[i]] = i;
-    m->pos[m->heap[j]] = j;
-    return 1;
-}
+    if((n_elem % 2) == 0) {
+        // even number of elements
+        typename std::vector<T>::iterator start   = X.begin();
+        typename std::vector<T>::iterator pastend = start + half;
 
-// swaps items i&j if i<j;  returns true if swapped
-inline int mmCmpExch(Mediator* m, int i, int j) {
-    return (mmless(m, i, j) && mmexchange(m, i, j));
-}
+        const T val1 = (*nth);
+        const T val2 = (*(std::max_element(start, pastend)));
 
-
-
-// maintains minheap property for all items below i.
-void minSortDown(Mediator* m, int i) {
-    for (i *= 2; i <= m->minCt; i *= 2) {
-        if (i < m->minCt && mmless(m, i + 1, i)) {
-            ++i;
-        }
-        if (!mmCmpExch(m, i, i / 2)) {
-            break;
-        }
+        return val1 + (val2 - val1)/T(2);
     }
-}
-
-// maintains maxheap property for all items below i. (negative indexes)
-void maxSortDown(Mediator* m, int i) {
-    for (i *= 2; i >= -m->maxCt; i *= 2) {
-        if (i > -m->maxCt && mmless(m, i, i - 1)) {
-            --i;
-        }
-        if (!mmCmpExch(m, i / 2, i)) {
-            break;
-        }
-    }
-}
-
-// maintains minheap property for all items above i, including median
-// returns true if median changed
-inline int minSortUp(Mediator* m, int i) {
-    while (i > 0 && mmCmpExch(m, i, i / 2))
-        i /= 2;
-    return (i == 0);
-}
-
-// maintains maxheap property for all items above i, including median
-// returns true if median changed
-inline int maxSortUp(Mediator* m, int i) {
-    while (i < 0 && mmCmpExch(m, i / 2, i))
-        i /= 2;
-    return (i == 0);
-}
-
-
-
-/*--- Public Interface ---*/
-
-// creates new Mediator: to calculate `nItems` running median.
-// mallocs single block of memory, caller must free.
-Mediator* MediatorNew(int nItems) {
-    int size    = sizeof(Mediator) + nItems * (sizeof(Item) + sizeof(int) * 2);
-    Mediator* m = (Mediator*)std::malloc(size);
-    m->data     = (Item*)(m + 1);
-    m->pos      = (int*)(m->data + nItems);
-    m->heap  = m->pos + nItems + (nItems / 2);  // points to middle of storage.
-    m->N     = nItems;
-    m->minCt = m->maxCt = m->idx = 0;
-    // set up initial heap fill pattern: median,max,min,max,...
-    while (nItems--) {
-        m->pos[nItems]          = ((nItems + 1) / 2) * ((nItems & 1) ? -1 : 1);
-        m->heap[m->pos[nItems]] = nItems;
-    }
-    return m;
-}
-
-// Inserts item, maintains median in O(lg nItems)
-void MediatorInsert(Mediator* m, Item v) {
-    int  p          = m->pos[m->idx];
-    Item old        = m->data[m->idx];
-    m->data[m->idx] = v;
-    m->idx          = (m->idx + 1) % m->N;
-    if (p > 0) {
-        // new item is in minHeap
-        if (m->minCt < (m->N - 1) / 2) {
-            m->minCt++;
-        } else if (v > old) {
-            minSortDown(m, p);
-            return;
-        }
-        if (minSortUp(m, p) && mmCmpExch(m, 0, -1)) {
-            maxSortDown(m, -1);
-        }
-    } else if (p < 0) {
-        // new item is in maxheap
-        if (m->maxCt < m->N / 2) {
-            m->maxCt++;
-        } else if (v < old) {
-            maxSortDown(m, p);
-            return;
-        }
-        if (maxSortUp(m, p) && m->minCt && mmCmpExch(m, 1, 0)) {
-            minSortDown(m, 1);
-        }
-    } else {
-        // new item is at median
-        if (m->maxCt && maxSortUp(m, -1)) {
-            maxSortDown(m, -1);
-        }
-        if (m->minCt && minSortUp(m, 1)) {
-            minSortDown(m, 1);
-        }
+    else  {
+        // odd number of elements
+        return (*nth);
     }
 }
 
 
-// returns median item (or average of 2 when item count is even)
-Item MediatorMedian(Mediator* m) {
-    Item v = m->data[m->heap[0]];
-    if (m->minCt < m->maxCt) {
-        v = (v + m->data[m->heap[-1]]) / 2;
-    }
-    return v;
+template<typename T>
+T median(T* arr, int n) {
+    std::vector<T> input_vector(arr, arr + n);
+    return direct_median<T>(input_vector);
 }
-// RUNNING MEDIAN CODE END
 
 
 
+/* Efficient running median
+*  Based on https://github.com/thomedes/RunningMedian.cpp
+*/
+template <typename T>
+class RunningMedian {
+private:
+    const size_t window_;
 
-#define ELEM_SWAP(a,b) { float t=(a);(a)=(b);(b)=t; }
+    // using a pool of values (sorted_) that is always kept sorted
+	std::queue<T> ring_;
+    std::vector<T> sorted_;
 
-float median(float arr[], int n) {
-    int low, high;
-    int median;
-    int middle, ll, hh;
-
-    low    = 0;
-    high   = n - 1;
-    median = (low + high) / 2;
-    for (;;) {
-        if (high <= low) /* One element only */
-            return arr[median];
-
-        if (high == low + 1) { /* Two elements only */
-            if (arr[low] > arr[high])
-                ELEM_SWAP(arr[low], arr[high]);
-            return arr[median];
+    void ring_push(T x) {
+        ring_.push(x);
+        if (ring_.size() > window_) {
+        	auto last_pos = std::lower_bound(sorted_.begin(), sorted_.end(),
+                                             ring_.front());
+            sorted_.erase(last_pos);
+            ring_.pop();
         }
-
-        /* Find median of low, middle and high items; swap into position low */
-        middle = (low + high) / 2;
-        if (arr[middle] > arr[high])
-            ELEM_SWAP(arr[middle], arr[high]);
-        if (arr[low] > arr[high])
-            ELEM_SWAP(arr[low], arr[high]);
-        if (arr[middle] > arr[low])
-            ELEM_SWAP(arr[middle], arr[low]);
-
-        /* Swap low item (now in position middle) into position (low+1) */
-        ELEM_SWAP(arr[middle], arr[low + 1]);
-
-        /* Nibble from each end towards middle, swapping items when stuck */
-        ll = low + 1;
-        hh = high;
-        for (;;) {
-            do
-                ll++;
-            while (arr[low] > arr[ll]);
-            do
-                hh--;
-            while (arr[hh] > arr[low]);
-
-            if (hh < ll)
-                break;
-
-            ELEM_SWAP(arr[ll], arr[hh]);
-        }
-
-        /* Swap middle item (in position low) back into correct position */
-        ELEM_SWAP(arr[low], arr[hh]);
-
-        /* Re-set active partition */
-        if (hh <= median)
-            low = ll;
-        if (hh >= median)
-            high = hh - 1;
+        auto insert_pos = std::lower_bound(sorted_.begin(), sorted_.end(), x);
+        sorted_.insert(insert_pos, x);
     }
-}
-#undef ELEM_SWAP
 
+public:
+    RunningMedian(size_t window_size)
+		: window_(window_size) {}
+
+    void insert(T x) {
+    // insert new value into ring buffer
+        ring_push(x);
+    }
+
+    T median() const {
+        // return new median
+        const size_t n = sorted_.size(); // Current window size
+        const size_t m = n / 2;
+
+        return (n % 2) ? sorted_[m] : ((sorted_[m-1] + sorted_[m]) / 2);
+    }
+};
+
+
+
+template <typename T>
+T* addBoundary(T* inbuffer, int window, int nsamps) {
+    // Allocate memory for new extended array (to deal with window edges)
+    const int boundarySize = window / 2; // integer division
+    const int outSize = nsamps + boundarySize * 2;
+
+    T* arrayWithBoundary = new T[outSize];
+    std::memcpy(arrayWithBoundary + boundarySize, inbuffer,
+                nsamps * sizeof(float));
+    // Extend by reflecting about the edge.
+    for (int ii = 0; ii < boundarySize; ++ii){
+        arrayWithBoundary[ii] = inbuffer[boundarySize - 1 - ii];
+        arrayWithBoundary[nsamps + boundarySize + ii] = inbuffer[nsamps - 1 - ii];
+    }
+    return arrayWithBoundary;
+}
