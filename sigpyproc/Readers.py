@@ -1,31 +1,35 @@
 import os
 import numpy as np
 import inspect
-import struct
 from tqdm import tqdm
 
-import sigpyproc.HeaderParams as conf
 from sigpyproc.Utils import File
 from sigpyproc.Header import Header
 from sigpyproc.Filterbank import Filterbank, FilterbankBlock
-from sigpyproc.FourierSeries import FourierSeries
 
 
 class FilReader(Filterbank):
     """Class to handle the reading of sigproc format filterbank files
 
-    :param filename: name of filterbank file
-    :type filename: :func:`str`
+    Parameters
+    ----------
+    filename : str
+        name of filterbank file
 
-    .. note::
+    Returns
+    -------
+    :class:`~sigpyproc.Filterbank.Filterbank`
+        container of filterbank data with observational metadata
 
-       To be considered as a Sigproc format filterbank file the header must only
-       contain keywords found in the ``HeaderParams.header_keys`` dictionary.
+    Notes
+    -----
+    To be considered as a Sigproc format filterbank file the header must only
+    contain keywords found in the ``HeaderParams.header_keys`` dictionary.
     """
 
     def __init__(self, filename):
         self.filename = filename
-        self.header   = parseSigprocHeader(self.filename)
+        self.header   = Header.parseSigprocHeader(self.filename)
         self._file    = File(filename, "r", self.header.nbits)
         self.itemsize = np.dtype(self.header.dtype).itemsize
         if self.header.nbits in [1, 2, 4]:
@@ -38,17 +42,19 @@ class FilReader(Filterbank):
     def readBlock(self, start, nsamps, as_filterbankBlock=True):
         """Read a block of filterbank data.
 
-        :param start: first time sample of the block to be read
-        :type start: int
+        Parameters
+        ----------
+        start : int
+            first time sample of the block to be read
+        nsamps : int
+            number of samples in the block (i.e. block will be nsamps*nchans in size)
+        as_filterbankBlock : bool, optional
+            whether to read data as filterbankBlock or numpy array, by default True
 
-        :param nsamps: number of samples in the block (i.e. block will be nsamps*nchans in size)
-        :type nsamps: int
-
-        :param as_filterbankBlock: whether to read data as filterbankBlock or numpy array
-        :type as_filterbankBlock: bool
-
-        :return: 2-D array of filterbank data
-        :rtype: :class:`~sigpyproc.Filterbank.FilterbankBlock`
+        Returns
+        -------
+        :class:`~sigpyproc.Filterbank.FilterbankBlock` or :py:obj:`numpy.ndarray`
+            2-D array of filterbank data
         """
         self._file.seek(self.header.hdrlen + start * self.sampsize)
         data = self._file.cread(self.header.nchans * nsamps)
@@ -64,26 +70,26 @@ class FilReader(Filterbank):
     def readDedispersedBlock(self, start, nsamps, dm, as_filterbankBlock=True,
                              small_reads=True):
         """Read a block of dedispersed filterbank data, best used in cases where
-            I/O time dominates reading a block of data.
+        I/O time dominates reading a block of data.
 
-        :param start: first time sample of the block to be read
-        :type start: int
+        Parameters
+        ----------
+        start : int
+            first time sample of the block to be read
+        nsamps : int
+            number of samples in the block (i.e. block will be nsamps*nchans in size)
+        dm : float
+            dispersion measure to dedisperse at
+        as_filterbankBlock : bool, optional
+            whether to read data as filterbankBlock or numpy array, by default True
+        small_reads : bool, optional
+            if the datum size is greater than 1 byte, only read the data needed
+            instead of every frequency of every sample, by default True
 
-        :param nsamps: number of samples in the block (i.e. block will be nsamps*nchans in size)
-        :type nsamps: int
-
-        :param dm: dispersion measure to dedisperse at
-        :type dm: float
-
-        :param as_filterbankBlock: whether to read data as filterbankBlock or numpy array
-        :type as_filterbankBlock: bool
-
-        :param small_reads: if the datum size is greater than 1 byte, only read the data needed
-            instead of every frequency of every sample
-        :type small_reads: bool
-
-        :return: 2-D array of filterbank data
-        :rtype: :class:`~sigpyproc.Filterbank.FilterbankBlock`
+        Returns
+        -------
+        :class:`~sigpyproc.Filterbank.FilterbankBlock` or :py:obj:`numpy.ndarray`
+            2-D array of filterbank data
         """
         data = np.zeros((self.header.nchans, nsamps), dtype=self._file.dtype)
         min_sample = start + self.header.getDMdelays(dm)
@@ -145,41 +151,46 @@ class FilReader(Filterbank):
                  tqdm_desc=None, verbose=True):
         """A generator used to perform filterbank reading.
 
-        :param gulp: number of samples in each read
-        :type gulp: int
+        Parameters
+        ----------
+        gulp : int
+            number of samples in each read
+        skipback : int, optional
+            number of samples to skip back after each read, by default 0
+        start : int, optional
+            first sample to read from filterbank, by default 0 (start of the file)
+        nsamps : int, optional
+            total number samples to read, by default None (end of the file)
+        tqdm_desc : str, optional
+            [description], by default None
+        verbose : bool, optional
+            flag for display of reading plan information, by default True
 
-        :param skipback: number of samples to skip back after each read (def=0)
-        :type skipback: int
+        Yields
+        -------
+        int, int, :py:obj:`numpy.ndarray`
+            An generator that can read through the file.
 
-        :param start: first sample to read from filterbank (def=start of file)
-        :type start: int
+        Raises
+        ------
+        ValueError
+            If read samples < ``skipback``.
 
-        :param nsamps: total number samples to read (def=end of file)
-        :type nsamps: int
+        Notes
+        -----
+        For each read, the generator yields a tuple ``x``, where:
 
-        :param verbose: flag for display of reading plan information (def=True)
-        :type verbose: bool
+            * ``x[0]`` is the number of samples read
+            * ``x[1]`` is the index of the read (i.e. ``x[1]=0`` is the first read)
+            * ``x[2]`` is a 1-D numpy array containing the data that was read
 
-        :return: An generator that can read through the file.
-        :rtype: generator object
+        Examples
+        --------
+        The normal calling syntax for this is function is:
 
-        .. note::
-
-           For each read, the generator yields a tuple ``x``, where:
-
-              * ``x[0]`` is the number of samples read
-              * ``x[1]`` is the index of the read (i.e. ``x[1]=0`` is the first read)
-              * ``x[2]`` is a 1-D numpy array containing the data that was read
-
-           The normal calling syntax for this is function is:
-
-           .. code-block:: python
-
-              for nsamps, ii, data in self.readPlan(*args,**kwargs):
-                  # do something
-
-           where data always has contains ``nchans*nsamps`` points.
-
+        >>> for nsamps, ii, data in self.readPlan(*args,**kwargs):
+                # do something
+        where data always has contains ``nchans*nsamps`` points.
         """
         if nsamps is None:
             nsamps = self.header.nsamples - start
@@ -217,164 +228,3 @@ class FilReader(Filterbank):
             data = self._file.cread(block)
             self._file.seek(skip * self.itemsize // self.bitfact, os.SEEK_CUR)
             yield int(block // self.header.nchans), int(ii), data
-
-
-
-def readFFT(filename, inf=None):
-    """Read a presto .fft format file.
-
-    :param filename: the name of the file to read
-    :type filename: :func:`str`
-
-    :params inf: the name of the corresponding .inf file (def=None)
-    :type inf: :func:`str`
-
-    :return: an array containing the whole file contents
-    :rtype: :class:`~sigpyproc.FourierSeries.FourierSeries`
-
-    .. note::
-
-       If inf=None, the function will look for a corresponding file with
-       the same basename which has the .inf file extension.
-    """
-    basename = os.path.splitext(filename)[0]
-    if inf is None:
-        inf = f"{basename}.inf"
-    if not os.path.isfile(inf):
-        raise IOError("No corresponding inf file found")
-    header = parseInfHeader(inf)
-    f = File(filename, "r", nbits=32)
-    data = np.fromfile(f, dtype="float32")
-    header["basename"] = basename
-    header["inf"]      = inf
-    header["filename"] = filename
-    return FourierSeries(data, header)
-
-
-def readSpec(filename):
-    """Read a sigpyproc format spec file.
-
-    :param filename: the name of the file to read
-    :type filename: :func:`str`
-
-    :return: an array containing the whole file contents
-    :rtype: :class:`~sigpyproc.FourierSeries.FourierSeries`
-
-    .. note::
-
-       This is not setup to handle ``.spec`` files such as are
-       created by Sigprocs seek module. To do this would require
-       a new header parser for that file format.
-    """
-    header = parseSigprocHeader(filename)
-    hdrlen = header["hdrlen"]
-    f = File(filename, "r", nbits=32)
-    f.seek(hdrlen)
-    data = np.fromfile(f, dtype="complex32")
-    return FourierSeries(data, header)
-
-
-def parseInfHeader(filename):
-    """Parse the metadata from a presto ``.inf`` file.
-
-    :param filename: file containing the header
-    :type filename: :func:`str`
-
-    :return: observational metadata
-    :rtype: :class:`~sigpyproc.Header.Header`
-    """
-    header = {}
-    with open(filename, "r") as f:
-        lines = f.readlines()
-
-    for line in lines:
-        key = line.split("=")[0].strip()
-        val = line.split("=")[-1].strip()
-        if key not in list(conf.inf_to_header.keys()):
-            continue
-        else:
-            key, keytype = conf.inf_to_header[key]
-            header[key] = keytype(val)
-
-    header["src_raj"]      = float("".join(header["src_raj"].split(":")))
-    header["src_dej"]      = float("".join(header["src_dej"].split(":")))
-    header["telescope_id"] = conf.telescope_ids.get(header["telescope_id"], 10)
-    header["machine_id"]   = conf.machine_ids.get(header["machine_id"], 9)
-    header["data_type"]    = 2
-    header["nchans"]       = 1
-    header["nbits"]        = 32
-    header["hdrlen"]       = 0
-    header["nsamples"]     = 0
-    return Header(header)
-
-
-def parseSigprocHeader(filename):
-    """Parse the metadata from a Sigproc-style file header.
-
-    :param filename: file containing the header
-    :type filename: :func:`str`
-
-    :return: observational metadata
-    :rtype: :class:`~sigpyproc.Header.Header`
-    """
-    f = open(filename, "rb")
-    header = {}
-    try:
-        keylen = struct.unpack("I", f.read(4))[0]
-    except struct.error:
-        raise IOError("File Header is not in sigproc format... Is file empty?")
-    key = f.read(keylen)
-    if key != b"HEADER_START":
-        raise IOError("File Header is not in sigproc format")
-    while True:
-        keylen = struct.unpack("I", f.read(4))[0]
-        key = f.read(keylen)
-
-        # convert bytestring to unicode (Python 3)
-        try:
-            key = key.decode()
-        except UnicodeDecodeError as e:
-            print(f"Could not convert to unicode: {str(e)}")
-
-        if key not in list(conf.header_keys.keys()):
-            print(f"'{key}' not recognised header key")
-            return None
-
-        if conf.header_keys[key] == "str":
-            header[key] = _read_string(f)
-        elif conf.header_keys[key] == "I":
-            header[key] = _read_int(f)
-        elif conf.header_keys[key] == "b":
-            header[key] = _read_char(f)
-        elif conf.header_keys[key] == "d":
-            header[key] = _read_double(f)
-        if key == "HEADER_END":
-            break
-
-    header["hdrlen"]   = f.tell()
-    f.seek(0, 2)
-    header["filelen"]  = f.tell()
-    header["nbytes"]   = header["filelen"] - header["hdrlen"]
-    header["nsamples"] = 8 * header["nbytes"] // header["nbits"] // header["nchans"]
-    f.seek(0)
-    header["filename"] = filename
-    header["basename"] = os.path.splitext(filename)[0]
-    f.close()
-    return Header(header)
-
-
-def _read_char(f):
-    return struct.unpack("b", f.read(1))[0]
-
-
-def _read_string(f):
-    strlen = struct.unpack("I", f.read(4))[0]
-    return f.read(strlen).decode()
-
-
-def _read_int(f):
-    return struct.unpack("I", f.read(4))[0]
-
-
-def _read_double(f):
-    return struct.unpack("d", f.read(8))[0]

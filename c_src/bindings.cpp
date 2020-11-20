@@ -282,32 +282,42 @@ void removeZeroDM(py::array_t<T> inarray, py::array_t<T> outarray,
 
 
 
-void formSpecInterpolated(py::array_t<float> fftarray, py::array_t<float> specarray,
-    int nsamps) {
-    py::buffer_info fftbuf = fftarray.request(), specbuf = specarray.request();
+py::array_t<float> formSpecInterpolated(py::array_t<float> fftarray,
+    int specsize) {
+    py::buffer_info fftbuf = fftarray.request();
+
+    auto specarray = py::array_t<float>(specsize);
+    py::buffer_info specbuf = specarray.request();
 
     float* fft_arr  = (float*)fftbuf.ptr;
     float* spec_arr = (float*)specbuf.ptr;
 
-    sigpyproc::formSpecInterpolated(fft_arr, spec_arr, nsamps);
+    sigpyproc::formSpecInterpolated(fft_arr, spec_arr, specsize);
+    return specarray;
 }
 
-void formSpec(py::array_t<float> fftarray, py::array_t<float> specarray, int points) {
-    py::buffer_info fftbuf = fftarray.request(), specbuf = specarray.request();
+py::array_t<float> formSpec(py::array_t<float> fftarray, int specsize) {
+    py::buffer_info fftbuf = fftarray.request();
+
+    auto specarray = py::array_t<float>(specsize);
+    py::buffer_info specbuf = specarray.request();
 
     float* fft_arr  = (float*)fftbuf.ptr;
     float* spec_arr = (float*)specbuf.ptr;
 
-    sigpyproc::formSpec(fft_arr, spec_arr, points);
+    sigpyproc::formSpec(fft_arr, spec_arr, specsize);
+    return specarray;
 }
 
-void rednoise(py::array_t<float> fftarray, py::array_t<float> outarray,
+py::array_t<float> rednoise(py::array_t<float> fftarray,
     py::array_t<float> oldinarray, py::array_t<float> newinarray,
     py::array_t<float> realarray, int nsamps, float tsamp, int startwidth,
     int endwidth, float endfreq) {
-    py::buffer_info fftbuf = fftarray.request(), outbuf = outarray.request(),
-                    oldinbuf = oldinarray.request(), newinbuf = newinarray.request(),
-                    realbuf = realarray.request();
+    py::buffer_info fftbuf = fftarray.request(), oldinbuf = oldinarray.request(),
+                    newinbuf = newinarray.request(), realbuf = realarray.request();
+
+    auto outarray = py::array_t<float>(fftbuf.size);
+    py::buffer_info outbuf = outarray.request();
 
     float* fftdata   = (float*)fftbuf.ptr;
     float* outdata   = (float*)outbuf.ptr;
@@ -317,16 +327,20 @@ void rednoise(py::array_t<float> fftarray, py::array_t<float> outarray,
 
     sigpyproc::rednoise(fftdata, outdata, oldin_arr, newin_arr, real_arr,
                         nsamps, tsamp, startwidth, endwidth, endfreq);
+    return outarray;
 }
 
-void conjugate(py::array_t<float> specarray, py::array_t<float> outarray, int size) {
-    int out_size = 2 * size - 2;
-    py::buffer_info specbuf = specarray.request(), outbuf = outarray.request();
+py::array_t<float> conjugate(py::array_t<float> specarray, int size) {
+    py::buffer_info specbuf = specarray.request();
+
+    auto outarray = py::array_t<float>(2 * specbuf.size - 2);
+    py::buffer_info outbuf = outarray.request();
 
     float* spec_arr = (float*)specbuf.ptr;
     float* outdata  = (float*)outbuf.ptr;
 
     sigpyproc::conjugate(spec_arr, outdata, size);
+    return outarray;
 }
 
 void sumHarms(py::array_t<float> specarray, py::array_t<float> sumarray,
@@ -344,16 +358,20 @@ void sumHarms(py::array_t<float> specarray, py::array_t<float> sumarray,
                         nharms, nsamps, nfoldi);
 }
 
-void multiply_fs(py::array_t<float> inarray, py::array_t<float> otherarray,
-    py::array_t<float> outarray, int size) {
-    py::buffer_info inbuf = inarray.request(), outbuf = outarray.request();
+py::array_t<float> multiply_fs(py::array_t<float> inarray,
+    py::array_t<float> otherarray, int size) {
+    py::buffer_info inbuf = inarray.request();
     py::buffer_info otherbuf = otherarray.request();
+
+    auto outarray = py::array_t<float>(inbuf.size);
+    py::buffer_info outbuf = outarray.request();
 
     float* indata    = (float*)inbuf.ptr;
     float* outdata   = (float*)outbuf.ptr;
     float* otherdata = (float*)otherbuf.ptr;
 
     sigpyproc::multiply_fs(indata, otherdata, outdata, size);
+    return outarray;
 }
 
 
@@ -429,25 +447,34 @@ void foldTim(py::array_t<float> inarray, py::array_t<double> foldarray,
                        tsamp, period, accel, nsamps, nbins, nints);
 }
 
-void ccfft(py::array_t<float> inarray, py::array_t<float> outarray, int size) {
-    py::buffer_info inbuf = inarray.request(), outbuf = outarray.request();
+ py::array_t<float> ccfft(py::array_t<float> inarray, int size) {
+    py::buffer_info inbuf = inarray.request();
+
+    auto outarray = py::array_t<float>(size);
+    py::buffer_info outbuf = outarray.request();
 
     float* indata  = (float*)inbuf.ptr;
     float* outdata = (float*)outbuf.ptr;
 
     sigpyproc::ccfft(indata, outdata, size);
+    return outarray;
 }
 
-void ifft(py::array_t<float> inarray, py::array_t<float> outarray, int size) {
-    py::buffer_info inbuf = inarray.request(), outbuf = outarray.request();
+py::array_t<float> ifft(py::array_t<float> inarray, int size) {
+    py::buffer_info inbuf = inarray.request();
+
+    auto outarray = py::array_t<float>(size);
+    py::buffer_info outbuf = outarray.request();
 
     float* indata  = (float*)inbuf.ptr;
     float* outdata = (float*)outbuf.ptr;
 
     sigpyproc::ifft(indata, outdata, size);
+    return outarray;
 }
 
 py::array_t<float> rfft(py::array_t<float> inarray, int size) {
+    // size is "logical" size of the DFT
     py::buffer_info inbuf = inarray.request();
 
     auto outarray = py::array_t<float>(size+2);

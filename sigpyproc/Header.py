@@ -1,17 +1,26 @@
+import os
+import struct
 import numpy as np
 import sigpyproc.HeaderParams as conf
-from os.path import splitext
-from struct import pack
 from sigpyproc.Utils import File
 
 
 class Header(dict):
     """Container object to handle observation metadata.
 
-    .. note::
+    Parameters
+    ----------
+    info : dict
+        a dict of metadata
 
-       Attributes are mirrored as items and vice versa to facilitate cleaner code.
+    Returns
+    -------
+    dict
+        header container
 
+    Notes
+    -----
+    Attributes are mirrored as items and vice versa to facilitate cleaner code.
     """
 
     def __init__(self, info):
@@ -31,19 +40,20 @@ class Header(dict):
             super().__setattr__(key, value)
 
     def updateHeader(self):
-        """Check for changes in header and recalculate all derived quantaties."""
+        """Check for changes in header and recalculate all derived quantaties.
+        """
         if hasattr(self, "filename"):
-            self.basename, self.extension = splitext(self.filename)
+            self.basename, self.extension = os.path.splitext(self.filename)
 
         if hasattr(self, "foff") and hasattr(self, "nchans") and hasattr(self, "fch1"):
             self.bandwidth = abs(self.foff) * self.nchans
             self.ftop = self.fch1 - 0.5 * self.foff
             self.fbottom = self.ftop + self.foff * self.nchans
             self.fcenter = self.ftop + 0.5 * self.foff * self.nchans
-            # If fch1 is the frequency of the middle of the top
-            # channel and foff negative, this is fine.
-            # However, if fch1 the frequency of the middle of the bottom channel and foff
-            # positive you should run an Filterbank.Filterbank.invertFreq on the data
+            # If fch1 is the frequency of the middle of the top channel and
+            # foff negative, this is fine. However, if fch1 the frequency of the
+            # middle of the bottom channel and foff positive you should
+            # run an Filterbank.Filterbank.invertFreq on the data
         self.tobs = self.tsamp * self.nsamples
         self.src_raj = getattr(self, "src_raj", 0)
         self.src_dej = getattr(self, "src_dej", 0)
@@ -63,22 +73,31 @@ class Header(dict):
     def mjdAfterNsamps(self, nsamps):
         """Find the Modified Julian Date after nsamps have elapsed.
 
-        :param nsamps: number of samples elapsed since start of observation.
-        :type nsamps: int
+        Parameters
+        ----------
+        nsamps : int
+            number of samples elapsed since start of observation.
 
-        :return: Modified Julian Date
-        :rtype:
+        Returns
+        -------
+        float
+            Modified Julian Date
         """
         return self.tstart + ((nsamps * self.tsamp) / 86400.0)
 
     def newHeader(self, update_dict=None):
-        """Create a new instance of :class:`~sigpyproc.Header.Header` from the current instance.
+        """Create a new instance of :class:`~sigpyproc.Header.Header` from
+        the current instance.
 
-        :param update_dict: values to overide existing header values
-        :type update_dict: :func:`dict`
+        Parameters
+        ----------
+        update_dict : dict, optional
+            values to overide existing header values, by default None
 
-        :return: new header information
-        :rtype: :class:`~sigpyproc.Header.Header`
+        Returns
+        -------
+        :class:`~sigpyproc.Header.Header`
+            new header information
         """
         new = self.copy()
         if update_dict is not None:
@@ -88,28 +107,35 @@ class Header(dict):
     def dedispersedHeader(self, dm):
         """Get a dedispersed version of the current header.
 
-        :param dm: dispersion measure we are dedispersing to
-        :type dm: float
+        Parameters
+        ----------
+        dm : float
+            dispersion measure we are dedispersing to
 
-        :return: A dedispersed version of the header
-        :rtype: :class:`~sigpyproc.Header.Header`
+        Returns
+        -------
+        :class:`~sigpyproc.Header.Header`
+            A dedispersed version of the header
         """
         return self.newHeader({'refdm': dm, 'nchans': 1, 'data_type': 2, 'nbits': 32})
 
     def SPPHeader(self, back_compatible=True):
         """Get Sigproc/sigpyproc format binary header.
 
-        :param back_compatible: Flag for returning Sigproc compatible header (legacy code)
-        :type back_compatible: bool
+        Parameters
+        ----------
+        back_compatible : bool, optional
+            Flag for returning Sigproc compatible header (legacy code), by default True
 
-        :return: header in binary format
-        :rtype: :func:`str`
+        Returns
+        -------
+        str
+            header in binary format
         """
-
         self.updateHeader()
         hstart = b"HEADER_START"
         hend   = b"HEADER_END"
-        header = b"".join([pack("I", len(hstart)), hstart])
+        header = b"".join([struct.pack("I", len(hstart)), hstart])
 
         for key in list(self.keys()):
             if back_compatible and key not in conf.sigproc_keys:
@@ -125,16 +151,20 @@ class Header(dict):
                 header = b"".join([header, _write_double(key, self[key])])
             elif conf.header_keys[key] == "b":
                 header = b"".join([header, _write_char(key, self[key])])
-        return b"".join([header, pack("I", len(hend)), hend])
+        return b"".join([header, struct.pack("I", len(hend)), hend])
 
     def makeInf(self, outfile=None):
-        """Make a presto format .inf file.
+        """Make a presto format ``.inf`` file.
 
-        :param outfile: a filename to write to.
-        :type outfile: string
+        Parameters
+        ----------
+        outfile : str, optional
+            a filename to write to, by default None
 
-        :returns: if outfile is unspecified .inf data is returned as string
-        :rtype: :func:`str`
+        Returns
+        -------
+        str
+            if outfile is unspecified ``.inf`` data is returned as string
         """
         self.updateHeader()
         inf = (
@@ -178,16 +208,20 @@ class Header(dict):
             return None
 
     def getDMdelays(self, dm, in_samples=True):
-        """For a given dispersion measure get the dispersive ISM delay for each frequency channel.
+        """For a given dispersion measure get the dispersive ISM delay
+        for each frequency channel.
 
-        :param dm: dispersion measure to calculate delays for
-        :type dm: float
+        Parameters
+        ----------
+        dm : float
+            dispersion measure to calculate delays for
+        in_samples : bool, optional
+            flag to return delays as numbers of samples, by default True
 
-        :param in_samples: flag to return delays as numbers of samples (def=True)
-        :type in_samples: bool
-
-        :returns: delays for each channel (highest frequency first)
-        :rtype: :class:`numpy.ndarray`
+        Returns
+        -------
+        :py:obj:`numpy.ndarray`
+            delays for each channel (highest frequency first)
         """
         self.updateHeader()
         chanFreqs = (np.arange(self.nchans, dtype="float128") * self.foff) + self.fch1
@@ -200,20 +234,22 @@ class Header(dict):
     def prepOutfile(self, filename, updates=None, nbits=None, back_compatible=True):
         """Prepare a file to have sigproc format data written to it.
 
-        :param filename: filename of new file
-        :type filename: string
+        Parameters
+        ----------
+        filename : str
+            name of new file
+        updates : dict, optional
+            values to overide existing header values, by default None
+        nbits : int, optional
+            the bitsize of data points that will written to this file (1,2,4,8,32),
+            by default None
+        back_compatible : bool, optional
+            flag for making file Sigproc compatible, by default True
 
-        :param updates: values to overide existing header values
-        :type updates: dict
-
-        :param nbits: the bitsize of data points that will written to this file (1,2,4,8,32)
-        :type nbits: int
-
-        :param back_compatible: flag for making file Sigproc compatible
-        :type back_compatible: bool
-
-        :returns: a prepared file
-        :rtype: :class:`~sigpyproc.Utils.File`
+        Returns
+        -------
+        :class:`~sigpyproc.Utils.File`
+            a prepared file
         """
         self.updateHeader()
         if nbits is None:
@@ -224,26 +260,146 @@ class Header(dict):
         out_file.write(new.SPPHeader(back_compatible=back_compatible))
         return out_file
 
+    @classmethod
+    def parseInfHeader(cls, filename):
+        """Parse the metadata from a presto ``.inf`` file.
+
+        Parameters
+        ----------
+        filename : str
+            the name of the ``.inf`` file containing the header
+
+        Returns
+        -------
+        :class:`~sigpyproc.Header.Header`
+            observational metadata
+        """
+        header = {}
+        with open(filename, "r") as f:
+            lines = f.readlines()
+
+        for line in lines:
+            key = line.split("=")[0].strip()
+            val = line.split("=")[-1].strip()
+            if key not in list(conf.inf_to_header.keys()):
+                continue
+            else:
+                key, keytype = conf.inf_to_header[key]
+                header[key] = keytype(val)
+
+        header["src_raj"]      = float("".join(header["src_raj"].split(":")))
+        header["src_dej"]      = float("".join(header["src_dej"].split(":")))
+        header["telescope_id"] = conf.telescope_ids.get(header["telescope_id"], 10)
+        header["machine_id"]   = conf.machine_ids.get(header["machine_id"], 9)
+        header["data_type"]    = 2
+        header["nchans"]       = 1
+        header["nbits"]        = 32
+        header["hdrlen"]       = 0
+        header["nsamples"]     = 0
+        return cls(header)
+
+    @classmethod
+    def parseSigprocHeader(cls, filename):
+        """Parse the metadata from a Sigproc-style file header.
+
+        Parameters
+        ----------
+        filename : str
+            sigproc filterbank file containing the header
+
+        Returns
+        -------
+        :class:`~sigpyproc.Header.Header`
+            observational metadata
+
+        Raises
+        ------
+        IOError
+            If file header is not in sigproc format
+        """
+        f = open(filename, "rb")
+        header = {}
+        try:
+            keylen = struct.unpack("I", f.read(4))[0]
+        except struct.error:
+            raise IOError("File Header is not in sigproc format... Is file empty?")
+        key = f.read(keylen)
+        if key != b"HEADER_START":
+            raise IOError("File Header is not in sigproc format")
+        while True:
+            keylen = struct.unpack("I", f.read(4))[0]
+            key = f.read(keylen)
+
+            # convert bytestring to unicode (Python 3)
+            try:
+                key = key.decode()
+            except UnicodeDecodeError as e:
+                print(f"Could not convert to unicode: {str(e)}")
+
+            if key not in list(conf.header_keys.keys()):
+                print(f"'{key}' not recognised header key")
+                return None
+
+            if conf.header_keys[key] == "str":
+                header[key] = _read_string(f)
+            elif conf.header_keys[key] == "I":
+                header[key] = _read_int(f)
+            elif conf.header_keys[key] == "b":
+                header[key] = _read_char(f)
+            elif conf.header_keys[key] == "d":
+                header[key] = _read_double(f)
+            if key == "HEADER_END":
+                break
+
+        header["hdrlen"]   = f.tell()
+        f.seek(0, 2)
+        header["filelen"]  = f.tell()
+        header["nbytes"]   = header["filelen"] - header["hdrlen"]
+        header["nsamples"] = 8 * header["nbytes"] // header["nbits"] // header["nchans"]
+        f.seek(0)
+        header["filename"] = filename
+        header["basename"] = os.path.splitext(filename)[0]
+        f.close()
+        return cls(header)
+
+
+def _read_string(f):
+    strlen = struct.unpack("I", f.read(4))[0]
+    return f.read(strlen).decode()
+
+
+def _read_int(f):
+    return struct.unpack("I", f.read(4))[0]
+
+
+def _read_double(f):
+    return struct.unpack("d", f.read(8))[0]
+
+
+def _read_char(f):
+    return struct.unpack("b", f.read(1))[0]
+
 
 def _write_string(key, value):
     key = key.encode()
     value = value.encode()
-    return b"".join([pack("I", len(key)), key, pack('I', len(value)), value])
+    return b"".join([struct.pack("I", len(key)), key,
+                    struct.pack('I', len(value)), value])
 
 
 def _write_int(key, value):
     key = key.encode()
-    return b"".join([pack('I', len(key)), key, pack('I', value)])
+    return b"".join([struct.pack('I', len(key)), key, struct.pack('I', value)])
 
 
 def _write_double(key, value):
     key = key.encode()
-    return b"".join([pack('I', len(key)), key, pack('d', value)])
+    return b"".join([struct.pack('I', len(key)), key, struct.pack('d', value)])
 
 
 def _write_char(key, value):
     key = key.encode()
-    return b"".join([pack('I', len(key)), key, pack('b', value)])
+    return b"".join([struct.pack('I', len(key)), key, struct.pack('b', value)])
 
 
 def radec_to_str(val):
@@ -326,12 +482,14 @@ def dms_to_rad(deg, min_, sec):
 
 
 def dms_to_deg(deg, min_, sec):
-    """Convert (degrees, arcminutes, arcseconds) to degrees."""
+    """Convert (degrees, arcminutes, arcseconds) to degrees.
+    """
     return (180. / np.pi) * dms_to_rad(deg, min_, sec)
 
 
 def rad_to_hms(rad):
-    """Convert radians to (hours, minutes, seconds)."""
+    """Convert radians to (hours, minutes, seconds).
+    """
     rad = np.fmod(rad, 2 * np.pi)
     if rad < 0.0:
         rad = rad + 2 * np.pi

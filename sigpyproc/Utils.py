@@ -5,6 +5,7 @@ import warnings
 import sigpyproc.libSigPyProc as lib
 from sigpyproc.HeaderParams import nbits_to_dtype
 
+
 class File(io.FileIO):
     """A class to handle writing of arbitrary bit size data to file.
 

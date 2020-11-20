@@ -1,9 +1,10 @@
 import os
 import numpy as np
-from sigpyproc.Utils import File
+
 from sigpyproc import FoldedData
 from sigpyproc import FourierSeries
-from sigpyproc.Readers import parseInfHeader, parseSigprocHeader
+from sigpyproc.Utils import File
+from sigpyproc.Header import Header
 
 import sigpyproc.libSigPyProc as lib
 
@@ -37,17 +38,26 @@ class TimeSeries(np.ndarray):
     def fold(self, period, accel=0, nbins=50, nints=32):
         """Fold time series into discrete phase and subintegration bins.
 
-        :param period: period in seconds to fold with
-        :type period: float
+        Parameters
+        ----------
+        period : float
+            period in seconds to fold with
+        accel : float, optional
+            The acceleration to fold the time series, by default 0
+        nbins : int, optional
+            number of phase bins in output, by default 50
+        nints : int, optional
+            number of subintegrations in output, by default 32
 
-        :param nbins: number of phase bins in output
-        :type nbins: int
+        Returns
+        -------
+        :class:`~sigpyproc.FoldedData.FoldedData`
+            data cube containing the folded data
 
-        :param nints: number of subintegrations in output
-        :type nints: int
-
-        :returns: data cube containing the folded data
-        :rtype: :class:`~sigpyproc.FoldedData.FoldedData`
+        Raises
+        ------
+        ValueError
+            If ``nbins * nints`` is too large for length of the data.
         """
         if self.size // (nbins * nints) < 10:
             raise ValueError("nbins x nints is too large for length of data")
@@ -71,7 +81,7 @@ class TimeSeries(np.ndarray):
         )
 
     def rFFT(self):
-        """Perform 1-D real to complex forward FFT.
+        """Perform 1-D real to complex forward FFT using FFTW3.
 
         Returns
         -------
@@ -182,11 +192,15 @@ class TimeSeries(np.ndarray):
     def pad(self, npad):
         """Pad a time series with mean valued data.
 
-        :param npad: number of padding points
-        :type nzeros: int
+        Parameters
+        ----------
+        npad : int
+            number of padding points
 
-        :return: padded time series
-        :rtype: :class:`~sigpyproc.TimeSeries.TimeSeries`
+        Returns
+        -------
+        :class:`~sigpyproc.TimeSeries.TimeSeries`
+            padded time series
         """
         new_ar = np.hstack((self, self.mean() * np.ones(npad)))
         return TimeSeries(new_ar, self.header.newHeader())
@@ -194,18 +208,17 @@ class TimeSeries(np.ndarray):
     def resample(self, accel, jerk=0):
         """Perform time domain resampling to remove acceleration and jerk.
 
-        :param accel: The acceleration to remove from the time series
-        :type accel: float
+        Parameters
+        ----------
+        accel : float
+            The acceleration to remove from the time series
+        jerk : float, optional
+            The jerk/jolt to remove from the time series, by default 0
 
-        :param jerk: The jerk/jolt to remove from the time series
-        :type jerk: float
-
-        :param period: The mimimum period that the resampling
-                       will be sensitive to.
-        :type period: float
-
-        :return: resampled time series
-        :rtype: :class:`~sigpyproc.TimeSeries.TimeSeries`
+        Returns
+        -------
+        :class:`~sigpyproc.TimeSeries.TimeSeries`
+            resampled time series
         """
         if accel > 0:
             new_size = self.size - 1
@@ -220,11 +233,15 @@ class TimeSeries(np.ndarray):
     def correlate(self, other):
         """Cross correlate with another time series of the same length.
 
-        :param other: array to correlate with
-        :type other: :class:`numpy.ndarray`
+        Parameters
+        ----------
+        other : array to correlate with
+            :class:`numpy.ndarray`
 
-        :return: time series containing the correlation
-        :rtype: :class:`sigpyproc.TimeSeries.TimeSeries`
+        Returns
+        -------
+        :class:`sigpyproc.TimeSeries.TimeSeries`
+            time series containing the correlation
         """
         if type(self) != type(other):
             try:
@@ -258,26 +275,28 @@ class TimeSeries(np.ndarray):
                 self.tofile(datfile)
         return f"{basename}.dat", f"{basename}.inf"
 
-    def toFile(self, filename):
+    def toFile(self, filename=None):
         """Write time series in sigproc format.
 
         Parameters
         ----------
-        filename : str
-            output file name
+        filename : str, optional
+            name of file to write to, by default ``basename.tim``
 
         Returns
         -------
         str
-            [output file name]
+            output file name
         """
-        outfile = self.header.prepOutfile(filename)
+        if filename is None:
+            filename = f"{self.header.basename}.tim"
+        outfile = self.header.prepOutfile(filename, nbits=32)
         self.tofile(outfile)
         return outfile.name
 
     @classmethod
     def readDat(cls, filename, inf=None):
-        """Create a new TimeSeries from a presto format ``.dat`` file.
+        """Read a presto format ``.dat`` file.
 
         Parameters
         ----------
@@ -306,8 +325,9 @@ class TimeSeries(np.ndarray):
             inf = f"{basename}.inf"
         if not os.path.isfile(inf):
             raise IOError("No corresponding .inf file found")
-        header = parseInfHeader(inf)
-        data = np.fromfile(datfile, dtype=np.float32)
+        header = Header.parseInfHeader(inf)
+        f = File(filename, "r", nbits=32)
+        data = np.fromfile(f, dtype=np.float32)
         header["basename"] = basename
         header["inf"]      = inf
         header["filename"] = filename
@@ -316,7 +336,7 @@ class TimeSeries(np.ndarray):
 
     @classmethod
     def readTim(cls, filename):
-        """Create a new TimeSeries from a sigproc format ``.tim`` file.
+        """Read a sigproc format ``.tim`` file.
 
         Parameters
         ----------
@@ -328,10 +348,10 @@ class TimeSeries(np.ndarray):
         :class:`~sigpyproc.TimeSeries.TimeSeries`
             a new TimeSeries object
         """
-        header = parseSigprocHeader(filename)
+        header = Header.parseSigprocHeader(filename)
         nbits  = header["nbits"]
         hdrlen = header["hdrlen"]
-        with File(filename, "r", nbits=nbits) as f:
-            f.seek(hdrlen)
-            data = np.fromfile(f, dtype=header["dtype"]).astype(np.float32, copy=False)
+        f = File(filename, "r", nbits=nbits)
+        f.seek(hdrlen)
+        data = np.fromfile(f, dtype=header["dtype"]).astype(np.float32, copy=False)
         return cls(data, header)

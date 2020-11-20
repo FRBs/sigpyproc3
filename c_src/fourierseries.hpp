@@ -15,7 +15,7 @@ namespace sigpyproc {
  * Complex One-Dimensional DFTs
  */
 void ccfft(float* inbuffer, float* outbuffer, int size) {
-    fftwf_plan    plan;
+    fftwf_plan plan;
     plan = fftwf_plan_dft_1d(size,
                              (fftwf_complex*)inbuffer,
                              (fftwf_complex*)outbuffer,
@@ -35,10 +35,10 @@ void ifft(float* inbuffer, float* outbuffer, int size) {
     fftwf_destroy_plan(plan);
 }
 
-void formSpecInterpolated(float* fftbuffer, float* specbuffer, int nsamps) {
+void formSpecInterpolated(float* fftbuffer, float* specbuffer, int specsize) {
     float i, r, a, b;
     float rl = 0.0, il = 0.0;
-    for (int ii = 0; ii < nsamps; ii++) {
+    for (int ii = 0; ii < specsize; ii++) {
         r = fftbuffer[2 * ii];
         i = fftbuffer[2 * ii + 1];
         a = pow(r, 2) + pow(i, 2);
@@ -51,13 +51,13 @@ void formSpecInterpolated(float* fftbuffer, float* specbuffer, int nsamps) {
     }
 }
 
-void formSpec(float* fftbuffer, float* specbuffer, int points) {
+void formSpec(float* fftbuffer, float* specbuffer, int specsize) {
     float i, r;
-    for (int ii = 0; ii < points; ii += 2) {
-        r = fftbuffer[ii];
-        i = fftbuffer[ii + 1];
+    for (int ii = 0; ii < specsize; ii++) {
+        r = fftbuffer[2 * ii];
+        i = fftbuffer[2 * ii + 1];
 
-        specbuffer[ii / 2] = sqrt(pow(r, 2) + pow(i, 2));
+        specbuffer[ii] = sqrt(pow(r, 2) + pow(i, 2));
     }
 }
 
