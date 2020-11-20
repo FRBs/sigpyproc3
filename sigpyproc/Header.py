@@ -141,7 +141,7 @@ class Header(dict):
             f" Data file name without suffix          =  {self.basename}\n"
             f" Telescope used                         =  Effelsberg\n"
             f" Instrument used                        =  PFFTS\n"
-            f" Object being observed                  =  {self.source_name}\n",
+            f" Object being observed                  =  {self.source_name}\n"
             f" J2000 Right Ascension (hh:mm:ss.ssss)  =  {radec_to_str(self.src_raj)}\n"
             f" J2000 Declination     (dd:mm:ss.ssss)  =  {radec_to_str(self.src_dej)}\n"
             f" Data observed by                       =  Robotic overlords\n"

@@ -358,45 +358,61 @@ void multiply_fs(py::array_t<float> inarray, py::array_t<float> otherarray,
 
 
 
-void runningMedian(py::array_t<float> inarray, py::array_t<float> outarray,
+py::array_t<float> runningMedian(py::array_t<float> inarray,
     int window, int nsamps) {
-    py::buffer_info inbuf = inarray.request(), outbuf = outarray.request();
+    py::buffer_info inbuf = inarray.request();
+
+    auto outarray = py::array_t<float>(nsamps);
+    py::buffer_info outbuf = outarray.request();
 
     float* indata  = (float*)inbuf.ptr;
     float* outdata = (float*)outbuf.ptr;
 
     sigpyproc::runningMedian(indata, outdata, window, nsamps);
+    return outarray;
 }
 
 
-void runningMean(py::array_t<float> inarray, py::array_t<float> outarray,
+py::array_t<float> runningMean(py::array_t<float> inarray,
     int window, int nsamps){
-    py::buffer_info inbuf = inarray.request(), outbuf = outarray.request();
+    py::buffer_info inbuf = inarray.request();
+
+    auto outarray = py::array_t<float>(nsamps);
+    py::buffer_info outbuf = outarray.request();
 
     float* indata  = (float*)inbuf.ptr;
     float* outdata = (float*)outbuf.ptr;
 
     sigpyproc::runningMean(indata, outdata, window, nsamps);
+    return outarray;
 }
 
-void runBoxcar(py::array_t<float> inarray, py::array_t<float> outarray,
+py::array_t<float> runBoxcar(py::array_t<float> inarray,
     int window, int nsamps) {
-    py::buffer_info inbuf = inarray.request(), outbuf = outarray.request();
+    py::buffer_info inbuf = inarray.request();
+
+    auto outarray = py::array_t<float>(nsamps);
+    py::buffer_info outbuf = outarray.request();
 
     float* indata  = (float*)inbuf.ptr;
     float* outdata = (float*)outbuf.ptr;
 
     sigpyproc::runBoxcar(indata, outdata, window, nsamps);
+    return outarray;
 }
 
-void downsampleTim(py::array_t<float> inarray, py::array_t<float> outarray,
+py::array_t<float> downsampleTim(py::array_t<float> inarray,
     int factor, int newLen) {
-    py::buffer_info inbuf = inarray.request(), outbuf = outarray.request();
+    py::buffer_info inbuf = inarray.request();
+
+    auto outarray = py::array_t<float>(newLen);
+    py::buffer_info outbuf = outarray.request();
 
     float* indata  = (float*)inbuf.ptr;
     float* outdata = (float*)outbuf.ptr;
 
     sigpyproc::downsampleTim(indata, outdata, factor, newLen);
+    return outarray;
 }
 
 void foldTim(py::array_t<float> inarray, py::array_t<double> foldarray,
@@ -431,13 +447,17 @@ void ifft(py::array_t<float> inarray, py::array_t<float> outarray, int size) {
     sigpyproc::ifft(indata, outdata, size);
 }
 
-void rfft(py::array_t<float> inarray, py::array_t<float> outarray, int size) {
-    py::buffer_info inbuf = inarray.request(), outbuf = outarray.request();
+py::array_t<float> rfft(py::array_t<float> inarray, int size) {
+    py::buffer_info inbuf = inarray.request();
+
+    auto outarray = py::array_t<float>(size+2);
+    py::buffer_info outbuf = outarray.request();
 
     float* indata  = (float*)inbuf.ptr;
     float* outdata = (float*)outbuf.ptr;
 
     sigpyproc::rfft(indata, outdata, size);
+    return outarray;
 }
 
 void resample(py::array_t<float> inarray, py::array_t<float> outarray,

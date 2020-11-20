@@ -1,33 +1,38 @@
+import os
 import numpy as np
+from sigpyproc.Utils import File
 from sigpyproc import FoldedData
 from sigpyproc import FourierSeries
+from sigpyproc.Readers import parseInfHeader, parseSigprocHeader
 
 import sigpyproc.libSigPyProc as lib
 
 
 class TimeSeries(np.ndarray):
-    """Class for handling pulsar data in time series.
+    """Class for handling pulsar/FRB data in time series.
 
-    :param input_array: 1 dimensional array of shape (nsamples)
-    :type input_array: :class:`numpy.ndarray`
+    Parameters
+    ----------
+    input_array : :py:obj:`numpy.ndarray`
+        1 dimensional array of shape (nsamples)
+    header : :class:`~sigpyproc.Header.Header`
+        observational metadata
 
-    :param header: observational metadata
-    :type header: :class:`~sigpyproc.Header.Header`
+    Returns
+    -------
+    :py:obj:`numpy.ndarray`
+        1 dimensional time series with header
     """
 
     def __new__(cls, input_array, header):
-        if getattr(input_array, "dtype", False) == np.dtype("float32"):
-            obj = input_array.view(cls)
-        else:
-            obj = input_array.astype("float32").view(cls)
+        obj = np.asarray(input_array).astype(np.float32, copy=False).view(cls)
         obj.header = header
         return obj
 
     def __array_finalize__(self, obj):
         if obj is None:
             return
-        if hasattr(obj, "header"):
-            self.header = obj.header
+        self.header = getattr(obj, 'header', None)
 
     def fold(self, period, accel=0, nbins=50, nints=32):
         """Fold time series into discrete phase and subintegration bins.
@@ -68,124 +73,111 @@ class TimeSeries(np.ndarray):
     def rFFT(self):
         """Perform 1-D real to complex forward FFT.
 
-        :return: output of FFTW3
-        :rtype: :class:`~sigpyproc.FourierSeries.FourierSeries`
+        Returns
+        -------
+        :class:`~sigpyproc.FourierSeries.FourierSeries`
+            output of One-Dimensional DFTs of Real Data
         """
         if self.size % 2 == 0:
             fftsize = self.size
         else:
             fftsize = self.size - 1
-        fft_ar = np.empty(fftsize + 2, dtype="float32")
-        lib.rfft(self, fft_ar, fftsize)
+        fft_ar = lib.rfft(self, fftsize)
         return FourierSeries.FourierSeries(fft_ar, self.header.newHeader())
 
     def runningMean(self, window=10001):
         """Filter time series with a running mean.
 
-        :param window: width in bins of running mean filter
-        :type window: int
+        Parameters
+        ----------
+        window : int, optional
+            width in bins of running mean filter, by default 10001
 
-        :return: filtered time series
-        :rtype: :class:`~sigpyproc.TimeSeries.TimeSeries`
+        Returns
+        -------
+        :class:`~sigpyproc.TimeSeries.TimeSeries`
+            filtered time series
 
-        .. note::
+        Raises
+        ------
+        RuntimeError
+            If window size < 1
 
-                Window edges will be dealt with only at the start of the time series.
-
+        Notes
+        -----
+        Window edges will be dealt by reflecting about the edges of the time series.
+        For more robust implemetation, use :py:function:`scipy.ndimage.uniform_filter1d`.
         """
-        tim_ar = np.empty_like(self)
-        lib.runningMean(self, tim_ar, window, self.size)
+        if window < 1:
+            raise RuntimeError('incorrect window size')
+        tim_ar = lib.runningMean(self, window, self.size)
         return tim_ar.view(TimeSeries)
 
     def runningMedian(self, window=10001):
         """Filter time series with a running median.
 
-        :param window: width in bins of running median filter
-        :type window: int
+        Parameters
+        ----------
+        window : int, optional
+            width in bins of running median filter, by default 10001
 
-        :returns: filtered time series
-        :rtype: :class:`~sigpyproc.TimeSeries.TimeSeries`
+        Returns
+        -------
+        :class:`~sigpyproc.TimeSeries.TimeSeries`
+            filtered time series
 
-        .. note::
-
-                Window edges will be dealt with only at the start of the time series.
+        Notes
+        -----
+        Window edges will be dealt with only at the start of the time series.
         """
-        tim_ar = np.empty_like(self)
-        lib.runningMedian(self, tim_ar, window, self.size)
+        tim_ar = lib.runningMedian(self, window, self.size)
         return tim_ar.view(TimeSeries)
 
     def applyBoxcar(self, width):
         """Apply a boxcar filter to the time series.
 
-        :param width: width in bins of filter
-        :type width: int
+        Parameters
+        ----------
+        width : int
+            width in bins of filter
 
-        :return: filtered time series
-        :rtype: :class:`~sigpyproc.TimeSeries.TimeSeries`
+        Returns
+        -------
+        :class:`~sigpyproc.TimeSeries.TimeSeries`
+            filtered time series
 
-        .. note::
-
-                Time series returned is of size nsamples-width with width/2 removed removed from either end.
+        Notes
+        -----
+        Time series returned is of size nsamples-width with width/2
+        removed from either end.
         """
-        tim_ar = np.empty_like(self)
-        lib.runBoxcar(self, tim_ar, width, self.size)
+        tim_ar = lib.runBoxcar(self, width, self.size)
         return tim_ar.view(TimeSeries)
 
     def downsample(self, factor):
         """Downsample the time series.
 
-        :param factor: factor by which time series will be downsampled
-        :type factor: int
+        Parameters
+        ----------
+        factor : int
+            factor by which time series will be downsampled
 
-        :return: downsampled time series
-        :rtype: :class:`~sigpyproc.TimeSeries.TimeSeries`
+        Returns
+        -------
+        :class:`~sigpyproc.TimeSeries.TimeSeries`
+            downsampled time series
 
-        .. note::
-
-                Returned time series is of size nsamples//factor
+        Notes
+        -----
+        Returned time series is of size nsamples//factor
         """
         if factor == 1:
             return self
         newLen = self.size // factor
-        tim_ar = np.zeros(newLen, dtype="float32")
-        lib.downsampleTim(self, tim_ar, factor, newLen)
+        tim_ar = lib.downsampleTim(self, factor, newLen)
         return TimeSeries(
             tim_ar, self.header.newHeader({'tsamp': self.header.tsamp * factor})
         )
-
-    def toDat(self, basename):
-        """Write time series in presto ``.dat`` format.
-
-        :param basename: file basename for output ``.dat`` and ``.inf`` files
-        :type basename: string
-
-        :return: ``.dat`` file name and ``.inf`` file name
-        :rtype: :func:`tuple` of :func:`str`
-
-        .. note::
-
-                Method also writes a corresponding .inf file from the header data
-        """
-        self.header.makeInf(outfile=f"{basename}.inf")
-        with open(f"{basename}.dat", "w+") as datfile:
-            if self.size % 2 != 0:
-                self[:-1].tofile(datfile)
-            else:
-                self.tofile(datfile)
-        return f"{basename}.dat", f"{basename}.inf"
-
-    def toFile(self, filename):
-        """Write time series in sigproc format.
-
-        :param filename: output file name
-        :type filename: str
-
-        :return: output file name
-        :rtype: :func:`str`
-        """
-        outfile = self.header.prepOutfile(filename)
-        self.tofile(outfile)
-        return outfile.name
 
     def pad(self, npad):
         """Pad a time series with mean valued data.
@@ -240,3 +232,106 @@ class TimeSeries(np.ndarray):
             except Exception:
                 raise Exception("Could not convert argument to TimeSeries instance")
         return (self.rFFT() * other.rFFT()).iFFT()
+
+    def toDat(self, basename):
+        """Write time series in presto ``.dat`` format.
+
+        Parameters
+        ----------
+        basename : str
+            file basename for output ``.dat`` and ``.inf`` files
+
+        Returns
+        -------
+        tuple of str
+            ``.dat`` file name and ``.inf`` file name
+
+        Notes
+        -----
+        Method also writes a corresponding .inf file from the header data
+        """
+        self.header.makeInf(outfile=f"{basename}.inf")
+        with open(f"{basename}.dat", "w+") as datfile:
+            if self.size % 2 != 0:
+                self[:-1].tofile(datfile)
+            else:
+                self.tofile(datfile)
+        return f"{basename}.dat", f"{basename}.inf"
+
+    def toFile(self, filename):
+        """Write time series in sigproc format.
+
+        Parameters
+        ----------
+        filename : str
+            output file name
+
+        Returns
+        -------
+        str
+            [output file name]
+        """
+        outfile = self.header.prepOutfile(filename)
+        self.tofile(outfile)
+        return outfile.name
+
+    @classmethod
+    def readDat(cls, filename, inf=None):
+        """Create a new TimeSeries from a presto format ``.dat`` file.
+
+        Parameters
+        ----------
+        filename : str
+            the name of the ``.dat`` file to read
+        inf : str, optional
+            the name of the corresponding ``.inf`` file, by default None
+
+        Returns
+        -------
+        :class:`~sigpyproc.TimeSeries.TimeSeries`
+            a new TimeSeries object
+
+        Raises
+        ------
+        IOError
+            If no ``.inf`` file found in the same directory of ``.dat`` file.
+
+        Notes
+        -----
+        If inf=None, then the associated .inf file must be in the same directory.
+        """
+        datfile = os.path.realpath(filename)
+        basename, ext = os.path.splitext(datfile)
+        if inf is None:
+            inf = f"{basename}.inf"
+        if not os.path.isfile(inf):
+            raise IOError("No corresponding .inf file found")
+        header = parseInfHeader(inf)
+        data = np.fromfile(datfile, dtype=np.float32)
+        header["basename"] = basename
+        header["inf"]      = inf
+        header["filename"] = filename
+        header["nsamples"] = data.size
+        return cls(data, header)
+
+    @classmethod
+    def readTim(cls, filename):
+        """Create a new TimeSeries from a sigproc format ``.tim`` file.
+
+        Parameters
+        ----------
+        filename : str
+            the name of the ``.tim`` file to read
+
+        Returns
+        -------
+        :class:`~sigpyproc.TimeSeries.TimeSeries`
+            a new TimeSeries object
+        """
+        header = parseSigprocHeader(filename)
+        nbits  = header["nbits"]
+        hdrlen = header["hdrlen"]
+        with File(filename, "r", nbits=nbits) as f:
+            f.seek(hdrlen)
+            data = np.fromfile(f, dtype=header["dtype"]).astype(np.float32, copy=False)
+        return cls(data, header)

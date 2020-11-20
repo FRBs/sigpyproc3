@@ -1,28 +1,27 @@
 import io
 import numpy as np
 import warnings
-from sigpyproc.HeaderParams import nbits_to_dtype
 
 import sigpyproc.libSigPyProc as lib
-
+from sigpyproc.HeaderParams import nbits_to_dtype
 
 class File(io.FileIO):
     """A class to handle writing of arbitrary bit size data to file.
 
-    :param filename: name of file to open
-    :type filename: :func:`str`
+    Parameters
+    ----------
+    filename : str
+        name of file to open
+    mode : str
+        file access mode, can be either "r", "r+", "w" or "a".
+    nbits : int, optional
+        the bit size of units to be read from or written to file, by default 8
 
-    :param mode: file access mode, can be either "r", "r+", "w" or "a".
-    :type mode: :func:`str`
-
-    :param nbits: the bit size of units to be read from or written to file
-    :type nbits:
-
-    .. note::
-
-       The File class handles all packing and unpacking of sub-byte size data
-       under the hood, so all calls can be made requesting numbers of units
-       rather than numbers of bits or bytes.
+    Notes
+    -----
+    The File class handles all packing and unpacking of sub-byte size data
+    under the hood, so all calls can be made requesting numbers of units
+    rather than numbers of bits or bytes.
     """
 
     def __init__(self, filename, mode, nbits=8):
@@ -39,13 +38,16 @@ class File(io.FileIO):
     def cread(self, nunits):
         """Read nunits of data from the file.
 
-        :param nunits: number of units to be read from file
-        :type nunits: int
+        Parameters
+        ----------
+        nunits : int
+            number of units to be read from file
 
-        :return: an array containing the read data
-        :rtype: :class:`numpy.ndarray`
+        Returns
+        -------
+        :py:obj:`numpy.ndarray`
+            an array containing the read data
         """
-
         count = int(nunits * self.bitfact)
         data  = np.fromfile(self, count=count, dtype=self.dtype)
         if self.unpack:
@@ -57,17 +59,19 @@ class File(io.FileIO):
     def cwrite(self, ar):
         """Write an array to file.
 
-        :param ar: a numpy array
-        :type ar: :class:`numpy.ndarray`
+        Parameters
+        ----------
+        ar : :py:obj:`numpy.ndarray`
+            a numpy array
 
-        .. note::
-
-           Regardless of the dtype of the array argument, the data will be packed
-           with a bitsize determined by the nbits attribute of the File instance.
-           To change this attribute, use the _setNbits methods.
-           It is the responsibility of the user to ensure that values in the array
-           do not go beyond the maximum and minimum values allowed by the nbits
-           attribute.
+        Notes
+        -----
+        Regardless of the dtype of the array argument, the data will be packed
+        with a bitsize determined by the nbits attribute of the File instance.
+        To change this attribute, use the _setNbits methods.
+        It is the responsibility of the user to ensure that values in the array
+        do not go beyond the maximum and minimum values allowed by the nbits
+        attribute.
         """
         if self.dtype != ar.dtype:
             warnings.warn(
@@ -95,12 +99,19 @@ def rollArray(y, shift, axis):
     """Roll the elements in the array by 'shift' positions along the
     given axis.
 
-    Args:
-    y       -- array to roll
-    shift   -- number of bins to shift by
-    axis    -- axis to roll along
+    Parameters
+    ----------
+    y : :py:obj:`numpy.ndarray`
+        array to roll
+    shift : int
+        number of bins to shift by
+    axis : int
+        axis to roll along
 
-    Returns: shifted Ndarray
+    Returns
+    -------
+    :py:obj:`numpy.ndarray`
+        shifted numpy array
     """
     y = np.asanyarray(y)
     n = y.shape[axis]
@@ -120,7 +131,8 @@ def _flattenList(n):
 
 
 def stackRecarrays(arrays):
-    """Wrapper for stacking :class:`numpy.recarrays`"""
+    """Wrapper for stacking :py:obj:`numpy.recarrays`
+    """
     return arrays[0].__array_wrap__(np.hstack(arrays))
 
 

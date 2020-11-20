@@ -19,18 +19,33 @@ void runningMedian(float* inbuffer, float* outbuffer, int window, int nsamps) {
     }
 }
 
-void runningMean(float* inbuffer, float* outbuffer, int window, int nsamps){
+void runningMean(float* inbuffer, float* outbuffer, int window, int nsamps) {
+    // Allocate memory for new extended array (to deal with window edges)
+    const int boundarySize = window / 2; // integer division
+    const int outSize = nsamps + boundarySize * 2;
+
+    float* arrayWithBoundary = new float[outSize];
+    std::memcpy(arrayWithBoundary + boundarySize, inbuffer,
+                nsamps * sizeof(float));
+    // Extend by reflecting about the edge.
+    for (int ii = 0; ii < boundarySize; ++ii){
+        arrayWithBoundary[ii] = inbuffer[boundarySize - 1 - ii];
+        arrayWithBoundary[nsamps + boundarySize + ii] = inbuffer[nsamps - 1 - ii];
+    }
+
+    // Move window through all elements of the extended array
     double sum = 0;
-    for (int ii = 0; ii < nsamps; ii++) {
-        sum += inbuffer[ii];
-        if (ii < window){
-            outbuffer[ii] = inbuffer[ii] - (float)sum / (ii + 1);
+    for (int ii = 0; ii < outSize; ++ii){
+        sum += arrayWithBoundary[ii];
+        if (ii >= window){
+            sum -= arrayWithBoundary[ii - window];
         }
-        else {
-            outbuffer[ii] = inbuffer[ii] - (float)sum / (window + 1);
-            sum -= inbuffer[ii - window];
+        if (ii >= (window - 1)){
+            outbuffer[ii - window + 1] = (float)sum / window;
         }
     }
+    // Free memory
+    delete[] arrayWithBoundary;
 }
 
 void runBoxcar(float* inbuffer, float* outbuffer, int window, int nsamps) {

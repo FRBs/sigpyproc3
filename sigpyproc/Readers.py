@@ -8,7 +8,6 @@ import sigpyproc.HeaderParams as conf
 from sigpyproc.Utils import File
 from sigpyproc.Header import Header
 from sigpyproc.Filterbank import Filterbank, FilterbankBlock
-from sigpyproc.TimeSeries import TimeSeries
 from sigpyproc.FourierSeries import FourierSeries
 
 
@@ -219,56 +218,6 @@ class FilReader(Filterbank):
             self._file.seek(skip * self.itemsize // self.bitfact, os.SEEK_CUR)
             yield int(block // self.header.nchans), int(ii), data
 
-
-def readDat(filename, inf=None):
-    """Read a presto format .dat file.
-
-    :param filename: the name of the file to read
-    :type filename: :func:`str`
-
-    :params inf: the name of the corresponding .inf file (def=None)
-    :type inf: :func:`str`
-
-    :return: an array containing the whole dat file contents
-    :rtype: :class:`~sigpyproc.TimeSeries.TimeSeries`
-
-    .. note::
-
-       If inf=None, the function will look for a corresponding file with
-       the same basename which has the .inf file extension.
-    """
-
-    basename = os.path.splitext(filename)[0]
-    if inf is None:
-        inf = f"{basename}.inf"
-    if not os.path.isfile(inf):
-        raise IOError("No corresponding inf file found")
-    header = parseInfHeader(inf)
-    f = File(filename, "r", nbits=32)
-    data = np.fromfile(f, dtype="float32")
-    header["basename"] = basename
-    header["inf"]      = inf
-    header["filename"] = filename
-    header["nsamples"] = data.size
-    return TimeSeries(data, header)
-
-
-def readTim(filename):
-    """Read a sigproc format time series from file.
-
-    :param filename: the name of the file to read
-    :type filename: :func:`str`
-
-    :return: an array containing the whole file contents
-    :rtype: :class:`~sigpyproc.TimeSeries.TimeSeries`
-    """
-    header = parseSigprocHeader(filename)
-    nbits  = header["nbits"]
-    hdrlen = header["hdrlen"]
-    f = File(filename, "r", nbits=nbits)
-    f.seek(hdrlen)
-    data = np.fromfile(f, dtype=header["dtype"]).astype("float32")
-    return TimeSeries(data, header)
 
 
 def readFFT(filename, inf=None):
