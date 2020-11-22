@@ -14,7 +14,7 @@ namespace sigpyproc {
 template <typename T>
 void running_Median(T* inbuffer, T* outbuffer, int window, int nsamps) {
     T* arrayWithBoundary = addBoundary<T>(inbuffer, window, nsamps);
-    int outSize = sizeof(arrayWithBoundary)/sizeof(T);
+    int outSize          = sizeof(arrayWithBoundary) / sizeof(T);
 
     // Move window through all elements of the extended array
     RunningMedian<T> rm(window);
@@ -22,21 +22,22 @@ void running_Median(T* inbuffer, T* outbuffer, int window, int nsamps) {
         rm.insert(arrayWithBoundary[ii]);
         outbuffer[ii] = rm.median();
     }
+    // Free memory
+    delete[] arrayWithBoundary;
 }
 
-
-void runningMean(float* inbuffer, float* outbuffer, int window, int nsamps) {
+void running_Mean(float* inbuffer, float* outbuffer, int window, int nsamps) {
     float* arrayWithBoundary = addBoundary<float>(inbuffer, window, nsamps);
-    int outSize = sizeof(arrayWithBoundary)/sizeof(float);
+    int outSize              = sizeof(arrayWithBoundary) / sizeof(float);
 
     // Move window through all elements of the extended array
     double sum = 0;
-    for (int ii = 0; ii < outSize; ++ii){
+    for (int ii = 0; ii < outSize; ++ii) {
         sum += arrayWithBoundary[ii];
-        if (ii >= window){
+        if (ii >= window) {
             sum -= arrayWithBoundary[ii - window];
         }
-        if (ii >= (window - 1)){
+        if (ii >= (window - 1)) {
             outbuffer[ii - window + 1] = (float)sum / window;
         }
     }
@@ -73,7 +74,7 @@ void downsampleTim(float* inbuffer, float* outbuffer, int factor, int newLen) {
 
 void foldTim(float* buffer, double* foldbuffer, int32_t* counts, double tsamp,
              double period, double accel, int nsamps, int nbins, int nints) {
-    int   phasebin, subbint, factor1;
+    int phasebin, subbint, factor1;
     float tobs, tj;
     float c = 299792458.0;
 
@@ -82,19 +83,28 @@ void foldTim(float* buffer, double* foldbuffer, int32_t* counts, double tsamp,
 
     for (int ii = 0; ii < nsamps; ii++) {
         tj       = ii * tsamp;
-        phasebin = abs(((int)(nbins * tj * (1 + accel * (tj - tobs) / (2 * c)) /
-                            period + 0.5))) % nbins;
+        phasebin = abs(((int)(nbins * tj * (1 + accel * (tj - tobs) / (2 * c))
+                                  / period
+                              + 0.5)))
+                   % nbins;
         subbint = (int)ii / factor1;
         foldbuffer[(subbint * nbins) + phasebin] += buffer[ii];
         counts[(subbint * nbins) + phasebin]++;
     }
 }
 
+/**
+ * @brief One-Dimensional DFTs from real input to complex-Hermitian output
+ *
+ * @param inbuffer  Input real array
+ * @param outbuffer Output complex array
+ * @param size      Logical size of the DFT
+ *
+ * @see http://www.fftw.org/fftw3_doc/One_002dDimensional-DFTs-of-Real-Data.html
+ */
 void rfft(float* inbuffer, float* outbuffer, int size) {
     fftwf_plan plan;
-    plan = fftwf_plan_dft_r2c_1d(size,
-                                 inbuffer,
-                                 (fftwf_complex*)outbuffer,
+    plan = fftwf_plan_dft_r2c_1d(size, inbuffer, (fftwf_complex*)outbuffer,
                                  FFTW_ESTIMATE);
     fftwf_execute(plan);
     fftwf_destroy_plan(plan);
@@ -102,10 +112,10 @@ void rfft(float* inbuffer, float* outbuffer, int size) {
 
 void resample(float* inbuffer, float* outbuffer, int nsamps, float accel,
               float tsamp) {
-    int   nsamps_by_2  = nsamps / 2;
+    int nsamps_by_2    = nsamps / 2;
     float partial_calc = (accel * tsamp) / (2 * 299792458.0);
     float tot_drift    = partial_calc * pow(nsamps_by_2, 2);
-    int   last_bin     = 0;
+    int last_bin       = 0;
     for (int ii = 0; ii < nsamps; ii++) {
         int index = ii + partial_calc * pow(ii - nsamps_by_2, 2) - tot_drift;
         outbuffer[index] = inbuffer[ii];
@@ -115,4 +125,4 @@ void resample(float* inbuffer, float* outbuffer, int nsamps, float accel,
     }
 }
 
-} // namespace sigpyproc
+}  // namespace sigpyproc

@@ -29,7 +29,7 @@ class File(io.FileIO):
         super().__init__(filename, mode)
         self.nbits = nbits
         self.dtype = nbits_to_dtype[self.nbits]
-        if nbits in [1, 2, 4]:
+        if nbits in {1, 2, 4}:
             self.bitfact = nbits / 8.0
             self.unpack  = True
         else:
@@ -52,10 +52,8 @@ class File(io.FileIO):
         count = int(nunits * self.bitfact)
         data  = np.fromfile(self, count=count, dtype=self.dtype)
         if self.unpack:
-            unpacked = lib.unpack(data, self.nbits)
-            return unpacked
-        else:
-            return data
+            return lib.unpack(data, self.nbits)
+        return data
 
     def cwrite(self, ar):
         """Write an array to file.
@@ -187,8 +185,8 @@ def editInplace(inst, key, value):
         value  = value[:oldlen] + " " * (oldlen - len(value))
     inst.header[key] = value
     new_header = inst.header.SPPHeader(back_compatible=True)
-    if inst.header.hdrlen != len(new_header):
-        raise ValueError("New header is too long/short for file")
-    else:
+    if inst.header.hdrlen == len(new_header):
         temp.seek(0)
         temp.write(new_header)
+    else:
+        raise ValueError("New header is too long/short for file")

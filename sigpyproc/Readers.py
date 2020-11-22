@@ -32,7 +32,7 @@ class FilReader(Filterbank):
         self.header   = Header.parseSigprocHeader(self.filename)
         self._file    = File(filename, "r", self.header.nbits)
         self.itemsize = np.dtype(self.header.dtype).itemsize
-        if self.header.nbits in [1, 2, 4]:
+        if self.header.nbits in {1, 2, 4}:
             self.bitfact = 8 // self.header.nbits
         else:
             self.bitfact = 1
@@ -64,8 +64,7 @@ class FilReader(Filterbank):
         new_header = self.header.newHeader({"tstart": start_mjd})
         if as_filterbankBlock:
             return FilterbankBlock(data, new_header)
-        else:
-            return data
+        return data
 
     def readDedispersedBlock(self, start, nsamps, dm, as_filterbankBlock=True,
                              small_reads=True):
@@ -144,8 +143,7 @@ class FilReader(Filterbank):
             data = FilterbankBlock(data, new_header)
             data.dm = dm
             return data
-        else:
-            return data
+        return data
 
     def readPlan(self, gulp, skipback=0, start=0, nsamps=None,
                  tqdm_desc=None, verbose=True):

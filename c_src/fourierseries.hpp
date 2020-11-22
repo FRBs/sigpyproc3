@@ -12,24 +12,33 @@
 namespace sigpyproc {
 
 /**
- * Complex One-Dimensional DFTs
+ * @brief Calculate One-Dimensional DFT
+ *
+ * @param inbuffer  Input complex array
+ * @param outbuffer Output complex array
+ * @param size      Size of the transform
  */
 void ccfft(float* inbuffer, float* outbuffer, int size) {
     fftwf_plan plan;
-    plan = fftwf_plan_dft_1d(size,
-                             (fftwf_complex*)inbuffer,
-                             (fftwf_complex*)outbuffer,
-                             FFTW_BACKWARD,
+    plan = fftwf_plan_dft_1d(size, (fftwf_complex*)inbuffer,
+                             (fftwf_complex*)outbuffer, FFTW_BACKWARD,
                              FFTW_ESTIMATE);
     fftwf_execute(plan);
     fftwf_destroy_plan(plan);
 }
 
+/**
+ * @brief One-Dimensional DFTs from complex-Hermitian input to real output
+ *
+ * @param inbuffer  Input complex array
+ * @param outbuffer Output real array
+ * @param size      Logical size of the DFT
+ *
+ * @see http://www.fftw.org/fftw3_doc/One_002dDimensional-DFTs-of-Real-Data.html
+ */
 void ifft(float* inbuffer, float* outbuffer, int size) {
     fftwf_plan plan;
-    plan = fftwf_plan_dft_c2r_1d(size,
-                                 (fftwf_complex*)inbuffer,
-                                 outbuffer,
+    plan = fftwf_plan_dft_c2r_1d(size, (fftwf_complex*)inbuffer, outbuffer,
                                  FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
     fftwf_execute(plan);
     fftwf_destroy_plan(plan);
@@ -64,18 +73,18 @@ void formSpec(float* fftbuffer, float* specbuffer, int specsize) {
 void rednoise(float* fftbuffer, float* outbuffer, float* oldinbuf,
               float* newinbuf, float* realbuffer, int nsamps, float tsamp,
               int startwidth, int endwidth, float endfreq) {
-    int   binnum  = 1;
-    int   bufflen = startwidth;
-    int   rindex, windex;
-    int   numread_new, numread_old;
+    int binnum  = 1;
+    int bufflen = startwidth;
+    int rindex, windex;
+    int numread_new, numread_old;
     float slope, mean_new, mean_old;
     float T = nsamps * tsamp;
 
     // Set DC bin to 1.0
     outbuffer[0] = 1.0;
     outbuffer[1] = 0.0;
-    windex     = 2;
-    rindex     = 2;
+    windex       = 2;
+    rindex       = 2;
 
     // transfer bufflen complex samples to oldinbuf
     for (int ii = 0; ii < 2 * bufflen; ii++)
@@ -86,14 +95,14 @@ void rednoise(float* fftbuffer, float* outbuffer, float* oldinbuf,
     // calculate powers for oldinbuf
     for (int ii = 0; ii < numread_old; ii++) {
         realbuffer[ii] = 0;
-        realbuffer[ii] = oldinbuf[ii * 2] * oldinbuf[ii * 2] +
-                         oldinbuf[ii * 2 + 1] * oldinbuf[ii * 2 + 1];
+        realbuffer[ii] = oldinbuf[ii * 2] * oldinbuf[ii * 2]
+                         + oldinbuf[ii * 2 + 1] * oldinbuf[ii * 2 + 1];
     }
 
     // calculate first median of our data and determine next bufflen
     mean_old = median<float>(realbuffer, numread_old) / log(2.0);
-    binnum  += numread_old;
-    bufflen  = startwidth * log(binnum);
+    binnum += numread_old;
+    bufflen = startwidth * log(binnum);
 
     while (rindex / 2 < nsamps) {
         if (bufflen > nsamps - rindex / 2)
@@ -107,8 +116,8 @@ void rednoise(float* fftbuffer, float* outbuffer, float* oldinbuf,
 
         for (int ii = 0; ii < numread_new; ii++) {
             realbuffer[ii] = 0;
-            realbuffer[ii] = newinbuf[ii * 2] * newinbuf[ii * 2] +
-                             newinbuf[ii * 2 + 1] * newinbuf[ii * 2 + 1];
+            realbuffer[ii] = newinbuf[ii * 2] * newinbuf[ii * 2]
+                             + newinbuf[ii * 2 + 1] * newinbuf[ii * 2 + 1];
         }
 
         mean_new = median<float>(realbuffer, numread_new) / log(2.0);
@@ -117,14 +126,14 @@ void rednoise(float* fftbuffer, float* outbuffer, float* oldinbuf,
         for (int ii = 0; ii < numread_old; ii++) {
             outbuffer[ii * 2 + windex]     = 0.0;
             outbuffer[ii * 2 + 1 + windex] = 0.0;
-            outbuffer[ii * 2 + windex] =
-                oldinbuf[ii * 2] /
-                sqrt(mean_old +
-                     slope * ((numread_old + numread_new) / 2.0 - ii));
-            outbuffer[ii * 2 + 1 + windex] =
-                oldinbuf[ii * 2 + 1] /
-                sqrt(mean_old +
-                     slope * ((numread_old + numread_new) / 2.0 - ii));
+            outbuffer[ii * 2 + windex]
+                = oldinbuf[ii * 2]
+                  / sqrt(mean_old
+                         + slope * ((numread_old + numread_new) / 2.0 - ii));
+            outbuffer[ii * 2 + 1 + windex]
+                = oldinbuf[ii * 2 + 1]
+                  / sqrt(mean_old
+                         + slope * ((numread_old + numread_new) / 2.0 - ii));
         }
         windex += 2 * numread_old;
 
@@ -160,8 +169,9 @@ void sumHarms(float* specbuffer, float* sumbuffer, int32_t* sumarray,
     for (int ii = nfoldi; ii < nsamps - (nharms - 1); ii += nharms) {
         for (int jj = 0; jj < nharms; jj++) {
             for (int kk = 0; kk < nharms / 2; kk++) {
-                sumbuffer[ii + jj] +=
-                    specbuffer[factarray[kk] + sumarray[jj * nharms / 2 + kk]];
+                sumbuffer[ii + jj]
+                    += specbuffer[factarray[kk]
+                                  + sumarray[jj * nharms / 2 + kk]];
             }
         }
         for (int kk = 0; kk < nharms / 2; kk++) {
@@ -179,9 +189,9 @@ void multiply_fs(float* inbuffer, float* otherbuffer, float* outbuffer,
         orr = otherbuffer[ii];
         oi  = otherbuffer[ii + 1];
 
-        outbuffer[ii]     = sr * orr -si * oi;
-        outbuffer[ii + 1] = sr * oi + si * orr ;
+        outbuffer[ii]     = sr * orr - si * oi;
+        outbuffer[ii + 1] = sr * oi + si * orr;
     }
 }
 
-} // namespace sigpyproc
+}  // namespace sigpyproc

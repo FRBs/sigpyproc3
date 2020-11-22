@@ -51,8 +51,8 @@ void unpack(uint8_t* inbuffer, uint8_t* outbuffer, int nbits, int nbytes) {
  * Note: Only set up for big endian bit ordering
  */
 void unpackInPlace(uint8_t* buffer, int nbits, int nbytes) {
-    int     pos;
-    int     lastsamp = nbits * nbytes / 8;
+    int pos;
+    int lastsamp = nbits * nbytes / 8;
     uint8_t temp;
 
     switch (nbits) {
@@ -90,26 +90,26 @@ void unpackInPlace(uint8_t* buffer, int nbits, int nbytes) {
  * Function to pack bit data into an empty buffer
  */
 void pack(uint8_t* inbuffer, uint8_t* outbuffer, int nbits, int nbytes) {
-    int     pos;
-    int     bitfact = 8 / nbits;
+    int pos;
+    int bitfact = 8 / nbits;
     uint8_t val;
 
     switch (nbits) {
         case 1:
             for (int ii = 0; ii < nbytes / bitfact; ii++) {
                 pos = ii * 8;
-                val = (inbuffer[pos + 7] << 7) | (inbuffer[pos + 6] << 6) |
-                      (inbuffer[pos + 5] << 5) | (inbuffer[pos + 4] << 4) |
-                      (inbuffer[pos + 3] << 3) | (inbuffer[pos + 2] << 2) |
-                      (inbuffer[pos + 1] << 1) | inbuffer[pos + 0];
+                val = (inbuffer[pos + 7] << 7) | (inbuffer[pos + 6] << 6)
+                      | (inbuffer[pos + 5] << 5) | (inbuffer[pos + 4] << 4)
+                      | (inbuffer[pos + 3] << 3) | (inbuffer[pos + 2] << 2)
+                      | (inbuffer[pos + 1] << 1) | inbuffer[pos + 0];
                 outbuffer[ii] = val;
             }
             break;
         case 2:
             for (int ii = 0; ii < nbytes / bitfact; ii++) {
                 pos = ii * 4;
-                val = (inbuffer[pos] << 6) | (inbuffer[pos + 1] << 4) |
-                      (inbuffer[pos + 2] << 2) | inbuffer[pos + 3];
+                val = (inbuffer[pos] << 6) | (inbuffer[pos + 1] << 4)
+                      | (inbuffer[pos + 2] << 2) | inbuffer[pos + 3];
                 outbuffer[ii] = val;
             }
             break;
@@ -128,26 +128,26 @@ void pack(uint8_t* inbuffer, uint8_t* outbuffer, int nbits, int nbytes) {
  * Function to pack bit data into the same buffer
  */
 void packInPlace(uint8_t* buffer, int nbits, int nbytes) {
-    int     pos;
-    int     bitfact = 8 / nbits;
+    int pos;
+    int bitfact = 8 / nbits;
     uint8_t val;
 
     switch (nbits) {
         case 1:
             for (int ii = 0; ii < nbytes / bitfact; ii++) {
                 pos = ii * 8;
-                val = (buffer[pos + 7] << 7) | (buffer[pos + 6] << 6) |
-                      (buffer[pos + 5] << 5) | (buffer[pos + 4] << 4) |
-                      (buffer[pos + 3] << 3) | (buffer[pos + 2] << 2) |
-                      (buffer[pos + 1] << 1) | buffer[pos + 0];
+                val = (buffer[pos + 7] << 7) | (buffer[pos + 6] << 6)
+                      | (buffer[pos + 5] << 5) | (buffer[pos + 4] << 4)
+                      | (buffer[pos + 3] << 3) | (buffer[pos + 2] << 2)
+                      | (buffer[pos + 1] << 1) | buffer[pos + 0];
                 buffer[ii] = val;
             }
             break;
         case 2:
             for (int ii = 0; ii < nbytes / bitfact; ii++) {
                 pos = ii * 4;
-                val = (buffer[pos] << 6) | (buffer[pos + 1] << 4) |
-                      (buffer[pos + 2] << 2) | buffer[pos + 3];
+                val = (buffer[pos] << 6) | (buffer[pos + 1] << 4)
+                      | (buffer[pos + 2] << 2) | buffer[pos + 3];
                 buffer[ii] = val;
             }
             break;
@@ -162,4 +162,4 @@ void packInPlace(uint8_t* buffer, int nbits, int nbytes) {
     }
 }
 
-} // namespace sigpyproc
+}  // namespace sigpyproc

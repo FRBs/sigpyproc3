@@ -162,14 +162,12 @@ class FourierSeries(np.ndarray):
         self.header = getattr(obj, 'header', None)
 
     def __mul__(self, other):
-        if type(other) == type(self):
+        if isinstance(other, FourierSeries):
             if other.size != self.size:
                 raise Exception("Instances must be the same size")
-            else:
-                out_ar = lib.multiply_fs(self, other, self.size)
-                return FourierSeries(out_ar, self.header.newHeader())
-        else:
-            return super().__mul__(other)
+            out_ar = lib.multiply_fs(self, other, self.size)
+            return FourierSeries(out_ar, self.header.newHeader())
+        return super().__mul__(other)
 
     def __rmul__(self, other):
         self.__mul__(other)
@@ -188,11 +186,7 @@ class FourierSeries(np.ndarray):
             a power spectrum
         """
         specsize = self.size // 2
-        if interpolated:
-            spec_ar = lib.formSpecInterpolated(self, specsize)
-        else:
-            spec_ar = lib.formSpec(self, specsize)
-
+        spec_ar = lib.formSpec(self, specsize, interpolated=interpolated)
         return PowerSpectrum(spec_ar, self.header.newHeader())
 
     def iFFT(self):

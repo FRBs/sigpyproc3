@@ -11,14 +11,16 @@ namespace sigpyproc {
 /**
  * Convert 1-,2- or 4-bit data to 8-bit data and write to file.
  */
+
 void to8bit(float* inbuffer, uint8_t* outbuffer, uint8_t* flagbuffer,
             float* factbuffer, float* plusbuffer, float* flagMax,
             float* flagMin, int nsamps, int nchans) {
 #pragma omp parallel for default(shared)
     for (int ii = 0; ii < nsamps; ii++) {
         for (int jj = 0; jj < nchans; jj++) {
-            outbuffer[(ii * nchans) + jj] =
-                inbuffer[(ii * nchans) + jj] / factbuffer[jj] - plusbuffer[jj];
+            outbuffer[(ii * nchans) + jj]
+                = inbuffer[(ii * nchans) + jj] / factbuffer[jj]
+                  - plusbuffer[jj];
             if (inbuffer[(ii * nchans) + jj] > flagMax[jj])
                 flagbuffer[(ii * nchans) + jj] = 2;
             else if (inbuffer[(ii * nchans) + jj] < flagMin[jj])
@@ -29,27 +31,25 @@ void to8bit(float* inbuffer, uint8_t* outbuffer, uint8_t* flagbuffer,
     }
 }
 
-
 /**
  * TODO: This code is very slow compared to python slicing.
  */
 template <class T>
-void splitToBands(T* inbuffer, T* outbuffer, int nchans,
-                  int nsamps, int nsub, int chanpersub, int chanstart) {
+void splitToBands(T* inbuffer, T* outbuffer, int nchans, int nsamps, int nsub,
+                  int chanpersub, int chanstart) {
     int chan_end = nsub * chanpersub + chanstart;
 #pragma omp parallel for default(shared)
     for (int ii = 0; ii < nsamps; ii++) {
         for (int jj = chanstart; jj < chan_end; jj++) {
-            outbuffer[(ii * nchans) +
-                    (jj % chanpersub * nsub + jj / chanpersub)] =
-                inbuffer[(ii * nchans) + jj];
+            outbuffer[(ii * nchans)
+                      + (jj % chanpersub * nsub + jj / chanpersub)]
+                = inbuffer[(ii * nchans) + jj];
         }
     }
 }
 
 template <class T>
-void getTim(T* inbuffer, float* outbuffer, int nchans,
-            int nsamps, int index) {
+void getTim(T* inbuffer, float* outbuffer, int nchans, int nsamps, int index) {
 #pragma omp parallel for default(shared)
     for (int ii = 0; ii < nsamps; ii++) {
         for (int jj = 0; jj < nchans; jj++) {
@@ -59,8 +59,7 @@ void getTim(T* inbuffer, float* outbuffer, int nchans,
 }
 
 template <class T>
-void getBpass(T* inbuffer, double* outbuffer, int nchans,
-              int nsamps) {
+void getBpass(T* inbuffer, double* outbuffer, int nchans, int nsamps) {
 #pragma omp parallel for default(shared)
     for (int jj = 0; jj < nchans; jj++) {
         for (int ii = 0; ii < nsamps; ii++) {
@@ -70,13 +69,13 @@ void getBpass(T* inbuffer, double* outbuffer, int nchans,
 }
 
 template <class T>
-void dedisperse(T* inbuffer, float* outbuffer, int32_t* delays,
-                int maxdelay, int nchans, int nsamps, int index) {
+void dedisperse(T* inbuffer, float* outbuffer, int32_t* delays, int maxdelay,
+                int nchans, int nsamps, int index) {
 #pragma omp parallel for default(shared)
     for (int ii = 0; ii < (nsamps - maxdelay); ii++) {
         for (int jj = 0; jj < nchans; jj++) {
-            outbuffer[index + ii] +=
-                inbuffer[(ii * nchans) + (delays[jj] * nchans) + jj];
+            outbuffer[index + ii]
+                += inbuffer[(ii * nchans) + (delays[jj] * nchans) + jj];
         }
     }
 }
@@ -102,15 +101,15 @@ void subband(T* inbuffer, float* outbuffer, int32_t* delays, int32_t* c_to_s,
 #pragma omp parallel for default(shared)
     for (int ii = 0; ii < (nsamps - maxdelay); ii++) {
         for (int jj = 0; jj < nchans; jj++) {
-            outbuffer[(ii * nsubs) + c_to_s[jj]] +=
-                (float)inbuffer[(ii * nchans) + (delays[jj] * nchans) + jj];
+            outbuffer[(ii * nsubs) + c_to_s[jj]]
+                += (float)inbuffer[(ii * nchans) + (delays[jj] * nchans) + jj];
         }
     }
 }
 
 template <class T>
-void getChan(T* inbuffer, float* outbuffer, int chan,
-             int nchans, int nsamps, int index) {
+void getChan(T* inbuffer, float* outbuffer, int chan, int nchans, int nsamps,
+             int index) {
 #pragma omp parallel for default(shared)
     for (int ii = 0; ii < nsamps; ii++) {
         outbuffer[index + ii] = inbuffer[(ii * nchans) + chan];
@@ -118,8 +117,8 @@ void getChan(T* inbuffer, float* outbuffer, int chan,
 }
 
 template <class T>
-void splitToChans(T* inbuffer, float* outbuffer,
-                  int nchans, int nsamps, int gulp) {
+void splitToChans(T* inbuffer, float* outbuffer, int nchans, int nsamps,
+                  int gulp) {
 #pragma omp parallel for default(shared)
     for (int ii = 0; ii < nsamps; ii++) {
         for (int jj = 0; jj < nchans; jj++) {
@@ -133,8 +132,8 @@ void invertFreq(T* inbuffer, T* outbuffer, int nchans, int nsamps) {
 #pragma omp parallel for default(shared)
     for (int ii = 0; ii < nsamps; ii++) {
         for (int jj = 0; jj < nchans; jj++) {
-            outbuffer[(jj) + ii * nchans] =
-                inbuffer[(nchans - 1 - jj) + ii * nchans];
+            outbuffer[(jj) + ii * nchans]
+                = inbuffer[(nchans - 1 - jj) + ii * nchans];
         }
     }
 }
@@ -144,7 +143,7 @@ void foldFil(T* inbuffer, float* foldbuffer, int32_t* countbuffer,
              int32_t* delays, int maxDelay, double tsamp, double period,
              double accel, int totnsamps, int nsamps, int nchans, int nbins,
              int nints, int nsubs, int index) {
-    int   tobs, phasebin, subband, subint, pos1, pos2;
+    int tobs, phasebin, subband, subint, pos1, pos2;
     float factor1, factor2, val, tj;
     float c = 299792458.0;
     factor1 = (float)totnsamps / nints;
@@ -152,10 +151,10 @@ void foldFil(T* inbuffer, float* foldbuffer, int32_t* countbuffer,
     tobs    = (int)(totnsamps * tsamp);
     for (int ii = 0; ii < (nsamps - maxDelay); ii++) {
         tj = (ii + index) * tsamp;
-        phasebin =
-            ((int)(nbins * tj * (1 + accel * (tj - tobs) / (2 * c)) / period +
-                   0.5)) %
-            nbins;
+        phasebin
+            = ((int)(nbins * tj * (1 + accel * (tj - tobs) / (2 * c)) / period
+                     + 0.5))
+              % nbins;
         subint = (int)((index + ii) / factor1);
         pos1   = (subint * nsubs * nbins) + phasebin;
         for (int jj = 0; jj < nchans; jj++) {
@@ -198,11 +197,11 @@ void getStats(T* inbuffer, float* M1, float* M2, float* M3, float* M4,
             delta_n  = delta / n;
             delta_n2 = delta_n * delta_n;
             term1    = delta * delta_n * (n - 1);
-            M1[jj]  += delta_n;
-            M4[jj]  += term1 * delta_n2 * (n * n - 3 * n + 3) +
-                          6 * delta_n2 * M2[jj] - 4 * delta_n * M3[jj];
-            M3[jj]  += term1 * delta_n * (n - 2) - 3 * delta_n * M2[jj];
-            M2[jj]  += term1;
+            M1[jj] += delta_n;
+            M4[jj] += term1 * delta_n2 * (n * n - 3 * n + 3)
+                      + 6 * delta_n2 * M2[jj] - 4 * delta_n * M3[jj];
+            M3[jj] += term1 * delta_n * (n - 2) - 3 * delta_n * M2[jj];
+            M2[jj] += term1;
 
             if (val > maxbuffer[jj])
                 maxbuffer[jj] = val;
@@ -218,12 +217,12 @@ void getStats(T* inbuffer, float* M1, float* M2, float* M3, float* M4,
 template <class T>
 void removeBandpass(T* inbuffer, T* outbuffer, float* means, float* stdevs,
                     int nchans, int nsamps) {
-    T     val;
+    T val;
     float DIGI_MEAN  = 127.5;
     float DIGI_SIGMA = 6;
     float DIGI_SCALE = DIGI_MEAN / DIGI_SIGMA;
-    int   DIGI_MIN   = 0;
-    int   DIGI_MAX   = 255;
+    int DIGI_MIN     = 0;
+    int DIGI_MAX     = 255;
 
 #pragma omp parallel for default(shared)
     for (int jj = 0; jj < nchans; jj++) {
@@ -255,15 +254,15 @@ void removeBandpass(T* inbuffer, T* outbuffer, float* means, float* stdevs,
 }
 
 template <class T>
-void downsample(T* inbuffer, T* outbuffer, int tfactor,
-                int ffactor, int nchans, int nsamps) {
+void downsample(T* inbuffer, T* outbuffer, int tfactor, int ffactor, int nchans,
+                int nsamps) {
     int newnsamps = nsamps / tfactor;
     int newnchans = nchans / ffactor;
     int totfactor = ffactor * tfactor;
 #pragma omp parallel for default(shared)
     for (int ii = 0; ii < newnsamps; ii++) {
         for (int jj = 0; jj < newnchans; jj++) {
-            int   pos  = nchans * ii * tfactor + jj * ffactor;
+            int pos    = nchans * ii * tfactor + jj * ffactor;
             float temp = 0;
             for (int kk = 0; kk < tfactor; kk++) {
                 for (int ll = 0; ll < ffactor; ll++) {
@@ -296,11 +295,11 @@ void removeZeroDM(T* inbuffer, T* outbuffer, float* bpass, float* chanwts,
             if (std::is_same<T, uint8_t*>::value) {
                 zerodm = zerodm + 0.5;
             }
-            outbuffer[(nchans * ii) + jj] =
-                (T)((inbuffer[(nchans * ii) + jj] - zerodm * chanwts[jj]) +
-                    bpass[jj]);
+            outbuffer[(nchans * ii) + jj]
+                = (T)((inbuffer[(nchans * ii) + jj] - zerodm * chanwts[jj])
+                      + bpass[jj]);
         }
     }
 }
 
-} // namespace sigpyproc
+}  // namespace sigpyproc

@@ -323,7 +323,7 @@ class Filterbank(object):
             {
                 "tsamp": self.header.tsamp * tfactor,
                 "nchans": self.header.nchans // ffactor,
-                "foff": self.header.foff * ffactor
+                "foff": self.header.foff * ffactor,
             },
             back_compatible=back_compatible
         )
@@ -535,7 +535,6 @@ class Filterbank(object):
         -----
         Filterbanks are written to disk with names based on sub-band number.
         """
-        # TODO: C version is too slow. Need to fix
         nsub = (self.header.nchans - chanstart) // chanpersub
         fstart = self.header.fch1 + chanstart * self.header.foff
 
@@ -552,26 +551,13 @@ class Filterbank(object):
             for ii in range(nsub)
         ]
 
-        # subband_ar = np.empty([gulp*chanpersub, nsub], dtype=self.header.dtype)
         for nsamps, ii, data in self.readPlan(gulp, **kwargs):
-            """
-            lib.splitToBands(
-                data,
-                subband_ar_c,
-                self.header.nchans,
-                nsamps,
-                nsub,
-                chanpersub,
-                chanstart
-            )
-            """
             for ii, out_file in enumerate(out_files):
                 data = data.reshape(nsamps, self.header.nchans)
                 subband_ar = data[
                     :, chanstart + chanpersub * ii:chanstart + chanpersub * (ii + 1)
                 ]
                 out_file.cwrite(subband_ar.ravel())
-                # out_file.cwrite(subband_ar[:nsamps*chanpersub, ii])
 
         for out_file in out_files:
             out_file.close()
@@ -778,7 +764,7 @@ class FilterbankBlock(np.ndarray):
         ValueError
             If number of channels is not divisible by `ffactor`.
         """
-        if not self.shape[0] % ffactor == 0:
+        if self.shape[0] % ffactor != 0:
             raise ValueError("Bad frequency factor given")
         newnsamps = self.shape[1] - self.shape[1] % tfactor
         new_ar = np.empty(

@@ -116,7 +116,7 @@ class TimeSeries(np.ndarray):
         Notes
         -----
         Window edges will be dealt by reflecting about the edges of the time series.
-        For more robust implemetation, use :py:function:`scipy.ndimage.uniform_filter1d`.
+        For more robust implemetation, use :py:obj:`scipy.ndimage.uniform_filter1d`.
         """
         if window < 1:
             raise RuntimeError('incorrect window size')
@@ -243,7 +243,7 @@ class TimeSeries(np.ndarray):
         :class:`sigpyproc.TimeSeries.TimeSeries`
             time series containing the correlation
         """
-        if type(self) != type(other):
+        if not isinstance(other, TimeSeries):
             try:
                 other = TimeSeries(other, self.header.newHeader())
             except Exception:
@@ -269,10 +269,10 @@ class TimeSeries(np.ndarray):
         """
         self.header.makeInf(outfile=f"{basename}.inf")
         with open(f"{basename}.dat", "w+") as datfile:
-            if self.size % 2 != 0:
-                self[:-1].tofile(datfile)
-            else:
+            if self.size % 2 == 0:
                 self.tofile(datfile)
+            else:
+                self[:-1].tofile(datfile)
         return f"{basename}.dat", f"{basename}.inf"
 
     def toFile(self, filename=None):

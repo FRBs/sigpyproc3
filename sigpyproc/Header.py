@@ -1,8 +1,8 @@
 import os
 import struct
 import numpy as np
-import sigpyproc.HeaderParams as conf
 from sigpyproc.Utils import File
+from sigpyproc import HeaderParams as conf
 
 
 class Header(dict):
@@ -43,7 +43,9 @@ class Header(dict):
         """Check for changes in header and recalculate all derived quantaties.
         """
         if hasattr(self, "filename"):
-            self.basename, self.extension = os.path.splitext(self.filename)
+            basename, extension = os.path.splitext(self.filename)
+            self.basename = basename
+            self.extension = extension
 
         if hasattr(self, "foff") and hasattr(self, "nchans") and hasattr(self, "fch1"):
             self.bandwidth = abs(self.foff) * self.nchans
@@ -61,11 +63,13 @@ class Header(dict):
         self.dec = radec_to_str(self.src_dej)
         self.ra_rad = ra_to_rad(self.ra)
         self.dec_rad = dec_to_rad(self.dec)
-        self.ra_deg = (self.ra_rad * 180.) / np.pi
-        self.dec_deg = (self.dec_rad * 180.) / np.pi
+        self.ra_deg = (self.ra_rad * 180.0) / np.pi
+        self.dec_deg = (self.dec_rad * 180.0) / np.pi
 
         if hasattr(self, "tstart"):
-            self.obs_date, self.obs_time = MJD_to_Gregorian(self.tstart)
+            obs_date, obs_time = MJD_to_Gregorian(self.tstart)
+            self.obs_date = obs_date
+            self.obs_time = obs_time
 
         if hasattr(self, "nbits"):
             self.dtype = conf.nbits_to_dtype[self.nbits]
@@ -202,10 +206,9 @@ class Header(dict):
 
         if outfile is None:
             return inf
-        else:
-            with open(outfile, "w+") as f:
-                f.write(inf)
-            return None
+        with open(outfile, "w+") as f:
+            f.write(inf)
+        return None
 
     def getDMdelays(self, dm, in_samples=True):
         """For a given dispersion measure get the dispersive ISM delay
@@ -228,8 +231,7 @@ class Header(dict):
         delays = dm * 4.148808e3 * ((chanFreqs ** -2) - (self.fch1 ** -2))
         if in_samples:
             return (delays / self.tsamp).round().astype("int32")
-        else:
-            return delays
+        return delays
 
     def prepOutfile(self, filename, updates=None, nbits=None, back_compatible=True):
         """Prepare a file to have sigproc format data written to it.

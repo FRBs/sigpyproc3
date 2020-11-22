@@ -1,5 +1,5 @@
 import codecs
-import os.path
+import os
 import sysconfig
 
 from setuptools import setup
