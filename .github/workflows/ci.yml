@@ -22,19 +22,19 @@ jobs:
       uses: actions/setup-python@v2
       with:
         python-version: ${{ matrix.python-version }}
-    - name: Install dependencies on ${{ matrix.os }}
+    - name: Install dependencies for macOS
       if: startsWith(matrix.os, 'macos')
       run: |
-        brew install libomp
-    - name: Install dependencies on ${{ matrix.os }}
+        brew install libomp fftw
+    - name: Install dependencies for ubuntu
       if: startsWith(matrix.os, 'ubuntu')
       run: |
         sudo apt-get update
         sudo apt-get -y install build-essential fftw3 fftw3-dev
-        python -m pip install --upgrade pip setuptools wheel
     - name: Install it
       run: |
-        python -m pip install -e .[tests] -v
+        python -m pip install -U pip setuptools wheel
+        python -m pip install -e .[tests]
     - name: Simple test
       run: |
         python examples/dedisperse.py examples/tutorial.fil 300

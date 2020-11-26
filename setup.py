@@ -42,7 +42,7 @@ def append_path(dirs_list, *args):
 
 
 def get_include_dirs():
-    prefix_dirs = ['/usr']
+    prefix_dirs = ['/usr', '/usr/local']
     dirs = []
     sys_include = sysconfig.get_config_var('INCLUDEDIR')
     if 'FFTW_PATH' in os.environ:
@@ -57,7 +57,7 @@ def get_include_dirs():
 
 
 def get_library_dirs():
-    prefix_dirs = ['/usr']
+    prefix_dirs = ['/usr', '/usr/local']
     dirs = []
     sys_lib = sysconfig.get_config_var('LIBDIR')
     if 'FFTW_PATH' in os.environ:
