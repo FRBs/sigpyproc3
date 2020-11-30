@@ -17,7 +17,7 @@ class TestFilterbank:
         myTim = myFil.collapse()
         np.testing.assert_equal(myTim.dtype, np.float32)
         np.testing.assert_equal(myTim.size, myFil.header.nsamples)
-        np.testing.assert_allclose(myTim.mean(), 128, atol=0.1)
+        np.testing.assert_allclose(myTim.mean(), 104.7, atol=0.1)
 
     def test_invertFreq(self, filfile):
         myFil = FilReader(filfile)
@@ -35,5 +35,5 @@ class TestFilterbank:
         myFil = FilReader(filfile)
         myTim = myFil.bandpass()
         np.testing.assert_equal(myTim.dtype, np.float32)
-        np.testing.assert_equal(myTim.size, myFil.header.nsamples)
-        np.testing.assert_allclose(myTim.mean(), 128, atol=0.1)
+        np.testing.assert_equal(myTim.size, myFil.header.nchans)
+        np.testing.assert_allclose(myTim.mean(), 1.64, atol=0.1)

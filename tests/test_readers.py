@@ -9,7 +9,7 @@ class TestReaders:
         assert header.nchans == 64
 
     def test_filterbank_empty(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(TypeError):
             FilReader()
 
     def test_filterbank_otherfile(tmpfile):
