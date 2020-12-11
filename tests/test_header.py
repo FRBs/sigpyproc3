@@ -19,10 +19,10 @@ class TestHeader(object):
     def test_makeInf(self, inffile, tmpfile):
         myheader = Header.parseInfHeader(filename=inffile)
         myheader.makeInf(outfile=tmpfile)
-        with open(inffile, 'r') as file:
-            infdata = file.read()
-        with open(tmpfile, 'r') as file:
-            tmpdata = file.read()
+        with open(inffile, 'r') as file_inf:
+            infdata = file_inf.read()
+        with open(tmpfile, 'r') as file_tmp:
+            tmpdata = file_tmp.read()
         np.testing.assert_string_equal(tmpdata, infdata)
 
     def test_parseInfHeader(self, inffile):

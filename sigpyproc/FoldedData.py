@@ -18,8 +18,7 @@ class Profile(np.ndarray):
     """
 
     def __new__(cls, input_array):
-        obj = input_array.astype("float32").view(cls)
-        return obj
+        return np.asarray(input_array).astype(np.float32, copy=False).view(cls)
 
     def __array_finalize__(self, obj):
         if obj is None:
@@ -105,8 +104,7 @@ class FoldSlice(np.ndarray):
         2-D array
     """
     def __new__(cls, input_array):
-        obj = input_array.astype("float32").view(cls)
-        return obj
+        return np.asarray(input_array).astype(np.float32, copy=False).view(cls)
 
     def __array_finalize__(self, obj):
         if obj is None:
@@ -148,6 +146,7 @@ class FoldedData(np.ndarray):
         DM that data was folded with
     accel : float
         accleration that data was folded with, by default 0
+
     Returns
     -------
     :py:obj:`numpy.ndarray`
@@ -159,7 +158,7 @@ class FoldedData(np.ndarray):
     (number of subintegrations, number of subbands, number of profile bins)
     """
     def __new__(cls, input_array, header, period, dm, accel=0):
-        obj = input_array.astype("float32").view(cls)
+        obj = np.asarray(input_array).astype(np.float32, copy=False).view(cls)
         obj.header = header
         obj.period = period
         obj.dm = dm
@@ -185,12 +184,12 @@ class FoldedData(np.ndarray):
         self._tph_shifts = np.zeros(self.nints, dtype="int32")
         self._fph_shifts = np.zeros(self.nbands, dtype="int32")
 
-    def getSubint(self, n):
+    def getSubint(self, nint):
         """Return a single subintegration from the data cube.
 
         Parameters
         ----------
-        n : int
+        nint : int
             subintegration number (n=0 is first subintegration
 
         Returns
@@ -198,14 +197,14 @@ class FoldedData(np.ndarray):
         :class:`~sigpyproc.FoldedData.FoldSlice`
             a 2-D array containing the subintegration
         """
-        return self[n].view(FoldSlice)
+        return self[nint].view(FoldSlice)
 
-    def getSubband(self, n):
+    def getSubband(self, nint):
         """Return a single subband from the data cube.
 
         Parameters
         ----------
-        n : int
+        nint : int
             subband number (n=0 is first subband)
 
         Returns
@@ -213,7 +212,7 @@ class FoldedData(np.ndarray):
         :class:`~sigpyproc.FoldedData.FoldSlice`
             a 2-D array containing the subband
         """
-        return self[:, n].view(FoldSlice)
+        return self[:, nint].view(FoldSlice)
 
     def getProfile(self):
         """Return a the data cube summed in time and frequency.
@@ -248,8 +247,8 @@ class FoldedData(np.ndarray):
     def centre(self):
         """Try and roll the data cube to center the pulse.
         """
-        p    = self.getProfile()
-        pos  = p._getPosition(p._getWidth())
+        prof = self.getProfile()
+        pos  = prof._getPosition(prof._getWidth())
         self = rollArray(self, (pos - self.nbins / 2), 2)
 
     def _replaceNan(self):
@@ -268,33 +267,30 @@ class FoldedData(np.ndarray):
             drifts = -1 * self._fph_shifts
             self._fph_shifts[:] = 0
             return drifts
-        else:
-            chan_width = self.header.foff * self.header.nchans / self.nbands
-            freqs = (np.arange(self.nbands) * chan_width) + self.header.fch1
-            fact = delta_dm * 4.148808e3
-            drifts = (
-                fact
-                * ((freqs**-2) - (self.header.fch1**-2))
-                / ((self.period / self.nbins))
-            )
-            drifts = drifts.round().astype("int32")
-            bin_drifts = drifts - self._fph_shifts
-            self._fph_shifts = drifts
-            return bin_drifts
+        chan_width = self.header.foff * self.header.nchans / self.nbands
+        freqs = (np.arange(self.nbands) * chan_width) + self.header.fch1
+        fact = delta_dm * 4.148808e3
+        drifts = (
+            fact
+            * ((freqs**-2) - (self.header.fch1**-2))
+            / ((self.period / self.nbins))
+        )
+        drifts = drifts.round().astype("int32")
+        bin_drifts = drifts - self._fph_shifts
+        self._fph_shifts = drifts
+        return bin_drifts
 
-    def _getPdelays(self, p):
-        dbins = (p / self._period - 1) * self.header.tobs * self.nbins / self._period
+    def _getPdelays(self, per):
+        dbins = (per / self._period - 1) * self.header.tobs * self.nbins / self._period
         if dbins == 0:
             drifts = -1 * self._tph_shifts
             self._tph_shifts[:] = 0
             return drifts
-        else:
-            drifts = np.round(
-                np.arange(float(self.nints)) / (self.nints / dbins)
-            ).astype("int32")
-            bin_drifts = drifts - self._tph_shifts
-            self._tph_shifts = drifts
-            return bin_drifts
+        drifts = np.arange(self.nints, dtype="float32")
+        drifts = np.round(drifts / (self.nints / dbins)).astype("int32")
+        bin_drifts = drifts - self._tph_shifts
+        self._tph_shifts = drifts
+        return bin_drifts
 
     def updateParams(self, dm=None, period=None):
         """Install a new folding period and/or DM in the data cube.

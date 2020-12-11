@@ -1,3 +1,4 @@
+from sigpyproc import libSigPyProc
 from sigpyproc.Readers import FilReader
 
-__version__ = "0.5.2"
+__version__ = "0.5.3"

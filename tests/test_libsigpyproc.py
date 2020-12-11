@@ -1,6 +1,6 @@
 import pytest
 import numpy as np
-import sigpyproc.libSigPyProc as lib
+from sigpyproc import libSigPyProc as lib
 
 numpy_types = [
     np.int8, np.uint8, np.int16, np.uint16,
@@ -83,7 +83,7 @@ class TestLibSigPyProc:
 
     def test_rfft(self):
         array = np.random.random(30)
-        for npoints in [array.size, 2 * array.size]:
+        for npoints in (array.size, 2 * array.size):
             expected = fft1(array)[:(npoints // 2 + 1)]
             output = lib.rfft(array, npoints)
             np.testing.assert_allclose(expected, output)

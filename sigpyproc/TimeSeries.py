@@ -5,8 +5,7 @@ from sigpyproc import FoldedData
 from sigpyproc import FourierSeries
 from sigpyproc.Utils import File
 from sigpyproc.Header import Header
-
-import sigpyproc.libSigPyProc as lib
+from sigpyproc import libSigPyProc as lib
 
 
 class TimeSeries(np.ndarray):

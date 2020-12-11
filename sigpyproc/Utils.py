@@ -2,7 +2,7 @@ import io
 import numpy as np
 import warnings
 
-import sigpyproc.libSigPyProc as lib
+from sigpyproc import libSigPyProc as lib
 from sigpyproc.HeaderParams import nbits_to_dtype
 
 

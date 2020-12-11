@@ -1,7 +1,7 @@
 import os
 import numpy as np
 from sigpyproc.Readers import FilReader
-import sigpyproc.libSigPyProc as lib
+from sigpyproc import libSigPyProc as lib
 
 
 class TestFilterbank:
