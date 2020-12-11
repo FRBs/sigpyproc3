@@ -22,6 +22,11 @@ def datfile():
 
 
 @pytest.fixture(scope="session", autouse=True)
+def fftfile():
+    return os.path.join(_testdir, "data/Lband_DM0.00.fft")
+
+
+@pytest.fixture(scope="session", autouse=True)
 def inffile():
     return os.path.join(_testdir, "data/Lband_DM0.00.inf")
 
@@ -38,10 +43,14 @@ def tim_data():
     np.random.seed(5)
     return np.random.normal(128, 20, 10000)
 
+
 @pytest.fixture(scope="class", autouse=True)
 def fourier_data():
     np.random.seed(5)
-    return np.random.normal(128, 20, 10000)
+    data = np.random.normal(128, 20, 10000)
+    fft  = np.fft.rfft(data)
+    return fft.view(np.float64).astype(np.float32)
+
 
 @pytest.fixture(scope="class", autouse=True)
 def tim_header():
