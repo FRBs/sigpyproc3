@@ -1,0 +1,25 @@
+ Data file name without suffix          =  Lband_DM0.00
+ Telescope used                         =  GBT
+ Instrument used                        =  unset
+ Object being observed                  =  Mystery_PSR
+ J2000 Right Ascension (hh:mm:ss.ssss)  =  16:43:38.1000
+ J2000 Declination     (dd:mm:ss.ssss)  =  -12:24:58.7000
+ Data observed by                       =  unset
+ Epoch of observation (MJD)             =  53010.484826388892543
+ Barycentered?           (1 yes, 0 no)  =  0
+ Number of bins in the time series      =  66250      
+ Width of each time series bin (sec)    =  7.2e-05
+ Any breaks in the data? (1 yes, 0 no)  =  0
+ Type of observation (EM band)          =  Radio
+ Beam diameter (arcsec)                 =  530
+ Dispersion measure (cm-3 pc)           =  0
+ Central freq of low channel (MHz)      =  1352.5
+ Total bandwidth (MHz)                  =  96
+ Number of channels                     =  96
+ Channel bandwidth (MHz)                =  1
+ Data analyzed by                       =  pkumar
+ Any additional notes:
+    Project ID unset, Date: 2004-01-06T11:38:09.
+    2 polns were summed.  Samples have 4 bits.
+
+
