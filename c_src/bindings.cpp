@@ -374,21 +374,21 @@ py::array_t<T> runningMedian(py::array_t<T> inarray, int window, int nsamps) {
     T* indata  = (T*)inbuf.ptr;
     T* outdata = (T*)outbuf.ptr;
 
-    sigpyproc::running_Median(indata, outdata, window, nsamps);
+    sigpyproc::running_Median<T>(indata, outdata, window, nsamps);
     return outarray;
 }
 
-py::array_t<float> runningMean(py::array_t<float> inarray, int window,
-                               int nsamps) {
+template <class T>
+py::array_t<float> runningMean(py::array_t<T> inarray, int window, int nsamps) {
     py::buffer_info inbuf = inarray.request();
 
     auto outarray          = py::array_t<float>(nsamps);
     py::buffer_info outbuf = outarray.request();
 
-    float* indata  = (float*)inbuf.ptr;
+    T* indata      = (T*)inbuf.ptr;
     float* outdata = (float*)outbuf.ptr;
 
-    sigpyproc::running_Mean(indata, outdata, window, nsamps);
+    sigpyproc::running_Mean<T>(indata, outdata, window, nsamps);
     return outarray;
 }
 
@@ -447,7 +447,7 @@ py::array_t<float> ccfft(py::array_t<float> inarray, int size) {
     return outarray;
 }
 
-py::array_t<float> ifft(py::array_t<float> inarray, int size) {
+py::array_t<float> irfft(py::array_t<float> inarray, int size) {
     py::buffer_info inbuf = inarray.request();
 
     auto outarray          = py::array_t<float>(size);
@@ -456,7 +456,7 @@ py::array_t<float> ifft(py::array_t<float> inarray, int size) {
     float* indata  = (float*)inbuf.ptr;
     float* outdata = (float*)outbuf.ptr;
 
-    sigpyproc::ifft(indata, outdata, size);
+    sigpyproc::irfft(indata, outdata, size);
     return outarray;
 }
 
@@ -542,16 +542,25 @@ PYBIND11_MODULE(libSigPyProc, m) {
     m.def("removeZeroDM", &removeZeroDM<uint8_t>);
 
     m.def("ccfft", &ccfft);
-    m.def("ifft", &ifft);
+    m.def("irfft", &irfft);
     m.def("formSpec", &formSpec);
     m.def("rednoise", &rednoise);
     m.def("conjugate", &conjugate);
     m.def("sumHarms", &sumHarms);
     m.def("multiply_fs", &multiply_fs);
 
+    m.def("runningMedian", &runningMedian<double>);
     m.def("runningMedian", &runningMedian<float>);
+    m.def("runningMedian", &runningMedian<int64_t>);
+    m.def("runningMedian", &runningMedian<int32_t>);
+    m.def("runningMedian", &runningMedian<int8_t>);
     m.def("runningMedian", &runningMedian<uint8_t>);
-    m.def("runningMean", &runningMean);
+    m.def("runningMean", &runningMean<double>);
+    m.def("runningMean", &runningMean<float>);
+    m.def("runningMean", &runningMean<int64_t>);
+    m.def("runningMean", &runningMean<int32_t>);
+    m.def("runningMean", &runningMean<int8_t>);
+    m.def("runningMean", &runningMean<uint8_t>);
     m.def("runBoxcar", &runBoxcar);
     m.def("foldTim", &foldTim);
     m.def("rfft", &rfft);

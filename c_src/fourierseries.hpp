@@ -36,7 +36,7 @@ void ccfft(float* inbuffer, float* outbuffer, int size) {
  *
  * @see http://www.fftw.org/fftw3_doc/One_002dDimensional-DFTs-of-Real-Data.html
  */
-void ifft(float* inbuffer, float* outbuffer, int size) {
+void irfft(float* inbuffer, float* outbuffer, int size) {
     fftwf_plan plan;
     plan = fftwf_plan_dft_c2r_1d(size, (fftwf_complex*)inbuffer, outbuffer,
                                  FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);

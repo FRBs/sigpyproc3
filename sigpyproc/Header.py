@@ -297,7 +297,6 @@ class Header(dict):
         header["nchans"]       = 1
         header["nbits"]        = 32
         header["hdrlen"]       = 0
-        header["nsamples"]     = 0
         return cls(header)
 
     @classmethod

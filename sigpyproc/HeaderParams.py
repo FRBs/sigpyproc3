@@ -176,6 +176,7 @@ nbits_to_dtype = {1: "<u1", 2: "<u1", 4: "<u1", 8: "<u1", 16: "<u2", 32: "<f4"}
 
 # useful for creating inf files
 inf_to_header = {
+    "Data file name without suffix": ["basename", str],
     "Telescope used": ["telescope_id", str],
     "Instrument used": ["machine_id", str],
     "Object being observed": ["source_name", str],
@@ -183,6 +184,7 @@ inf_to_header = {
     "J2000 Declination     (dd:mm:ss.ssss)": ["src_dej", str],
     "Epoch of observation (MJD)": ["tstart", float],
     "Barycentered?           (1=yes, 0=no)": ["barycentric", int],
+    "Number of bins in the time series": ["nsamples", int],
     "Width of each time series bin (sec)": ["tsamp", float],
     "Dispersion measure (cm-3 pc)": ["refdm", float],
 }

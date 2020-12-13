@@ -4,6 +4,7 @@
 #include <random>
 #include <vector>
 #include <cstdlib>
+#include <cstring>
 #include <queue>
 #include <algorithm>
 
@@ -151,7 +152,7 @@ public:
  * @param inbuffer  Inpuy array
  * @param window    Moving window size
  * @param nsamps    Size of the input array
- * @return          A new exxtended array as type T.
+ * @return          A new extended array as type T.
  */
 template <typename T>
 T* addBoundary(T* inbuffer, int window, int nsamps) {
@@ -160,8 +161,7 @@ T* addBoundary(T* inbuffer, int window, int nsamps) {
     const int outSize      = nsamps + boundarySize * 2;
 
     T* arrayWithBoundary = new T[outSize];
-    std::memcpy(arrayWithBoundary + boundarySize, inbuffer,
-                nsamps * sizeof(float));
+    std::memcpy(arrayWithBoundary + boundarySize, inbuffer, nsamps * sizeof(T));
     // Extend by reflecting about the edge.
     for (int ii = 0; ii < boundarySize; ++ii) {
         arrayWithBoundary[ii] = inbuffer[boundarySize - 1 - ii];

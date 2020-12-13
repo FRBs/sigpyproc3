@@ -3,8 +3,7 @@ import numpy as np
 from sigpyproc import libSigPyProc as lib
 
 numpy_types = [
-    np.int8, np.uint8, np.int16, np.uint16,
-    np.int32, np.uint32, np.int64, np.uint64,
+    np.int8, np.uint8, np.int32, np.int64,
     np.float32, np.float64]
 
 
@@ -44,22 +43,23 @@ class TestLibSigPyProc:
 
     @pytest.mark.parametrize('dtype', numpy_types)
     def test_runningMean_size1(self, dtype):
-        array = np.array([2, 4, 6], dtype)
+        array = np.array([2, 4, 6, 5, 7], dtype)
         output = lib.runningMean(array, 1, array.size)
         np.testing.assert_allclose(array, output)
 
     @pytest.mark.parametrize('dtype', numpy_types)
     def test_runningMean_size2(self, dtype):
-        array = np.array([2, 4, 6], dtype)
-        expected = [3, 5, 6]
+        array = np.array([2, 4, 6, 5, 7], dtype)
+        expected = np.array([2, 3, 5, 5.5, 6], np.float32)
         output = lib.runningMean(array, 2, array.size)
         np.testing.assert_allclose(expected, output)
 
-    def test_runningMean_roundoff_errors(self):
-        in_ = np.repeat([0, 1, 0], [9, 9, 9])
-        for window_size in range(3, 10):
-            out = lib.runningMean(in_, window_size)
-            np.testing.assert_equal(out.sum(), 10 - window_size)
+    @pytest.mark.parametrize('dtype', numpy_types)
+    def test_runningMean_size3(self, dtype):
+        array = np.array([2, 4, 6, 5, 7], dtype)
+        expected = np.array([2.6666667, 4, 5, 6, 6.3333335], np.float32)
+        output = lib.runningMean(array, 3, array.size)
+        np.testing.assert_allclose(expected, output)
 
     @pytest.mark.parametrize('dtype', numpy_types)
     def test_runningMedian_size1(self, dtype):
@@ -70,25 +70,31 @@ class TestLibSigPyProc:
     @pytest.mark.parametrize('dtype', numpy_types)
     def test_runningMedian_size2(self, dtype):
         array = np.array([3, 2, 5, 1, 4], dtype)
-        expected = [3, 3, 2, 4, 4]
+        expected = np.array([3, 2.5, 3.5, 3, 2.5], dtype)
         output = lib.runningMedian(array, 2, array.size)
         np.testing.assert_allclose(expected, output)
 
     @pytest.mark.parametrize('dtype', numpy_types)
     def test_runningMedian_size3(self, dtype):
         array = np.array([3, 2, 5, 1, 4], dtype)
-        expected = [3, 3, 2, 4, 4]
+        expected = np.array([3, 3, 2, 4, 4], dtype)
         output = lib.runningMedian(array, 3, array.size)
         np.testing.assert_allclose(expected, output)
 
     def test_rfft(self):
-        array = np.random.random(30)
-        for npoints in (array.size, 2 * array.size):
-            expected = fft1(array)[:(npoints // 2 + 1)]
-            output = lib.rfft(array, npoints)
-            np.testing.assert_allclose(expected, output)
+        array = np.random.random(30).astype(np.float32)
+        npoints = array.size
+        expected = fft1(array)[:(npoints // 2 + 1)]
+        expected = expected.view(np.float64).astype(np.float32)
+        output = lib.rfft(array, npoints)
+        np.testing.assert_allclose(expected, output, atol=0.01)
 
-    def test_ifft(self):
-        array = np.random.random(30)
-        output = lib.ifft(lib.rfft(array, 30))
-        np.testing.assert_allclose(array, output)
+    def test_irfft(self):
+        array = np.random.random(30).astype(np.float32)
+        npoints = array.size
+        forward = lib.rfft(array, npoints)
+        assert forward.shape == (npoints + 2,)
+        output  = lib.irfft(forward, npoints)
+        assert output.shape == (npoints,)
+        output *= 1.0 / npoints
+        np.testing.assert_allclose(array, output, atol=0.01)

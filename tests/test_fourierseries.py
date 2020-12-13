@@ -10,12 +10,12 @@ class TestFourierSeries:
         assert myFS.header.nbits == 32
         assert myFS.header.source_name == "test"
         assert myFS.shape == (10002,)
-        np.testing.assert_allclose(np.mean(myFS), 135.61371, atol=0.1)
+        np.testing.assert_allclose(np.mean(myFS), 135.61371, atol=0.01)
 
     def test_iFFT(self, fourier_data, tim_header, tim_data):
         myFS  = FourierSeries(fourier_data, Header(tim_header))
         myTim = myFS.iFFT()
-        np.testing.assert_allclose(myTim, tim_data, atol=0.1)
+        np.testing.assert_allclose(myTim, tim_data, atol=0.01)
 
     def test_toFFTFile(self, fourier_data, tim_header):
         myFS = FourierSeries(fourier_data, Header(tim_header))
@@ -37,6 +37,6 @@ class TestFourierSeries:
         mynewFS = FourierSeries.readFFT(filename=fftfile)
         assert mynewFS.header.nbits == 32
         assert mynewFS.header.source_name == "test"
-        np.testing.assert_allclose(np.mean(mynewFS), 135.61371, atol=0.1)
+        np.testing.assert_allclose(np.mean(mynewFS), 135.61371, atol=0.01)
         os.remove(fftfile)
         os.remove(inffile)

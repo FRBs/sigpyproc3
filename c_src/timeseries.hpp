@@ -14,21 +14,30 @@ namespace sigpyproc {
 template <typename T>
 void running_Median(T* inbuffer, T* outbuffer, int window, int nsamps) {
     T* arrayWithBoundary = addBoundary<T>(inbuffer, window, nsamps);
-    int outSize          = sizeof(arrayWithBoundary) / sizeof(T);
+    int outSize          = nsamps + (window / 2) * 2;
+
+    // hack for even window size
+    outSize = (window % 2) ? outSize : outSize - 1;
 
     // Move window through all elements of the extended array
     RunningMedian<T> rm(window);
-    for (int ii = 0; ii < outSize; ii++) {
+    for (int ii = 0; ii < outSize; ++ii) {
         rm.insert(arrayWithBoundary[ii]);
-        outbuffer[ii] = rm.median();
+        if (ii >= (window - 1)) {
+            outbuffer[ii - window + 1] = rm.median();
+        }
     }
     // Free memory
     delete[] arrayWithBoundary;
 }
 
-void running_Mean(float* inbuffer, float* outbuffer, int window, int nsamps) {
-    float* arrayWithBoundary = addBoundary<float>(inbuffer, window, nsamps);
-    int outSize              = sizeof(arrayWithBoundary) / sizeof(float);
+template <class T>
+void running_Mean(T* inbuffer, float* outbuffer, int window, int nsamps) {
+    T* arrayWithBoundary = addBoundary<T>(inbuffer, window, nsamps);
+    int outSize          = nsamps + (window / 2) * 2;
+
+    // hack for even window size
+    outSize = (window % 2) ? outSize : outSize - 1;
 
     // Move window through all elements of the extended array
     double sum = 0;

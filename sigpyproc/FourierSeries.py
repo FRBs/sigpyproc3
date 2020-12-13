@@ -197,7 +197,8 @@ class FourierSeries(np.ndarray):
             a time series
         """
         fftsize = self.size - 2
-        tim_ar = lib.ifft(self, fftsize)
+        tim_ar = lib.irfft(self, fftsize)
+        tim_ar *= 1.0 / fftsize
         return TimeSeries.TimeSeries(tim_ar, self.header.newHeader())
 
     def rednoise(self, startwidth=6, endwidth=100, endfreq=1.0):
