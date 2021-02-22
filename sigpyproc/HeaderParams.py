@@ -1,4 +1,57 @@
-import ctypes as C
+import numpy as np
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class BitsInfo:
+    nbits: int
+    dtype: str
+    digi_sigma: float = 6.0
+
+    @property
+    def itemsize(self) -> bool:
+        return np.dtype(self.dtype).itemsize
+
+    @property
+    def unpack(self) -> bool:
+        return bool(self.nbits in {1, 2, 4})
+
+    @property
+    def bitfact(self) -> int:
+        return 8 // self.nbits if self.unpack else 1
+
+    @property
+    def digi_min(self) -> int:
+        return None if self.nbits == 32 else 0
+
+    @property
+    def digi_max(self) -> int:
+        return None if self.nbits == 32 else (1 << self.nbits) - 1
+
+    @property
+    def digi_mean(self) -> float:
+        return None if self.nbits == 32 else (1 << (self.nbits - 1)) - 0.5
+
+    @property
+    def digi_scale(self) -> float:
+        return None if self.nbits == 32 else self.digi_mean / self.digi_sigma
+
+    def properties(self):
+        return {
+            key: getattr(self, key)
+            for key, value in vars(type(self)).items()
+            if isinstance(value, property)
+        }
+
+
+bits_info = {
+    1: BitsInfo(1, dtype="<u1", digi_sigma=0.5),
+    2: BitsInfo(2, dtype="<u1", digi_sigma=1.5),
+    4: BitsInfo(4, dtype="<u1"),
+    8: BitsInfo(8, dtype="<u1"),
+    16: BitsInfo(16, dtype="<u2"),
+    32: BitsInfo(32, dtype="<f4"),
+}
 
 # dictionary to define the sizes of header elements
 header_keys = {
@@ -143,37 +196,6 @@ ids_to_machine = dict(zip(machine_ids.values(), machine_ids.keys()))
 # not required (may be of use in future)
 telescope_lats_longs = {"Effelsberg": (50.52485, 6.883593)}
 
-# convert between numpy dtypes and ctypes types.
-nptypes_to_ctypes = {
-    "|b1": C.c_bool,
-    "|S1": C.c_char,
-    "<i1": C.c_byte,
-    "<u1": C.c_ubyte,
-    "<i2": C.c_short,
-    "<u2": C.c_ushort,
-    "<i4": C.c_int,
-    "<u4": C.c_uint,
-    "<i8": C.c_long,
-    "<u8": C.c_ulong,
-    "<f4": C.c_float,
-    "<f8": C.c_double,
-}
-
-ctypes_to_nptypes = dict(zip(nptypes_to_ctypes.values(), nptypes_to_ctypes.keys()))
-
-nbits_to_ctypes = {
-    1: C.c_ubyte,
-    2: C.c_ubyte,
-    4: C.c_ubyte,
-    8: C.c_ubyte,
-    16: C.c_short,
-    32: C.c_float,
-}
-
-ctypes_to_nbits = dict(zip(nbits_to_ctypes.values(), nbits_to_ctypes.keys()))
-
-nbits_to_dtype = {1: "<u1", 2: "<u1", 4: "<u1", 8: "<u1", 16: "<u2", 32: "<f4"}
-
 # useful for creating inf files
 inf_to_header = {
     "Data file name without suffix": ["basename", str],
@@ -207,22 +229,69 @@ sigpyproc_to_psrfits = dict(
 
 sigproc_to_tempo = {0: "g", 1: "3", 3: "f", 4: "7", 6: "1", 8: "g", 5: "8"}
 
-tempo_params = ["RA", "DEC", "PMRA", "PMDEC",
-                "PMRV", "BETA", "LAMBDA", "PMBETA",
-                "PMLAMBDA", "PX", "PEPOCH", "POSEPOCH",
-                "F0", "F", "F1", "F2", "Fn",
-                "P0", "P", "P1",
-                "DM", "DMn",
-                "A1_n", "E_n", "T0_n",
-                "TASC", "PB_n", "OM_n", "FB",
-                "FB_n", "FBJ_n", "TFBJ_n",
-                "EPS1", "EPS2", "EPS1DOT", "EPS2DOT",
-                "OMDOT", "OM2DOT", "XOMDOT",
-                "PBDOT", "XPBDOT", "GAMMA", "PPNGAMMA",
-                "SINI", "MTOT", "M2", "DR", "DTHETA",
-                "XDOT", "XDOT_n", "X2DOT", "EDOT",
-                "AFAC", "A0",
-                "B0", "BP", "BPP",
-                "GLEP_n", "GLPH_n", "GLF0_n",
-                "GLF1_n", "GLF0D_n", "GLDT_n",
-                "JUMP_n"]
+tempo_params = [
+    "RA",
+    "DEC",
+    "PMRA",
+    "PMDEC",
+    "PMRV",
+    "BETA",
+    "LAMBDA",
+    "PMBETA",
+    "PMLAMBDA",
+    "PX",
+    "PEPOCH",
+    "POSEPOCH",
+    "F0",
+    "F",
+    "F1",
+    "F2",
+    "Fn",
+    "P0",
+    "P",
+    "P1",
+    "DM",
+    "DMn",
+    "A1_n",
+    "E_n",
+    "T0_n",
+    "TASC",
+    "PB_n",
+    "OM_n",
+    "FB",
+    "FB_n",
+    "FBJ_n",
+    "TFBJ_n",
+    "EPS1",
+    "EPS2",
+    "EPS1DOT",
+    "EPS2DOT",
+    "OMDOT",
+    "OM2DOT",
+    "XOMDOT",
+    "PBDOT",
+    "XPBDOT",
+    "GAMMA",
+    "PPNGAMMA",
+    "SINI",
+    "MTOT",
+    "M2",
+    "DR",
+    "DTHETA",
+    "XDOT",
+    "XDOT_n",
+    "X2DOT",
+    "EDOT",
+    "AFAC",
+    "A0",
+    "B0",
+    "BP",
+    "BPP",
+    "GLEP_n",
+    "GLPH_n",
+    "GLF0_n",
+    "GLF1_n",
+    "GLF0D_n",
+    "GLDT_n",
+    "JUMP_n",
+]

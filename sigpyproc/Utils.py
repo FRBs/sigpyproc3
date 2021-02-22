@@ -1,6 +1,7 @@
 import io
 import numpy as np
 import warnings
+import logging
 
 from sigpyproc import libSigPyProc as lib
 from sigpyproc.HeaderParams import nbits_to_dtype
@@ -190,3 +191,29 @@ def editInplace(inst, key, value):
         temp.write(new_header)
     else:
         raise ValueError("New header is too long/short for file")
+
+
+class CustomHandler(logging.StreamHandler):
+    def emit(self, record):
+        messages = record.msg.splitlines()
+        for message in messages:
+            record.msg = message
+            super().emit(record)
+
+
+def get_logger(name, formatter=None, level=logging.INFO, logfile=None):
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
+
+    if formatter is None:
+        logformat = "%(asctime)s.%(msecs)03d - %(name)s - %(message)s"
+        formatter = logging.Formatter(fmt=logformat, datefmt="%Y-%m-%d %H:%M:%S")
+
+    if not logger.hasHandlers():
+        if logfile is None:
+            handler = CustomHandler()
+        else:
+            handler = logging.FileHandler(logfile)
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+    return logger

@@ -3,7 +3,7 @@ import numpy as np
 import inspect
 from tqdm import tqdm
 
-from sigpyproc.Utils import File
+from sigpyproc.io import FileReader
 from sigpyproc.Header import Header
 from sigpyproc.Filterbank import Filterbank, FilterbankBlock
 
@@ -27,10 +27,13 @@ class FilReader(Filterbank):
     contain keywords found in the ``HeaderParams.header_keys`` dictionary.
     """
 
-    def __init__(self, filename):
-        self.filename = filename
-        self.header   = Header.parseSigprocHeader(self.filename)
-        self._file    = File(filename, "r", self.header.nbits)
+    def __init__(self, filenames):
+        if isinstance(filenames, str):
+            filenames = [filenames]
+        self.filenames = filenames
+        self.header   = Header.parseSigprocHeader(self.filenames)
+        self._file    = FileReader(filenames, "r", self.header.hdrlens,
+                                   self.header.datalens, self.header.nbits)
         self.itemsize = np.dtype(self.header.dtype).itemsize
         if self.header.nbits in {1, 2, 4}:
             self.bitfact = 8 // self.header.nbits
@@ -56,7 +59,7 @@ class FilReader(Filterbank):
         :class:`~sigpyproc.Filterbank.FilterbankBlock` or :py:obj:`numpy.ndarray`
             2-D array of filterbank data
         """
-        self._file.seek(self.header.hdrlen + start * self.sampsize)
+        self._file.seek(start * self.sampsize)
         data = self._file.cread(self.header.nchans * nsamps)
         nsamps_read = data.size // self.header.nchans
         data = data.reshape(nsamps_read, self.header.nchans).transpose()
