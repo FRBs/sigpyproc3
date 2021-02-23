@@ -29,15 +29,13 @@ class Header(dict):
         self.updateHeader()
 
     def __setitem__(self, key, value):
+        super().__setitem__(key, value)
         self.__setattr__(key, value)
 
-    def __setattr__(self, key, value):
-        super().__setattr__(key, value)
-        super().__setitem__(key, value)
-
     def _mirror(self):
+        # Mirror dict items as attributes
         for key, value in self.items():
-            super().__setattr__(key, value)
+            self.__setattr__(key, value)
 
     def updateHeader(self):
         """Check for changes in header and recalculate all derived quantaties.
@@ -137,9 +135,7 @@ class Header(dict):
             header in binary format
         """
         self.updateHeader()
-        hstart = b"HEADER_START"
-        hend   = b"HEADER_END"
-        header = b"".join([struct.pack("I", len(hstart)), hstart])
+        header = self._write_header('HEADER_START')
 
         for key in list(self.keys()):
             if back_compatible and key not in conf.sigproc_keys:
@@ -147,15 +143,11 @@ class Header(dict):
             elif not back_compatible and key not in conf.header_keys:
                 continue
 
-            if conf.header_keys[key] == "str":
-                header = b"".join([header, _write_string(key, self[key])])
-            elif conf.header_keys[key] == "I":
-                header = b"".join([header, _write_int(key, self[key])])
-            elif conf.header_keys[key] == "d":
-                header = b"".join([header, _write_double(key, self[key])])
-            elif conf.header_keys[key] == "b":
-                header = b"".join([header, _write_char(key, self[key])])
-        return b"".join([header, struct.pack("I", len(hend)), hend])
+            key_fmt = conf.header_keys[key]
+            header += self._write_header(key, value=self[key], value_type=key_fmt)
+
+        header += self._write_header('HEADER_END')
+        return header
 
     def makeInf(self, outfile=None):
         """Make a presto format ``.inf`` file.
@@ -300,8 +292,51 @@ class Header(dict):
         return cls(header)
 
     @classmethod
-    def parseSigprocHeader(cls, filename):
-        """Parse the metadata from a Sigproc-style file header.
+    def parseSigprocHeader(cls, filenames, check_contiguity=True):
+        """Parse the metadata from Sigproc-style file/sequential files.
+
+        Parameters
+        ----------
+        filenames : list
+            sigproc filterbank files containing the header
+
+        Returns
+        -------
+        :class:`~sigpyproc.Header.Header`
+            observational metadata
+
+        """
+        if isinstance(filenames, str):
+            filenames = [filenames]
+
+        header = cls._parseSigprocHeaderSingle(filenames[0])
+        header["hdrlens"] = [header["hdrlen"]]
+        header["datalens"] = [header["nbytes"]]
+        header["nsamples_list"] = [header["nsamples"]]
+        header["tstart_list"] = [header["tstart"]]
+        header["filenames"] = [header["filename"]]
+        if len(filenames) > 1:
+            for filename in filenames[1:]:
+                hdr = cls._parseSigprocHeaderSingle(filename)
+                for key in conf.sigproc_keys:
+                    if key in {"tstart", "rawdatafile"}:
+                        continue
+                    assert (
+                        hdr[key] == header[key]
+                    ), f"Header value '{hdr[key]}' do not match for file {filename}"
+                header["hdrlens"].append(hdr["hdrlen"])
+                header["datalens"].append(hdr["nbytes"])
+                header["nsamples_list"].append(hdr["nsamples"])
+                header["tstart_list"].append(hdr["tstart"])
+                header["filenames"].append(hdr["filename"])
+
+            if check_contiguity:
+                cls._ensure_contiguity(header)
+
+        return cls(header)
+
+    def _parseSigprocHeaderSingle(self, filename):
+        """Parse the metadata from a single Sigproc-style file.
 
         Parameters
         ----------
@@ -310,7 +345,7 @@ class Header(dict):
 
         Returns
         -------
-        :class:`~sigpyproc.Header.Header`
+        dict
             observational metadata
 
         Raises
@@ -318,90 +353,122 @@ class Header(dict):
         IOError
             If file header is not in sigproc format
         """
-        f = open(filename, "rb")
-        header = {}
-        try:
-            keylen = struct.unpack("I", f.read(4))[0]
-        except struct.error:
-            raise IOError("File Header is not in sigproc format... Is file empty?")
-        key = f.read(keylen)
-        if key != b"HEADER_START":
-            raise IOError("File Header is not in sigproc format")
-        while True:
-            keylen = struct.unpack("I", f.read(4))[0]
-            key = f.read(keylen)
-
-            # convert bytestring to unicode (Python 3)
+        with open(filename, "rb") as fp:
+            header = {}
             try:
-                key = key.decode()
-            except UnicodeDecodeError as e:
-                print(f"Could not convert to unicode: {str(e)}")
+                key = self._read_string(fp)
+            except struct.error:
+                raise IOError("File Header is not in sigproc format... Is file empty?")
+            if key != "HEADER_START":
+                raise IOError("File Header is not in sigproc format")
+            while True:
+                key = self._read_string()
+                if key not in conf.header_keys:
+                    raise IOError(f"'{key}' is not a recognised sigproc header param")
+                if key == "HEADER_END":
+                    break
 
-            if key not in list(conf.header_keys.keys()):
-                print(f"'{key}' not recognised header key")
-                return None
+                key_fmt = conf.header_keys[key]
+                if key_fmt == "str":
+                    header[key] = self._read_string(fp)
+                else:
+                    header[key] = struct.unpack(
+                        key_fmt, fp.read(struct.calcsize(key_fmt))
+                    )[0]
+            header["hdrlen"] = fp.tell()
+            fp.seek(0, 2)
+            header["filelen"] = fp.tell()
+            header["nbytes"] = header["filelen"] - header["hdrlen"]
+            header["nsamples"] = (
+                8 * header["nbytes"] // header["nbits"] // header["nchans"]
+            )
+            fp.seek(0)
+            header["filename"] = filename
+            header["basename"] = os.path.splitext(filename)[0]
+        return header
 
-            if conf.header_keys[key] == "str":
-                header[key] = _read_string(f)
-            elif conf.header_keys[key] == "I":
-                header[key] = _read_int(f)
-            elif conf.header_keys[key] == "b":
-                header[key] = _read_char(f)
-            elif conf.header_keys[key] == "d":
-                header[key] = _read_double(f)
-            if key == "HEADER_END":
-                break
+    @staticmethod
+    def _ensure_contiguity(header):
+        """Check if list of sigproc files are contiguous/sequential
 
-        header["hdrlen"]   = f.tell()
-        f.seek(0, 2)
-        header["filelen"]  = f.tell()
-        header["nbytes"]   = header["filelen"] - header["hdrlen"]
-        header["nsamples"] = 8 * header["nbytes"] // header["nbits"] // header["nchans"]
-        f.seek(0)
-        header["filename"] = filename
-        header["basename"] = os.path.splitext(filename)[0]
-        f.close()
-        return cls(header)
+        Parameters
+        ----------
+        header : dict
+            A dict of sigproc header keys for input files
 
+        Raises
+        ------
+        ValueError
+            if files are not contiguous
+        """
+        filenames = header["filenames"]
+        for ii, _file in enumerate(filenames[:-1]):
+            end_time = (
+                header["tstart_list"][ii]
+                + header["nsamples_list"][ii] * header["tsamp"]
+            )
+            difference = header["tstart_list"][ii + 1] - end_time
+            if abs(difference) > 0.9 * header["tsamp"]:
+                samp_diff = int(abs(difference) / header['tsamp'])
+                raise ValueError(
+                    f"files {filenames[ii]} and {filenames[ii + 1]} are off by "
+                    f"at least {samp_diff} samples."
+                )
 
-def _read_string(f):
-    strlen = struct.unpack("I", f.read(4))[0]
-    return f.read(strlen).decode()
+    @staticmethod
+    def _read_string(fp):
+        """Read the next sigproc-format string in the file.
 
+        Parameters
+        ----------
+        fp : file
+            file object to read from.
 
-def _read_int(f):
-    return struct.unpack("I", f.read(4))[0]
+        Returns
+        -------
+        str
+            read value from the file
+        """
+        strlen = struct.unpack("I", fp.read(struct.calcsize("I")))[0]
+        key = fp.read(strlen)
+        try:
+            # convert bytestring to unicode (Python 3)
+            key = key.decode()
+        except UnicodeDecodeError as err:
+            print(f"Could not convert to unicode: {str(err)}")
+        return key
 
+    @staticmethod
+    def _write_header(key, value=None, value_type="str"):
+        """Encode the header key to a bytes string.
 
-def _read_double(f):
-    return struct.unpack("d", f.read(8))[0]
+        Parameters
+        ----------
+        key : str
+            header key
+        value : int, float, str, optional
+            value of the header key, by default None
+        value_type : str, optional
+            type of the header key, by default "str"
 
+        Returns
+        -------
+        str
+            bytes string
+        """
+        if value is None:
+            return struct.pack("I", len(key)) + key.encode()
 
-def _read_char(f):
-    return struct.unpack("b", f.read(1))[0]
-
-
-def _write_string(key, value):
-    key = key.encode()
-    value = value.encode()
-    return b"".join([struct.pack("I", len(key)), key,
-                    struct.pack('I', len(value)), value])
-
-
-def _write_int(key, value):
-    key = key.encode()
-    return b"".join([struct.pack('I', len(key)), key, struct.pack('I', value)])
-
-
-def _write_double(key, value):
-    key = key.encode()
-    return b"".join([struct.pack('I', len(key)), key, struct.pack('d', value)])
-
-
-def _write_char(key, value):
-    key = key.encode()
-    return b"".join([struct.pack('I', len(key)), key, struct.pack('b', value)])
-
+        if value_type == "str":
+            return (
+                struct.pack("I", len(key))
+                + key.encode()
+                + struct.pack("I", len(value))
+                + value.encode()
+            )
+        return (
+            struct.pack("I", len(key)) + key.encode() + struct.pack(value_type, value)
+        )
 
 def radec_to_str(val):
     """Convert Sigproc format RADEC float to a string.

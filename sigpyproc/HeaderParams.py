@@ -55,8 +55,6 @@ bits_info = {
 
 # dictionary to define the sizes of header elements
 header_keys = {
-    "HEADER_START": None,
-    "HEADER_END": None,
     "filename": "str",
     "telescope_id": "I",
     "telescope": "str",
