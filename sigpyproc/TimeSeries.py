@@ -3,7 +3,6 @@ import numpy as np
 
 from sigpyproc import FoldedData
 from sigpyproc import FourierSeries
-from sigpyproc.Utils import File
 from sigpyproc.Header import Header
 from sigpyproc import libSigPyProc as lib
 
@@ -290,7 +289,8 @@ class TimeSeries(np.ndarray):
         if filename is None:
             filename = f"{self.header.basename}.tim"
         outfile = self.header.prepOutfile(filename, nbits=32)
-        self.tofile(outfile)
+        outfile.cwrite(self)
+        outfile.close()
         return outfile.name
 
     @classmethod
@@ -325,8 +325,7 @@ class TimeSeries(np.ndarray):
         if not os.path.isfile(inf):
             raise IOError("No corresponding .inf file found")
         header = Header.parseInfHeader(inf)
-        f = File(filename, "r", nbits=32)
-        data = np.fromfile(f, dtype=np.float32)
+        data = np.fromfile(filename, dtype=np.float32)
         header["basename"] = basename
         header["inf"]      = inf
         header["filename"] = filename
@@ -348,9 +347,7 @@ class TimeSeries(np.ndarray):
             a new TimeSeries object
         """
         header = Header.parseSigprocHeader(filename)
-        nbits  = header["nbits"]
         hdrlen = header["hdrlen"]
-        f = File(filename, "r", nbits=nbits)
-        f.seek(hdrlen)
-        data = np.fromfile(f, dtype=header["dtype"]).astype(np.float32, copy=False)
+        data = np.fromfile(filename, dtype=header["dtype"], offset=hdrlen)
+        data = data.astype(np.float32, copy=False)
         return cls(data, header)

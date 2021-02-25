@@ -4,7 +4,6 @@ import warnings
 import logging
 
 from sigpyproc import libSigPyProc as lib
-from sigpyproc.HeaderParams import nbits_to_dtype
 
 
 class File(io.FileIO):

@@ -9,9 +9,7 @@ from sigpyproc.Utils import get_logger
 
 
 class _FileBase(object):
-    """Deal with several files as if they were one contiguous one.
-    For details, see `SequentialFileReader` and `SequentialFileWriter`.
-    """
+    """File I/O base class"""
 
     def __init__(self, files, mode, opener=None):
         self.files = files
@@ -73,12 +71,12 @@ class FileReader(_FileBase):
 
         count = nunits // self.bitsinfo.bitfact
         data = []
-        while count > 0:
+        while count >= 0:
             count_read = min(self.datalens[self.ifile_cur], count)
             data_read = np.fromfile(
                 self.file_obj, count=count_read, dtype=self.bitsinfo.dtype
             )
-            count -= data.shape[0]
+            count -= data_read.shape[0]
             data.append(data_read)
 
             if count == 0:
@@ -90,7 +88,7 @@ class FileReader(_FileBase):
             return lib.unpack(data, self.nbits)
         return data
 
-    def seek(self, offset, whence=1):
+    def seek(self, offset, whence=0):
         """Change the multifile stream position to the given data offset.
         offset is always interpreted for a headerless file and is
         relative to start of the first file.
@@ -130,7 +128,7 @@ class FileReader(_FileBase):
 
     def _seek_cur(self, offset):
         cumsum_data_bytes = np.cumsum(self.datalens) - self.cur_data_pos
-        fileid = np.where(offset < cumsum_data_bytes)[0][0]
+        fileid = np.where(offset <= cumsum_data_bytes)[0][0]
 
         if fileid == self.ifile_cur:
             self.file_obj.seek(offset, os.SEEK_CUR)
@@ -148,7 +146,7 @@ class FileWriter(_FileBase):
     def __init__(
         self,
         file,
-        mode="w+",
+        mode="w",
         nbits=8,
         digitize=False,
         tsamp=None,
@@ -157,7 +155,8 @@ class FileWriter(_FileBase):
         constant_offset_scale=False,
         **kwargs,
     ):
-        super().__init__(file, mode)
+        super().__init__([file], mode)
+        self.name = file
         self.nbits = nbits
         self.bitsinfo = conf.bits_info[nbits]
         self.digitize = digitize
@@ -217,6 +216,21 @@ class FileWriter(_FileBase):
             packed.tofile(self.file_obj)
         else:
             ar.tofile(self.file_obj)
+
+    def write(self, bo):
+        """Write the given bytes-like object, bo to the file stream.
+        Wrapper for io.RawIOBase.write()
+
+        Parameters
+        ----------
+        bo : bytes
+            bytes-like object
+        """
+        self.file_obj.write(bo)
+
+    def close(self):
+        """Close the currently open file object."""
+        self._close_current()
 
 
 class Transform(object):

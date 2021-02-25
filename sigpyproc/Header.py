@@ -1,8 +1,9 @@
 import os
 import struct
 import numpy as np
-from sigpyproc.Utils import File
+
 from sigpyproc import HeaderParams as conf
+from sigpyproc.io import FileWriter
 
 
 class Header(dict):
@@ -29,13 +30,15 @@ class Header(dict):
         self.updateHeader()
 
     def __setitem__(self, key, value):
-        super().__setitem__(key, value)
         self.__setattr__(key, value)
 
+    def __setattr__(self, key, value):
+        super().__setattr__(key, value)
+        super().__setitem__(key, value)
+
     def _mirror(self):
-        # Mirror dict items as attributes
         for key, value in self.items():
-            self.__setattr__(key, value)
+            super().__setattr__(key, value)
 
     def updateHeader(self):
         """Check for changes in header and recalculate all derived quantaties.
@@ -70,7 +73,7 @@ class Header(dict):
             self.obs_time = obs_time
 
         if hasattr(self, "nbits"):
-            self.dtype = conf.nbits_to_dtype[self.nbits]
+            self.dtype = conf.bits_info[self.nbits].dtype
 
     def mjdAfterNsamps(self, nsamps):
         """Find the Modified Julian Date after nsamps have elapsed.
@@ -225,7 +228,9 @@ class Header(dict):
             return (delays / self.tsamp).round().astype("int32")
         return delays
 
-    def prepOutfile(self, filename, updates=None, nbits=None, back_compatible=True):
+    def prepOutfile(self, filename, updates=None, nbits=None, back_compatible=True,
+                    digitize=False, interval_seconds=10,
+                    constant_offset_scale=False, **kwargs):
         """Prepare a file to have sigproc format data written to it.
 
         Parameters
@@ -248,9 +253,12 @@ class Header(dict):
         self.updateHeader()
         if nbits is None:
             nbits = self.nbits
-        out_file = File(filename, "w+", nbits)
         new = self.newHeader(updates)
         new["nbits"] = nbits
+        out_file = FileWriter(filename, mode="w+", nbits=nbits, tsamp=new["tsamp"],
+                              nchans=new["nchans"], digitize=digitize,
+                              interval_seconds=interval_seconds,
+                              constant_offset_scale=constant_offset_scale, **kwargs)
         out_file.write(new.SPPHeader(back_compatible=back_compatible))
         return out_file
 
@@ -309,7 +317,7 @@ class Header(dict):
         if isinstance(filenames, str):
             filenames = [filenames]
 
-        header = cls._parseSigprocHeaderSingle(filenames[0])
+        header = cls._parseSigprocHeaderSingle(cls, filenames[0])
         header["hdrlens"] = [header["hdrlen"]]
         header["datalens"] = [header["nbytes"]]
         header["nsamples_list"] = [header["nsamples"]]
@@ -362,11 +370,12 @@ class Header(dict):
             if key != "HEADER_START":
                 raise IOError("File Header is not in sigproc format")
             while True:
-                key = self._read_string()
-                if key not in conf.header_keys:
-                    raise IOError(f"'{key}' is not a recognised sigproc header param")
+                key = self._read_string(fp)
                 if key == "HEADER_END":
                     break
+
+                if key not in conf.header_keys:
+                    raise IOError(f"'{key}' is not a recognised sigproc header param")
 
                 key_fmt = conf.header_keys[key]
                 if key_fmt == "str":
