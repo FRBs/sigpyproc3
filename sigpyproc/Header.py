@@ -479,6 +479,45 @@ class Header(dict):
             struct.pack("I", len(key)) + key.encode() + struct.pack(value_type, value)
         )
 
+
+def editInplace(filename, key, value):
+    """Edit a sigproc style header in place for the given file
+
+    Parameters
+    ----------
+    filename : str
+        name of the sigproc file to modify header.
+    key : str
+        name of parameter to change (must be a valid sigproc key)
+    value : int, float or str
+        new value to enter into header
+
+    Raises
+    ------
+    ValueError
+        [description]
+
+    Notes
+    -----
+       It is up to the user to be responsible with this function, as it will directly
+       change the file on which it is being operated. The only fail contition of
+       editInplace comes when the new header to be written to file is longer or shorter than the
+       header that was previously in the file.
+    """
+    header = Header.parseSigprocHeader(filename)
+    if key == "source_name":
+        oldlen = len(header.source_name)
+        value  = value[:oldlen] + " " * (oldlen - len(value))
+    header[key] = value
+    new_header = header.SPPHeader(back_compatible=True)
+    if header.hdrlen == len(new_header):
+        with open(filename, 'r+') as fp:
+            fp.seek(0)
+            fp.write(new_header)
+    else:
+        raise ValueError("New header is too long/short for file")
+
+
 def radec_to_str(val):
     """Convert Sigproc format RADEC float to a string.
 

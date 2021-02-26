@@ -69,37 +69,6 @@ def nearestFactor(n, val):
     return fact[np.abs(np.array(fact) - val).argmin()]
 
 
-def editInplace(inst, key, value):
-    """Edit a sigproc style header in place
-
-    :param inst: a header instance with a ``.filename`` attribute
-    :type inst: :class:`~sigpyproc.Header.Header`
-
-    :param key: name of parameter to change (must be a valid sigproc key)
-    :type key: :func:`str`
-
-    :param value: new value to enter into header
-
-    .. note::
-
-       It is up to the user to be responsible with this function, as it will directly
-       change the file on which it is being operated. The only fail contition of
-       editInplace comes when the new header to be written to file is longer or shorter than the
-       header that was previously in the file.
-    """
-    temp = File(inst.header.filename, "r+")
-    if key == "source_name":
-        oldlen = len(inst.header.source_name)
-        value  = value[:oldlen] + " " * (oldlen - len(value))
-    inst.header[key] = value
-    new_header = inst.header.SPPHeader(back_compatible=True)
-    if inst.header.hdrlen == len(new_header):
-        temp.seek(0)
-        temp.write(new_header)
-    else:
-        raise ValueError("New header is too long/short for file")
-
-
 class CustomHandler(logging.StreamHandler):
     def emit(self, record):
         messages = record.msg.splitlines()
