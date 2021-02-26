@@ -49,7 +49,7 @@ jobs:
       run: |
         pip install pytest pytest-cov
         pytest --cov=./ --cov-report=xml
-      continue-on-error: true
+      continue-on-error: false
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v1
       with:

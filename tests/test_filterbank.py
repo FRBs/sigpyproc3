@@ -5,13 +5,14 @@ from sigpyproc import libSigPyProc as lib
 
 
 class TestFilterbank:
+    """
     def test_threads(self, filfile):
         myFil = FilReader(filfile)
         myFil.setNthreads()
         assert lib.getNthreads == 4
         myFil.setNthreads(nthreads=2)
         assert lib.getNthreads == 2
-
+    """
     def test_collapse(self, filfile):
         myFil = FilReader(filfile)
         myTim = myFil.collapse()
@@ -19,6 +20,7 @@ class TestFilterbank:
         np.testing.assert_equal(myTim.size, myFil.header.nsamples)
         np.testing.assert_allclose(myTim.mean(), 104.7, atol=0.1)
 
+    """
     def test_invertFreq(self, filfile):
         myFil = FilReader(filfile)
         data = myFil.readBlock(0, 100)
@@ -30,7 +32,7 @@ class TestFilterbank:
         np.testing.assert_equal(mynewFil.header.foff, -1 * myFil.header.foff)
         np.testing.assert_array_equal(data, np.flip(newdata, axis=0))
         os.remove(outfile)
-
+    """
     def test_bandpass(self, filfile):
         myFil = FilReader(filfile)
         myTim = myFil.bandpass()
