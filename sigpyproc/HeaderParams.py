@@ -120,7 +120,8 @@ telescope_ids = {
     "GMRT": 7,
     "Effelsberg": 8,
     "Effelsberg LOFAR": 9,
-    "Unknown": 10,
+    "SRT": 10,
+    "Unknown": 11,
 }
 
 ids_to_telescope = dict(zip(telescope_ids.values(), telescope_ids.keys()))
