@@ -137,9 +137,9 @@ class FileReader(_FileBase):
             file_offset = offset - cumsum_data_bytes[fileid - 1]
             self.file_obj.seek(file_offset, os.SEEK_CUR)
 
-    def _configure_logger(self):
+    def _configure_logger(self, **kwargs):
         logger_name = "FileReader"
-        self.logger = get_logger(logger_name)
+        self.logger = get_logger(logger_name, **kwargs)
 
 
 class FileWriter(_FileBase):

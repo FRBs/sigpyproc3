@@ -1,24 +1,53 @@
 import numpy as np
 
-from typing import Optional
 from dataclasses import dataclass
+from typing import Optional, ClassVar, Dict
 
 
-@dataclass(frozen=True)
-class BitsInfo:
+@dataclass
+class BitsInfo(object):
     nbits: int
-    dtype: str
-    digi_sigma: float = 6.0
+    digi_sigma: Optional[float] = None
 
-    def __post_init__(self):
+    float_bits: ClassVar[int] = 32
+    nbits_to_dtype: ClassVar[Dict[int, str]] = {
+        1: "<u1",
+        2: "<u1",
+        4: "<u1",
+        8: "<u1",
+        16: "<u2",
+        32: "<f4",
+    }
+    default_sigma: ClassVar[Dict[int, float]] = {
+        1: 0.5,
+        2: 1.5,
+        4: 6,
+        8: 6,
+        16: 6,
+        32: 6,
+    }
+
+    def __post_init__(self) -> None:
+        # validate nbits
+        if self.nbits not in self.nbits_to_dtype.keys():
+            raise ValueError(f"nbits = {self.nbits} not supported.")
+
+        # default digi_sigma
+        if self.digi_sigma is None:
+            self.digi_sigma = self.default_sigma[self.nbits]  # noqa: WPS601
+
         self._digi_min = 0
         self._digi_max = (1 << self.nbits) - 1
         self._digi_mean = (1 << (self.nbits - 1)) - 0.5
         self._digi_scale = self._digi_min / self.digi_sigma
 
     @property
+    def dtype(self) -> np.dtype:
+        return np.dtype(self.nbits_to_dtype[self.nbits])
+
+    @property
     def itemsize(self) -> int:
-        return np.dtype(self.dtype).itemsize
+        return self.dtype.itemsize
 
     @property
     def unpack(self) -> bool:
@@ -30,19 +59,19 @@ class BitsInfo:
 
     @property
     def digi_min(self) -> Optional[int]:
-        return None if self.nbits == 32 else self._digi_min
+        return None if self.nbits == self.float_bits else self._digi_min
 
     @property
     def digi_max(self) -> Optional[int]:
-        return None if self.nbits == 32 else self._digi_max
+        return None if self.nbits == self.float_bits else self._digi_max
 
     @property
     def digi_mean(self) -> Optional[float]:
-        return None if self.nbits == 32 else self._digi_mean
+        return None if self.nbits == self.float_bits else self._digi_mean
 
     @property
     def digi_scale(self) -> Optional[float]:
-        return None if self.nbits == 32 else self._digi_scale
+        return None if self.nbits == self.float_bits else self._digi_scale
 
     def properties(self):
         return {
@@ -52,14 +81,7 @@ class BitsInfo:
         }
 
 
-bits_info = {
-    1: BitsInfo(1, dtype="<u1", digi_sigma=0.5),
-    2: BitsInfo(2, dtype="<u1", digi_sigma=1.5),
-    4: BitsInfo(4, dtype="<u1"),
-    8: BitsInfo(8, dtype="<u1"),
-    16: BitsInfo(16, dtype="<u2"),
-    32: BitsInfo(32, dtype="<f4"),
-}
+bits_info = {nbits: BitsInfo(nbits) for nbits in BitsInfo.nbits_to_dtype.keys()}
 
 # dictionary to define the sizes of header elements
 header_keys = {

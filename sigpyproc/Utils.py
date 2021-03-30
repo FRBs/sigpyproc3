@@ -1,6 +1,11 @@
 import numpy as np
 import logging
 
+from datetime import datetime
+from rich.text import Text
+from rich.logging import RichHandler
+from typing import Union
+
 
 def rollArray(y, shift, axis):
     """Roll the elements in the array by 'shift' positions along the
@@ -38,8 +43,7 @@ def _flattenList(n):
 
 
 def stackRecarrays(arrays):
-    """Wrapper for stacking :py:obj:`numpy.recarrays`
-    """
+    """Wrapper for stacking :py:obj:`numpy.recarrays`"""
     return arrays[0].__array_wrap__(np.hstack(arrays))
 
 
@@ -55,7 +59,7 @@ def nearestFactor(n, val):
     :return: nearest factor
     :rtype: int
     """
-    fact  = [1, n]
+    fact = [1, n]
     check = 2
     rootn = np.sqrt(n)
     while check < rootn:
@@ -69,27 +73,31 @@ def nearestFactor(n, val):
     return fact[np.abs(np.array(fact) - val).argmin()]
 
 
-class CustomHandler(logging.StreamHandler):
-    def emit(self, record):
-        messages = record.msg.splitlines()
-        for message in messages:
-            record.msg = message
-            super().emit(record)
+def time_formatter(timestamp: datetime) -> Text:
+    return Text(timestamp.isoformat(sep=" ", timespec="milliseconds"))
 
 
-def get_logger(name, formatter=None, level=logging.INFO, logfile=None):
+def get_logger(
+    name: str,
+    level: Union[int, str] = logging.INFO,
+    quiet: bool = False,
+) -> logging.Logger:
     logger = logging.getLogger(name)
-    logger.setLevel(level)
+    if quiet:
+        logger.setLevel(logging.WARNING)
+    else:
+        logger.setLevel(level)
 
-    if formatter is None:
-        logformat = "%(asctime)s.%(msecs)03d - %(name)s - %(message)s"
-        formatter = logging.Formatter(fmt=logformat, datefmt="%Y-%m-%d %H:%M:%S")
+    logformat = "- %(name)s - %(message)s"
+    formatter = logging.Formatter(fmt=logformat)
 
     if not logger.hasHandlers():
-        if logfile is None:
-            handler = CustomHandler()
-        else:
-            handler = logging.FileHandler(logfile)
+        handler = RichHandler(
+            show_level=False,
+            show_path=False,
+            rich_tracebacks=True,
+            log_time_format=time_formatter,
+        )
         handler.setFormatter(formatter)
         logger.addHandler(handler)
     return logger
