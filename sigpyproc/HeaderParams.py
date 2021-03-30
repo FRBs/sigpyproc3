@@ -1,4 +1,6 @@
 import numpy as np
+
+from typing import Optional
 from dataclasses import dataclass
 
 
@@ -8,8 +10,14 @@ class BitsInfo:
     dtype: str
     digi_sigma: float = 6.0
 
+    def __post_init__(self):
+        self._digi_min = 0
+        self._digi_max = (1 << self.nbits) - 1
+        self._digi_mean = (1 << (self.nbits - 1)) - 0.5
+        self._digi_scale = self._digi_min / self.digi_sigma
+
     @property
-    def itemsize(self) -> bool:
+    def itemsize(self) -> int:
         return np.dtype(self.dtype).itemsize
 
     @property
@@ -21,20 +29,20 @@ class BitsInfo:
         return 8 // self.nbits if self.unpack else 1
 
     @property
-    def digi_min(self) -> int:
-        return None if self.nbits == 32 else 0
+    def digi_min(self) -> Optional[int]:
+        return None if self.nbits == 32 else self._digi_min
 
     @property
-    def digi_max(self) -> int:
-        return None if self.nbits == 32 else (1 << self.nbits) - 1
+    def digi_max(self) -> Optional[int]:
+        return None if self.nbits == 32 else self._digi_max
 
     @property
-    def digi_mean(self) -> float:
-        return None if self.nbits == 32 else (1 << (self.nbits - 1)) - 0.5
+    def digi_mean(self) -> Optional[float]:
+        return None if self.nbits == 32 else self._digi_mean
 
     @property
-    def digi_scale(self) -> float:
-        return None if self.nbits == 32 else self.digi_mean / self.digi_sigma
+    def digi_scale(self) -> Optional[float]:
+        return None if self.nbits == 32 else self._digi_scale
 
     def properties(self):
         return {

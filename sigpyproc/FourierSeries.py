@@ -286,10 +286,9 @@ class FourierSeries(np.ndarray):
         """
         if filename is None:
             filename = f"{self.header.basename}.spec"
-        outfile = self.header.prepOutfile(filename, nbits=32)
-        outfile.cwrite(self)
-        outfile.close()
-        return outfile.name
+        with self.header.prepOutfile(filename, nbits=32) as outfile:
+            outfile.cwrite(self)
+        return filename
 
     def toFFTFile(self, basename=None):
         """Write spectrum to file in presto ``.fft`` format.

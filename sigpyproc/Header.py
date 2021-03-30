@@ -229,7 +229,7 @@ class Header(dict):
         return delays
 
     def prepOutfile(self, filename, updates=None, nbits=None, back_compatible=True,
-                    digitize=False, interval_seconds=10,
+                    quantize=False, interval_seconds=10,
                     constant_offset_scale=False, **kwargs):
         """Prepare a file to have sigproc format data written to it.
 
@@ -256,7 +256,7 @@ class Header(dict):
         new = self.newHeader(updates)
         new["nbits"] = nbits
         out_file = FileWriter(filename, mode="w+", nbits=nbits, tsamp=new["tsamp"],
-                              nchans=new["nchans"], digitize=digitize,
+                              nchans=new["nchans"], quantize=quantize,
                               interval_seconds=interval_seconds,
                               constant_offset_scale=constant_offset_scale, **kwargs)
         out_file.write(new.SPPHeader(back_compatible=back_compatible))

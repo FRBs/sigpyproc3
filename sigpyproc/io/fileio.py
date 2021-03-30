@@ -148,7 +148,7 @@ class FileWriter(_FileBase):
         file,
         mode="w",
         nbits=8,
-        digitize=False,
+        quantize=False,
         tsamp=None,
         nchans=None,
         interval_seconds=10,
@@ -159,11 +159,11 @@ class FileWriter(_FileBase):
         self.name = file
         self.nbits = nbits
         self.bitsinfo = conf.bits_info[nbits]
-        self.digitize = digitize
+        self.quantize = quantize
 
-        if self.digitize:
+        if self.quantize:
             if self.nbits == 32:
-                raise ValueError("Output nbits can not be 32 while digitizing")
+                raise ValueError("Output nbits can not be 32 while quantizing")
             digi = self.bitsinfo.properties()
             digi.update(
                 (key, value) for key, value in kwargs.items() if key in digi.keys()
@@ -196,9 +196,9 @@ class FileWriter(_FileBase):
         do not go beyond the maximum and minimum values allowed by the nbits
         attribute.
         """
-        if self.digitize:
+        if self.quantize:
             ar = self._transform.rescale(ar)
-            ar = self._transform.digitize(ar)
+            ar = self._transform.quantize(ar)
 
         if self.bitsinfo.dtype != ar.dtype:
             warnings.warn(
@@ -275,7 +275,7 @@ class Transform(object):
         self.first_call = False
         return normdata.ravel()
 
-    def digitize(self, data):
+    def quantize(self, data):
         ar = (data * self.digi_scale) + self.digi_mean + 0.5
         ar = ar.astype(int)
         return np.clip(ar, self.digi_min, self.digi_max)
@@ -289,7 +289,9 @@ class Transform(object):
             mean = self.sum_ar / self.isample
             variance = self.sumsq_ar / self.isample - mean * mean
             self.offset = -mean
-            self.scale = np.where(variance == 0.0, 1, 1.0 / np.sqrt(variance))
+            self.scale = np.where(
+                np.isclose(variance, 0, atol=1e-5), 1, 1.0 / np.sqrt(variance)
+            )
             self._initialize_arr()
 
     def _initialize_arr(self):
