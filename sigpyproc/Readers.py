@@ -1,9 +1,8 @@
-import os
 import numpy as np
 import inspect
 from tqdm import tqdm
 
-from sigpyproc.Utils import File
+from sigpyproc.io import FileReader
 from sigpyproc.Header import Header
 from sigpyproc.Filterbank import Filterbank, FilterbankBlock
 
@@ -27,16 +26,25 @@ class FilReader(Filterbank):
     contain keywords found in the ``HeaderParams.header_keys`` dictionary.
     """
 
-    def __init__(self, filename):
-        self.filename = filename
-        self.header   = Header.parseSigprocHeader(self.filename)
-        self._file    = File(filename, "r", self.header.nbits)
-        self.itemsize = np.dtype(self.header.dtype).itemsize
-        if self.header.nbits in {1, 2, 4}:
-            self.bitfact = 8 // self.header.nbits
-        else:
-            self.bitfact = 1
-        self.sampsize = self.header.nchans * self.itemsize // self.bitfact
+    def __init__(self, filenames, check_contiguity=True):
+        if isinstance(filenames, str):
+            filenames = [filenames]
+        self.filenames = filenames
+        self.filename = filenames[0]
+        self.header = Header.parseSigprocHeader(
+            self.filenames, check_contiguity=check_contiguity
+        )
+        self._file = FileReader(
+            filenames,
+            self.header.hdrlens,
+            self.header.datalens,
+            mode="r",
+            nbits=self.header.nbits,
+        )
+        self.bitsinfo = self._file.bitsinfo
+        self.sampsize = (
+            self.header.nchans * self.bitsinfo.itemsize // self.bitsinfo.bitfact
+        )
         super().__init__()
 
     def readBlock(self, start, nsamps, as_filterbankBlock=True):
@@ -56,18 +64,19 @@ class FilReader(Filterbank):
         :class:`~sigpyproc.Filterbank.FilterbankBlock` or :py:obj:`numpy.ndarray`
             2-D array of filterbank data
         """
-        self._file.seek(self.header.hdrlen + start * self.sampsize)
+        self._file.seek(start * self.sampsize)
         data = self._file.cread(self.header.nchans * nsamps)
         nsamps_read = data.size // self.header.nchans
         data = data.reshape(nsamps_read, self.header.nchans).transpose()
-        start_mjd  = self.header.mjdAfterNsamps(start)
+        start_mjd = self.header.mjdAfterNsamps(start)
         new_header = self.header.newHeader({"tstart": start_mjd})
         if as_filterbankBlock:
             return FilterbankBlock(data, new_header)
         return data
 
-    def readDedispersedBlock(self, start, nsamps, dm, as_filterbankBlock=True,
-                             small_reads=True):
+    def readDedispersedBlock(
+        self, start, nsamps, dm, as_filterbankBlock=True, small_reads=True
+    ):
         """Read a block of dedispersed filterbank data, best used in cases where
         I/O time dominates reading a block of data.
 
@@ -95,7 +104,7 @@ class FilReader(Filterbank):
         max_sample = min_sample + nsamps
         curr_sample = np.zeros(self.header.nchans, dtype=int)
 
-        start_mjd  = self.header.mjdAfterNsamps(start)
+        start_mjd = self.header.mjdAfterNsamps(start)
         new_header = self.header.newHeader({"tstart": start_mjd})
 
         lowest_chan, highest_chan, sample_offset = (0, 0, start)
@@ -111,9 +120,10 @@ class FilReader(Filterbank):
                 sampled_chans = np.arange(lowest_chan, highest_chan + 1, dtype=int)
                 read_length = sampled_chans.size
 
-                if self.bitfact == 1 and small_reads:
+                if self.bitsinfo.bitfact == 1 and small_reads:
                     next_offset = (
-                        sample_offset * self.sampsize + lowest_chan * self.itemsize
+                        sample_offset * self.sampsize
+                        + lowest_chan * self.bitsinfo.itemsize
                     )
                     self._file.seek(self.header.hdrlen + next_offset)
 
@@ -145,8 +155,9 @@ class FilReader(Filterbank):
             return data
         return data
 
-    def readPlan(self, gulp, skipback=0, start=0, nsamps=None,
-                 tqdm_desc=None, verbose=True):
+    def readPlan(
+        self, gulp, skipback=0, start=0, nsamps=None, tqdm_desc=None, verbose=True
+    ):
         """A generator used to perform filterbank reading.
 
         Parameters
@@ -192,15 +203,15 @@ class FilReader(Filterbank):
         """
         if nsamps is None:
             nsamps = self.header.nsamples - start
-        gulp     = min(nsamps, gulp)
+        gulp = min(nsamps, gulp)
         skipback = abs(skipback)
         if skipback >= gulp:
             raise ValueError("readsamps must be > skipback value")
-        self._file.seek(self.header.hdrlen + start * self.sampsize)
-        nreads   = nsamps // (gulp - skipback)
+        self._file.seek(start * self.sampsize)
+        nreads = nsamps // (gulp - skipback)
         lastread = nsamps - (nreads * (gulp - skipback))
         if lastread < skipback:
-            nreads  -= 1
+            nreads -= 1
             lastread = nsamps - (nreads * (gulp - skipback))
         blocks = [
             (ii, gulp * self.header.nchans, -skipback * self.header.nchans)
@@ -224,5 +235,7 @@ class FilReader(Filterbank):
             tqdm_desc = f"{inspect.stack()[1][3]} : "
         for ii, block, skip in tqdm(blocks, desc=tqdm_desc):
             data = self._file.cread(block)
-            self._file.seek(skip * self.itemsize // self.bitfact, os.SEEK_CUR)
+            self._file.seek(
+                skip * self.bitsinfo.itemsize // self.bitsinfo.bitfact, whence=1,
+            )
             yield int(block // self.header.nchans), int(ii), data

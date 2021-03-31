@@ -1,0 +1,13 @@
+[build-system]
+requires = [
+    "setuptools>=47",
+    "wheel",
+    "pybind11>=2.6.0",
+]
+
+build-backend = "setuptools.build_meta"
+
+
+[tool.black]
+line-length = 90
+target_version = ['py36', 'py37', 'py38']

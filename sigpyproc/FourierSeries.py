@@ -3,7 +3,6 @@ import numpy as np
 
 from sigpyproc import FoldedData
 from sigpyproc import TimeSeries
-from sigpyproc.Utils import File
 from sigpyproc.Header import Header
 from sigpyproc import libSigPyProc as lib
 
@@ -287,9 +286,9 @@ class FourierSeries(np.ndarray):
         """
         if filename is None:
             filename = f"{self.header.basename}.spec"
-        outfile = self.header.prepOutfile(filename, nbits=32)
-        self.tofile(outfile)
-        return outfile.name
+        with self.header.prepOutfile(filename, nbits=32) as outfile:
+            outfile.cwrite(self)
+        return filename
 
     def toFFTFile(self, basename=None):
         """Write spectrum to file in presto ``.fft`` format.
@@ -307,8 +306,8 @@ class FourierSeries(np.ndarray):
         if basename is None:
             basename = self.header.basename
         self.header.makeInf(outfile=f"{basename}.inf")
-        fftfile = File(f"{basename}.fft", "w+")
-        self.tofile(fftfile)
+        with open(f"{basename}.fft", "w+") as fftfile:
+            self.tofile(fftfile)
         return f"{basename}.fft", f"{basename}.inf"
 
     @classmethod
@@ -343,11 +342,10 @@ class FourierSeries(np.ndarray):
         if not os.path.isfile(inf):
             raise IOError("No corresponding inf file found")
         header = Header.parseInfHeader(inf)
-        f = File(filename, "r", nbits=32)
-        data = np.fromfile(f, dtype="float32")
         header["basename"] = basename
         header["inf"]      = inf
         header["filename"] = filename
+        data = np.fromfile(filename, dtype="float32")
         return cls(data, header)
 
     @classmethod
@@ -372,7 +370,5 @@ class FourierSeries(np.ndarray):
         """
         header = Header.parseSigprocHeader(filename)
         hdrlen = header["hdrlen"]
-        f = File(filename, "r", nbits=32)
-        f.seek(hdrlen)
-        data = np.fromfile(f, dtype="complex32")
+        data = np.fromfile(filename, dtype="complex32", offset=hdrlen)
         return cls(data, header)

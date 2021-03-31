@@ -562,6 +562,7 @@ PYBIND11_MODULE(libSigPyProc, m) {
     m.def("runningMean", &runningMean<int8_t>);
     m.def("runningMean", &runningMean<uint8_t>);
     m.def("runBoxcar", &runBoxcar);
+    m.def("downsampleTim", &downsampleTim);
     m.def("foldTim", &foldTim);
     m.def("rfft", &rfft);
     m.def("resample", &resample);
