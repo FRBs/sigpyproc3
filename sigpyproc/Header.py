@@ -325,13 +325,14 @@ class Header(dict):
         header["filenames"] = [header["filename"]]
         if len(filenames) > 1:
             for filename in filenames[1:]:
-                hdr = cls._parseSigprocHeaderSingle(filename)
+                hdr = cls._parseSigprocHeaderSingle(cls, filename)
                 for key in conf.sigproc_keys:
                     if key in {"tstart", "rawdatafile"}:
                         continue
-                    assert (
-                        hdr[key] == header[key]
-                    ), f"Header value '{hdr[key]}' do not match for file {filename}"
+                    if key in header: # TODO Fix later
+                        assert (
+                            hdr[key] == header[key]
+                        ), f"Header value '{hdr[key]}' do not match for file {filename}"
                 header["hdrlens"].append(hdr["hdrlen"])
                 header["datalens"].append(hdr["nbytes"])
                 header["nsamples_list"].append(hdr["nsamples"])
@@ -414,7 +415,7 @@ class Header(dict):
         for ii, _file in enumerate(filenames[:-1]):
             end_time = (
                 header["tstart_list"][ii]
-                + header["nsamples_list"][ii] * header["tsamp"]
+                + header["nsamples_list"][ii] * header["tsamp"] / 86400
             )
             difference = header["tstart_list"][ii + 1] - end_time
             if abs(difference) > 0.9 * header["tsamp"]:
