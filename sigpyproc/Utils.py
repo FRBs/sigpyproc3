@@ -8,6 +8,13 @@ from rich.logging import RichHandler
 from typing import Union
 
 
+class AttrDict(dict):  # noqa:WPS600
+    def __init__(self, *args, **kwargs) -> None:
+        """Dict class to expose keys as attributes."""
+        super().__init__(*args, **kwargs)
+        self.__dict__ = self
+
+
 def roll_array(arr: npt.ArrayLike, shift: int, axis: int) -> np.ndarray:
     """Roll the elements in the array by `shift` positions along the given axis.
 

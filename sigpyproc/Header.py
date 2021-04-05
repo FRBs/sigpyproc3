@@ -1,81 +1,190 @@
-import os
+from __future__ import annotations
 import struct
+import pathlib
+import erfa
 import numpy as np
 
+from typing import Dict, List, Any, Union, Optional
+from dataclasses import dataclass, asdict
+
+from astropy.time import Time
+from astropy.coordinates import SkyCoord
+from astropy import units, constants
+
 from sigpyproc import HeaderParams as conf
-from sigpyproc.io import FileWriter
+from sigpyproc.io.fileio import FileWriter
 
 
-class Header(dict):
+DM_CONSTANT_LK = 4.148808e3  # L&K Handbook of Pulsar Astronomy
+DM_CONSTANT_MT = 1 / 0.000241  # TEMPO2 Manchester & Taylor (1972)  # noqa: WPS432
+DM_CONSTANT_SI = (
+    (constants.e.esu ** 2 / (2 * np.pi * constants.m_e * constants.c)).to(
+        units.s * units.MHz ** 2 * units.cm ** 3 / units.pc
+    )
+).value  # Precise SI constants
+
+
+@dataclass
+class Header(object):
     """Container object to handle observation metadata.
 
     Parameters
     ----------
-    info : dict
-        a dict of metadata
-
-    Returns
-    -------
-    dict
-        header container
-
-    Notes
-    -----
-    Attributes are mirrored as items and vice versa to facilitate cleaner code.
+    rawdatafile : str, optional
+        [description], by default 1
+    data_type : str, optional
+        [description], by default 'abc'
+    fch1 : float
+        central frequency of the first channel in MHz
+    foff : float
+        channel width in MHz
     """
 
-    def __init__(self, info):
-        super().__init__(info)
-        self._mirror()
-        self.updateHeader()
+    rawdatafile: str
+    data_type: int
+    nchans: int
+    foff: float
+    fch1: float
+    nbits: int
+    tsamp: float
+    tstart: float
+    ibeam: int = 0
+    nbeams: int = 1
+    refdm: float = 0
+    nifs: int = 1
+    telescope_id: int = 0
+    machine_id: int = 0
+    src_dej: float = 0
+    src_raj: float = 0
+    za_start: float = 0
+    az_start: float = 0
+    source_name: str = "None"
+    signed: bool = False
 
-    def __setitem__(self, key, value):
-        self.__setattr__(key, value)
+    filename: Optional[str] = None
+    nsamples: int = 0
 
-    def __setattr__(self, key, value):
-        super().__setattr__(key, value)
-        super().__setitem__(key, value)
+    def __post_init__(self) -> None:
+        self._coord = parse_radec(self.src_raj, self.src_dej)
 
-    def _mirror(self):
-        for key, value in self.items():
-            super().__setattr__(key, value)
+    @property
+    def basename(self) -> Optional[str]:
+        """Basename of header filename (`str` or None, read-only)."""
+        if self.filename is None:
+            return None
+        return pathlib.Path(self.filename).stem
 
-    def updateHeader(self):
-        """Check for changes in header and recalculate all derived quantaties.
+    @property
+    def extension(self) -> Optional[str]:
+        """Extension of header filename (`str` or None, read-only)."""
+        if self.filename is None:
+            return None
+        return pathlib.Path(self.filename).suffix
+
+    @property
+    def telescope(self) -> str:
+        """Telescope name (`str`, read-only)."""
+        return conf.ids_to_telescope[self.telescope_id]
+
+    @property
+    def machine(self) -> str:
+        """Backend name (`str`, read-only)."""
+        return conf.ids_to_machine[self.machine_id]
+
+    @property
+    def bandwidth(self) -> float:
+        """Bandwidth in MHz (`float`, read-only)."""
+        return abs(self.foff) * self.nchans
+
+    @property
+    def ftop(self) -> float:
+        """Frequency (boundary) of the top channel (`float`, read-only)."""
+        return self.fch1 - 0.5 * self.foff
+
+    @property
+    def fbottom(self) -> float:
+        """Frequency (boundary) of the bottom channel (`float`, read-only)."""
+        return self.ftop + self.foff * self.nchans
+
+    @property
+    def fcenter(self) -> float:
+        """Central frequency of the whole band (`float`, read-only)."""
+        return self.ftop + 0.5 * self.foff * self.nchans
+
+    @property
+    def chan_freqs(self) -> np.ndarray:
+        """Frequency (center) of each channel(`np.ndarray`, read-only)."""
+        return np.arange(self.nchans, dtype="float128") * self.foff + self.fch1
+
+    @property
+    def dtype(self) -> np.dtype:
+        """Type of the data (`np.dtype`, read-only)."""
+        return conf.bits_info[self.nbits].dtype
+
+    @property
+    def tobs(self) -> float:
+        """Total time of the observation (`float`, read-only)."""
+        return self.tsamp * self.nsamples
+
+    @property
+    def coord(self) -> SkyCoord:
+        """Sky coordinate (`astropy.coordinates.SkyCoord`, read-only)."""
+        return self._coord
+
+    @property
+    def ra(self) -> str:
+        """Right Ascension (`str`, read-only)."""
+        return self._coord.ra.to_string(unit="hourangle", sep=":", pad=True)
+
+    @property
+    def dec(self) -> str:
+        """Declination (`str`, read-only)."""
+        return self._coord.dec.to_string(unit="deg", sep=":", pad=True)
+
+    @property
+    def ra_rad(self) -> float:
+        """Right Ascension in radians (`float`, read-only)."""
+        return self._coord.ra.rad
+
+    @property
+    def dec_rad(self) -> float:
+        """Declination in radians (`float`, read-only)."""
+        return self._coord.dec.rad
+
+    @property
+    def ra_deg(self) -> float:
+        """Right Ascension in degrees (`float`, read-only)."""
+        return self._coord.ra.deg
+
+    @property
+    def dec_deg(self) -> float:
+        """Declination in degrees (`float`, read-only)."""
+        return self._coord.dec.deg
+
+    @property
+    def obs_date(self) -> str:
+        """Observation date and time (`str`, read-only)."""
+        precision = int(np.ceil(abs(np.log10(self.tsamp))))
+        return Time(self.tstart, format="mjd", scale="utc", precision=precision).iso
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Get a dict of all attributes including property attributes.
+
+        Returns
+        -------
+        dict
+            attributes
         """
-        if hasattr(self, "filename"):
-            basename, extension = os.path.splitext(self.filename)
-            self.basename = basename
-            self.extension = extension
+        prop = {
+            key: getattr(self, key)
+            for key, value in vars(type(self)).items()  # noqa: WPS421
+            if isinstance(value, property)
+        }
+        attributes = asdict(self)
+        attributes.update(prop)
+        return attributes
 
-        if hasattr(self, "foff") and hasattr(self, "nchans") and hasattr(self, "fch1"):
-            self.bandwidth = abs(self.foff) * self.nchans
-            self.ftop = self.fch1 - 0.5 * self.foff
-            self.fbottom = self.ftop + self.foff * self.nchans
-            self.fcenter = self.ftop + 0.5 * self.foff * self.nchans
-            # If fch1 is the frequency of the middle of the top channel and
-            # foff negative, this is fine. However, if fch1 the frequency of the
-            # middle of the bottom channel and foff positive you should
-            # run an Filterbank.Filterbank.invertFreq on the data
-        self.tobs = self.tsamp * self.nsamples
-        self.src_raj = getattr(self, "src_raj", 0)
-        self.src_dej = getattr(self, "src_dej", 0)
-        self.ra = radec_to_str(self.src_raj)
-        self.dec = radec_to_str(self.src_dej)
-        self.ra_rad = ra_to_rad(self.ra)
-        self.dec_rad = dec_to_rad(self.dec)
-        self.ra_deg = (self.ra_rad * 180.0) / np.pi
-        self.dec_deg = (self.dec_rad * 180.0) / np.pi
-
-        if hasattr(self, "tstart"):
-            obs_date, obs_time = MJD_to_Gregorian(self.tstart)
-            self.obs_date = obs_date
-            self.obs_time = obs_time
-
-        if hasattr(self, "nbits"):
-            self.dtype = conf.bits_info[self.nbits].dtype
-
-    def mjdAfterNsamps(self, nsamps):
+    def mjd_after_nsamps(self, nsamps: int) -> float:
         """Find the Modified Julian Date after nsamps have elapsed.
 
         Parameters
@@ -88,11 +197,10 @@ class Header(dict):
         float
             Modified Julian Date
         """
-        return self.tstart + ((nsamps * self.tsamp) / 86400.0)
+        return self.tstart + ((nsamps * self.tsamp) / erfa.DAYSEC)
 
-    def newHeader(self, update_dict=None):
-        """Create a new instance of :class:`~sigpyproc.Header.Header` from
-        the current instance.
+    def new_header(self, update_dict: Optional[Dict[str, Any]] = None) -> Header:
+        """Get a new instance of :class:`~sigpyproc.Header.Header`.
 
         Parameters
         ----------
@@ -104,12 +212,12 @@ class Header(dict):
         :class:`~sigpyproc.Header.Header`
             new header information
         """
-        new = self.copy()
+        new = asdict(self)
         if update_dict is not None:
             new.update(update_dict)
-        return Header(new)
+        return Header(**new)
 
-    def dedispersedHeader(self, dm):
+    def dedispersed_header(self, dm: float) -> Header:
         """Get a dedispersed version of the current header.
 
         Parameters
@@ -122,9 +230,9 @@ class Header(dict):
         :class:`~sigpyproc.Header.Header`
             A dedispersed version of the header
         """
-        return self.newHeader({'refdm': dm, 'nchans': 1, 'data_type': 2, 'nbits': 32})
+        return self.new_header({"refdm": dm, "nchans": 1, "data_type": 2, "nbits": 32})
 
-    def SPPHeader(self, back_compatible=True):
+    def spp_header(self, back_compatible=True):
         """Get Sigproc/sigpyproc format binary header.
 
         Parameters
@@ -137,8 +245,7 @@ class Header(dict):
         str
             header in binary format
         """
-        self.updateHeader()
-        header = self._write_header('HEADER_START')
+        header = self._write_header("HEADER_START")
 
         for key in list(self.keys()):
             if back_compatible and key not in conf.sigproc_keys:
@@ -149,65 +256,11 @@ class Header(dict):
             key_fmt = conf.header_keys[key]
             header += self._write_header(key, value=self[key], value_type=key_fmt)
 
-        header += self._write_header('HEADER_END')
+        header += self._write_header("HEADER_END")
         return header
 
-    def makeInf(self, outfile=None):
-        """Make a presto format ``.inf`` file.
-
-        Parameters
-        ----------
-        outfile : str, optional
-            a filename to write to, by default None
-
-        Returns
-        -------
-        str
-            if outfile is unspecified ``.inf`` data is returned as string
-        """
-        self.updateHeader()
-        inf = (
-            f" Data file name without suffix          =  {self.basename}\n"
-            f" Telescope used                         =  Effelsberg\n"
-            f" Instrument used                        =  PFFTS\n"
-            f" Object being observed                  =  {self.source_name}\n"
-            f" J2000 Right Ascension (hh:mm:ss.ssss)  =  {radec_to_str(self.src_raj)}\n"
-            f" J2000 Declination     (dd:mm:ss.ssss)  =  {radec_to_str(self.src_dej)}\n"
-            f" Data observed by                       =  Robotic overlords\n"
-            f" Epoch of observation (MJD)             =  {self.tstart:.09f}\n"
-            f" Barycentered?           (1=yes, 0=no)  =  {getattr(self,'barycentric',0):d}\n"
-            f" Number of bins in the time series      =  {self.nsamples:d}\n"
-            f" Width of each time series bin (sec)    =  {self.tsamp:.17g}\n"
-            f" Any breaks in the data? (1=yes, 0=no)  =  0\n"
-            f" Type of observation (EM band)          =  Radio\n"
-            f" Beam diameter (arcsec)                 =  9.22\n"
-            f" Dispersion measure (cm-3 pc)           =  {getattr(self, 'refdm', 0.0):.03f}\n"
-            f" Number of channels                     =  {getattr(self, 'nchans', 1):d}\n"
-            f" Data analyzed by                       =  sigpyproc\n"
-        )
-
-        if hasattr(self, "foff") and hasattr(self, "nchans") and hasattr(self, "fch1"):
-            inf += (
-                f" Central freq of low channel (Mhz)      =  {self.fbottom+0.5*abs(self.foff):.05f}\n"
-                f" Total bandwidth (Mhz)                  =  {self.bandwidth:.05f}\n"
-                f" Channel bandwidth (Mhz)                =  {abs(self.foff):.09f}\n"
-            )
-        else:
-            inf += (
-                f" Central freq of low channel (Mhz)      =  {0.0:.05f}\n"
-                f" Total bandwidth (Mhz)                  =  {0.0:.05f}\n"
-                f" Channel bandwidth (Mhz)                =  {0.0:.09f}\n"
-            )
-
-        if outfile is None:
-            return inf
-        with open(outfile, "w+") as f:
-            f.write(inf)
-        return None
-
-    def getDMdelays(self, dm, in_samples=True):
-        """For a given dispersion measure get the dispersive ISM delay
-        for each frequency channel.
+    def get_dmdelays(self, dm: float, in_samples: bool = True) -> np.ndarray:
+        """For a given dispersion measure get the dispersive ISM delay for middle of each frequency channel.
 
         Parameters
         ----------
@@ -219,25 +272,31 @@ class Header(dict):
         Returns
         -------
         :py:obj:`numpy.ndarray`
-            delays for each channel (highest frequency first)
+            delays for middle of each channel (highest frequency first)
         """
-        self.updateHeader()
-        chanFreqs = (np.arange(self.nchans, dtype="float128") * self.foff) + self.fch1
-        delays = dm * 4.148808e3 * ((chanFreqs ** -2) - (self.fch1 ** -2))
+        delays = dm * DM_CONSTANT_LK * ((self.chan_freqs ** -2) - (self.fch1 ** -2))
         if in_samples:
             return (delays / self.tsamp).round().astype("int32")
         return delays
 
-    def prepOutfile(self, filename, updates=None, nbits=None, back_compatible=True,
-                    quantize=False, interval_seconds=10,
-                    constant_offset_scale=False, **kwargs):
+    def prep_outfile(
+        self,
+        filename: str,
+        update_dict: Optional[Dict[str, Any]] = None,
+        nbits: Optional[int] = None,
+        back_compatible: bool = True,
+        quantize: bool = False,
+        interval_seconds: float = 10,
+        constant_offset_scale: bool = False,
+        **kwargs,
+    ) -> FileWriter:
         """Prepare a file to have sigproc format data written to it.
 
         Parameters
         ----------
         filename : str
             name of new file
-        updates : dict, optional
+        update_dict : dict, optional
             values to overide existing header values, by default None
         nbits : int, optional
             the bitsize of data points that will written to this file (1,2,4,8,32),
@@ -250,20 +309,56 @@ class Header(dict):
         :class:`~sigpyproc.Utils.File`
             a prepared file
         """
-        self.updateHeader()
         if nbits is None:
             nbits = self.nbits
-        new = self.newHeader(updates)
-        new["nbits"] = nbits
-        out_file = FileWriter(filename, mode="w+", nbits=nbits, tsamp=new["tsamp"],
-                              nchans=new["nchans"], quantize=quantize,
-                              interval_seconds=interval_seconds,
-                              constant_offset_scale=constant_offset_scale, **kwargs)
-        out_file.write(new.SPPHeader(back_compatible=back_compatible))
+        new = self.new_header(update_dict)
+        new.nbits = nbits
+        out_file = FileWriter(
+            filename,
+            mode="w+",
+            nbits=nbits,
+            tsamp=new.tsamp,
+            nchans=new.nchans,
+            quantize=quantize,
+            interval_seconds=interval_seconds,
+            constant_offset_scale=constant_offset_scale,
+            **kwargs,
+        )
+        out_file.write(new.spp_header(back_compatible=back_compatible))
         return out_file
 
+    def make_inf(self, outfile=None):
+        """Make a presto format ``.inf`` file.
+
+        Parameters
+        ----------
+        outfile : str, optional
+            a filename to write to, by default None
+
+        Returns
+        -------
+        str
+            if outfile is unspecified ``.inf`` data is returned as string
+        """
+        inf_dict = self.to_dict()
+        # Central freq of low channel (Mhz)
+        inf_dict["freq_low"] = self.fbottom + 0.5 * abs(self.foff)
+        inf_dict["barycentric"] = 0
+        inf_dict["observer"] = "Robotic overlords"
+        inf_dict["analyser"] = "sigpyproc"
+        inf = [
+            f" {desc:<38} =  {inf_dict[key]:{keyformat}}"
+            for desc, (key, _keytype, keyformat) in conf.presto_inf.items()
+        ]
+        inf = "\n".join(inf)
+        if outfile is None:
+            return inf
+        with open(outfile, "w+") as fp:
+            fp.write(inf)
+        return None
+
     @classmethod
-    def parseInfHeader(cls, filename):
+    def from_inffile(cls, filename: str) -> Header:
         """Parse the metadata from a presto ``.inf`` file.
 
         Parameters
@@ -276,31 +371,33 @@ class Header(dict):
         :class:`~sigpyproc.Header.Header`
             observational metadata
         """
-        header = {}
-        with open(filename, "r") as f:
-            lines = f.readlines()
+        header: Dict[str, Any] = {}
+        with open(filename, "r") as fp:
+            lines = fp.readlines()
 
         for line in lines:
-            key = line.split("=")[0].strip()
+            desc = line.split("=")[0].strip()
             val = line.split("=")[-1].strip()
-            if key not in list(conf.inf_to_header.keys()):
+            if desc not in list(conf.presto_inf.keys()):
                 continue
             else:
-                key, keytype = conf.inf_to_header[key]
+                key, keytype, _keyformat = conf.presto_inf[desc]
                 header[key] = keytype(val)
 
-        header["src_raj"]      = float("".join(header["src_raj"].split(":")))
-        header["src_dej"]      = float("".join(header["src_dej"].split(":")))
-        header["telescope_id"] = conf.telescope_ids.get(header["telescope_id"], 10)
-        header["machine_id"]   = conf.machine_ids.get(header["machine_id"], 9)
-        header["data_type"]    = 2
-        header["nchans"]       = 1
-        header["nbits"]        = 32
-        header["hdrlen"]       = 0
-        return cls(header)
+        header["src_raj"] = float(str(header["ra"]).replace(":", ""))
+        header["src_dej"] = float(str(header["dec"]).replace(":", ""))
+        header["telescope_id"] = conf.telescope_ids.get(header["telescope"], 10)
+        header["machine_id"] = conf.machine_ids.get(header["machine"], 9)
+        header.update({"data_type": 2, "nbits": 32, "nchans": 1, "hdrlen": 0})
+        header_check = {
+            key: value for key, value in header.items() if key in asdict(cls).keys()
+        }
+        return cls(**header_check)
 
     @classmethod
-    def parseSigprocHeader(cls, filenames, check_contiguity=True):
+    def from_sigproc(
+        cls, filenames: Union[str, List[str]], check_contiguity: bool = True
+    ) -> Header:
         """Parse the metadata from Sigproc-style file/sequential files.
 
         Parameters
@@ -317,7 +414,7 @@ class Header(dict):
         if isinstance(filenames, str):
             filenames = [filenames]
 
-        header = cls._parseSigprocHeaderSingle(cls, filenames[0])
+        header = parse_sigproc_header(filenames[0])
         header["hdrlens"] = [header["hdrlen"]]
         header["datalens"] = [header["nbytes"]]
         header["nsamples_list"] = [header["nsamples"]]
@@ -325,11 +422,11 @@ class Header(dict):
         header["filenames"] = [header["filename"]]
         if len(filenames) > 1:
             for filename in filenames[1:]:
-                hdr = cls._parseSigprocHeaderSingle(cls, filename)
+                hdr = parse_sigproc_header(filename)
                 for key in conf.sigproc_keys:
                     if key in {"tstart", "rawdatafile"}:
                         continue
-                    if key in header: # TODO Fix later
+                    if key in header:  # TODO Fix later
                         assert (
                             hdr[key] == header[key]
                         ), f"Header value '{hdr[key]}' do not match for file {filename}"
@@ -342,64 +439,11 @@ class Header(dict):
             if check_contiguity:
                 cls._ensure_contiguity(header)
 
-        return cls(header)
-
-    def _parseSigprocHeaderSingle(self, filename):
-        """Parse the metadata from a single Sigproc-style file.
-
-        Parameters
-        ----------
-        filename : str
-            sigproc filterbank file containing the header
-
-        Returns
-        -------
-        dict
-            observational metadata
-
-        Raises
-        ------
-        IOError
-            If file header is not in sigproc format
-        """
-        with open(filename, "rb") as fp:
-            header = {}
-            try:
-                key = self._read_string(fp)
-            except struct.error:
-                raise IOError("File Header is not in sigproc format... Is file empty?")
-            if key != "HEADER_START":
-                raise IOError("File Header is not in sigproc format")
-            while True:
-                key = self._read_string(fp)
-                if key == "HEADER_END":
-                    break
-
-                if key not in conf.header_keys:
-                    raise IOError(f"'{key}' is not a recognised sigproc header param")
-
-                key_fmt = conf.header_keys[key]
-                if key_fmt == "str":
-                    header[key] = self._read_string(fp)
-                else:
-                    header[key] = struct.unpack(
-                        key_fmt, fp.read(struct.calcsize(key_fmt))
-                    )[0]
-            header["hdrlen"] = fp.tell()
-            fp.seek(0, 2)
-            header["filelen"] = fp.tell()
-            header["nbytes"] = header["filelen"] - header["hdrlen"]
-            header["nsamples"] = (
-                8 * header["nbytes"] // header["nbits"] // header["nchans"]
-            )
-            fp.seek(0)
-            header["filename"] = filename
-            header["basename"] = os.path.splitext(filename)[0]
-        return header
+        return cls(**header)
 
     @staticmethod
     def _ensure_contiguity(header):
-        """Check if list of sigproc files are contiguous/sequential
+        """Check if list of sigproc files are contiguous/sequential.
 
         Parameters
         ----------
@@ -419,34 +463,11 @@ class Header(dict):
             )
             difference = header["tstart_list"][ii + 1] - end_time
             if abs(difference) > 0.9 * header["tsamp"]:
-                samp_diff = int(abs(difference) / header['tsamp'])
+                samp_diff = int(abs(difference) / header["tsamp"])
                 raise ValueError(
                     f"files {filenames[ii]} and {filenames[ii + 1]} are off by "
                     f"at least {samp_diff} samples."
                 )
-
-    @staticmethod
-    def _read_string(fp):
-        """Read the next sigproc-format string in the file.
-
-        Parameters
-        ----------
-        fp : file
-            file object to read from.
-
-        Returns
-        -------
-        str
-            read value from the file
-        """
-        strlen = struct.unpack("I", fp.read(struct.calcsize("I")))[0]
-        key = fp.read(strlen)
-        try:
-            # convert bytestring to unicode (Python 3)
-            key = key.decode()
-        except UnicodeDecodeError as err:
-            print(f"Could not convert to unicode: {str(err)}")
-        return key
 
     @staticmethod
     def _write_header(key, value=None, value_type="str"):
@@ -476,13 +497,77 @@ class Header(dict):
                 + struct.pack("I", len(value))
                 + value.encode()
             )
-        return (
-            struct.pack("I", len(key)) + key.encode() + struct.pack(value_type, value)
-        )
+        return struct.pack("I", len(key)) + key.encode() + struct.pack(value_type, value)
 
 
-def editInplace(filename, key, value):
-    """Edit a sigproc style header in place for the given file
+def parse_sigproc_header(filename: str) -> Dict[str, Any]:
+    """Parse the metadata from a single Sigproc-style file.
+
+    Parameters
+    ----------
+    filename : str
+        sigproc filterbank file containing the header
+
+    Returns
+    -------
+    dict
+        observational metadata
+
+    Raises
+    ------
+    IOError
+        If file header is not in sigproc format
+    """
+    with open(filename, "rb") as fp:
+        header = {}
+        try:
+            key = _read_string(fp)
+        except struct.error:
+            raise IOError("File Header is not in sigproc format... Is file empty?")
+        if key != "HEADER_START":
+            raise IOError("File Header is not in sigproc format")
+        while True:
+            key = _read_string(fp)
+            if key == "HEADER_END":
+                break
+
+            if key not in conf.header_keys:
+                raise IOError(f"'{key}' is not a recognised sigproc header param")
+
+            key_fmt = conf.header_keys[key]
+            if key_fmt == "str":
+                header[key] = _read_string(fp)
+            else:
+                header[key] = struct.unpack(key_fmt, fp.read(struct.calcsize(key_fmt)))[0]
+        header["hdrlen"] = fp.tell()
+        fp.seek(0, 2)
+        header["filelen"] = fp.tell()
+        header["nbytes"] = header["filelen"] - header["hdrlen"]
+        header["nsamples"] = 8 * header["nbytes"] // header["nbits"] // header["nchans"]
+        fp.seek(0)
+        header["filename"] = filename
+    return header
+
+
+def _read_string(fp):
+    """Read the next sigproc-format string in the file.
+
+    Parameters
+    ----------
+    fp : file
+        file object to read from.
+
+    Returns
+    -------
+    str
+        read value from the file
+    """
+    strlen = struct.unpack("I", fp.read(struct.calcsize("I")))[0]
+    return fp.read(strlen).decode()
+
+
+def edit_header(filename, key, value):
+    """Edit a sigproc style header in place for the given file.
 
     Parameters
     ----------
@@ -508,139 +593,38 @@ def editInplace(filename, key, value):
     header = Header.parseSigprocHeader(filename)
     if key == "source_name":
         oldlen = len(header.source_name)
-        value  = value[:oldlen] + " " * (oldlen - len(value))
+        value = value[:oldlen] + " " * (oldlen - len(value))
     header[key] = value
     new_header = header.SPPHeader(back_compatible=True)
     if header.hdrlen == len(new_header):
-        with open(filename, 'r+') as fp:
+        with open(filename, "r+") as fp:
             fp.seek(0)
             fp.write(new_header)
     else:
         raise ValueError("New header is too long/short for file")
 
 
-def radec_to_str(val):
-    """Convert Sigproc format RADEC float to a string.
+def parse_radec(src_raj: float, src_dej: float) -> SkyCoord:
+    """Parse Sigproc format RADEC float to Astropy SkyCoord.
 
-    :param val: Sigproc style RADEC float (eg. 124532.123)
-    :type val: float
+    Parameters
+    ----------
+    src_raj : float
+        Sigproc style HHMMSS.SSSS right ascension
+    src_dej : float
+        Sigproc style DDMMSS.SSSS declination
 
-    :returns: 'xx:yy:zz.zzz' format string
-    :rtype: :func:`str`
+    Returns
+    -------
+    SkyCoord
+        Astropy coordinate class
     """
-    sign = -1 if val < 0 else 1
-    val  = np.fabs(val)
-    xx   = int(val // 10000)
-    yy   = int(val // 100) - xx * 100
-    zz   = val - 100 * yy - 10000 * xx
-    return f"{sign*xx:02d}:{yy:02d}:{zz:07.4f}"
+    ho, mi = divmod(src_raj, 10000)  # noqa: WPS432
+    mi, se = divmod(mi, 100)
 
+    sign = -1 if src_dej < 0 else 1
+    de, ami = divmod(abs(src_dej), 10000)  # noqa: WPS432
+    ami, ase = divmod(ami, 100)
 
-def MJD_to_Gregorian(mjd):
-    """Convert Modified Julian Date to the Gregorian calender.
-
-    :param mjd: Modified Julian Date
-    :type mjd float:
-
-    :returns: date and time
-    :rtype: :func:`tuple` of :func:`str`
-    """
-    hh = np.fmod(mjd, 1) * 24.0
-    mm = np.fmod(hh, 1) * 60.0
-    ss = np.fmod(mm, 1) * 60.0
-    j = mjd + 2400000.5
-    j = int(j)
-    j = j - 1721119
-    y = (4 * j - 1) // 146097
-    j = 4 * j - 1 - 146097 * y
-    d = j // 4
-    j = (4 * d + 3) // 1461
-    d = 4 * d + 3 - 1461 * j
-    d = (d + 4) // 4
-    m = (5 * d - 3) // 153
-    d = 5 * d - 3 - 153 * m
-    d = (d + 5) // 5
-    y = 100 * y + j
-    if m < 10:
-        m = m + 3
-    else:
-        m = m - 9
-        y = y + 1
-    return (f"{d:02d}/{m:02d}/{y:02d}", f"{int(hh):02d}:{int(mm):02d}:{ss:08.5f}")
-
-
-def rad_to_dms(rad):
-    """Convert radians to (degrees, arcminutes, arcseconds)."""
-    sign = -1 if rad < 0 else 1
-    arc = (180 / np.pi) * np.fmod(np.fabs(rad), np.pi)
-    d = int(arc)
-    arc = (arc - d) * 60.0
-    m = int(arc)
-    s = (arc - m) * 60.0
-    if sign == -1 and d == 0:
-        return (sign * d, sign * m, sign * s)
-    else:
-        return (sign * d, m, s)
-
-
-def dms_to_rad(deg, min_, sec):
-    """Convert (degrees, arcminutes, arcseconds) to radians."""
-    if deg < 0.0:
-        sign = -1
-    elif deg == 0.0 and (min_ < 0.0 or sec < 0.0):
-        sign = -1
-    else:
-        sign = 1
-    return (
-        sign
-        * (np.pi / 180 / 60. / 60.)
-        * (60.0 * (60.0 * np.fabs(deg) + np.fabs(min_)) + np.fabs(sec))
-    )
-
-
-def dms_to_deg(deg, min_, sec):
-    """Convert (degrees, arcminutes, arcseconds) to degrees.
-    """
-    return (180. / np.pi) * dms_to_rad(deg, min_, sec)
-
-
-def rad_to_hms(rad):
-    """Convert radians to (hours, minutes, seconds).
-    """
-    rad = np.fmod(rad, 2 * np.pi)
-    if rad < 0.0:
-        rad = rad + 2 * np.pi
-    arc = (12 / np.pi) * rad
-    h = int(arc)
-    arc = (arc - h) * 60.0
-    m = int(arc)
-    s = (arc - m) * 60.0
-    return (h, m, s)
-
-
-def hms_to_rad(hour, min_, sec):
-    """Convert (hours, minutes, seconds) to radians."""
-    sign = -1 if hour < 0 else 1
-    return (
-        sign * np.pi / 12 / 60.0 / 60.0
-        * (60.0 * (60.0 * np.fabs(hour) + np.fabs(min_)) + np.fabs(sec))
-    )
-
-
-def hms_to_hrs(hour, min_, sec):
-    """Convert (hours, minutes, seconds) to hours."""
-    return (12.0 / np.pi) * hms_to_rad(hour, min_, sec)
-
-
-def ra_to_rad(ra_string):
-    """Convert right ascension string to radians."""
-    h, m, s = ra_string.split(":")
-    return hms_to_rad(int(h), int(m), float(s))
-
-
-def dec_to_rad(dec_string):
-    """Convert declination string to radians."""
-    d, m, s = dec_string.split(":")
-    if "-" in d and int(d) == 0:
-        m, s = "-" + m, "-" + s
-    return dms_to_rad(int(d), int(m), float(s))
+    radec_str = f"{int(ho)} {int(mi)} {se} {sign* int(de)} {int(ami)} {ase}"
+    return SkyCoord(radec_str, unit=(units.hourangle, units.deg))

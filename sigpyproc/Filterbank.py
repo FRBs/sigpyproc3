@@ -1,4 +1,7 @@
+from __future__ import annotations
 import numpy as np
+
+from typing import Optional
 
 from sigpyproc.Utils import rollArray
 from sigpyproc.FoldedData import FoldedData
@@ -7,8 +10,7 @@ from sigpyproc import libSigPyProc as lib
 
 
 class Filterbank(object):
-    """Class exporting methods for the manipulation of frequency-major
-    order pulsar data.
+    """Class exporting methods for the manipulation of frequency-major order pulsar data.
 
     Notes
     -----
@@ -16,16 +18,22 @@ class Filterbank(object):
     should be inherited by data reading classes.
     """
 
-    def __init__(self):
-        self.chan_means  = None
-        self.chan_vars   = None
+    def __init__(self) -> None:
+        self.chan_means = None
+        self.chan_vars = None
         self.chan_stdevs = None
-        self.chan_skews  = None
-        self.chan_kurts  = None
+        self.chan_skews = None
+        self.chan_kurts = None
         self.chan_maxima = None
         self.chan_minima = None
 
-    def setNthreads(self, nthreads=None):
+    @property
+    def omp_threads(self):
+        """Number of omp threads (`int`)."""
+        return lib.get_omp_threads()
+
+    @omp_threads.setter
+    def omp_threads(self, nthreads: Optional[int] = None):
         """Set the number of threads available to OpenMP.
 
         Parameters
@@ -35,9 +43,11 @@ class Filterbank(object):
         """
         if nthreads is None:
             nthreads = 4
-        lib._omp_set_num_threads(nthreads)
+        lib.set_omp_threads(nthreads)
 
-    def collapse(self, gulp=512, start=0, nsamps=None, **kwargs):
+    def collapse(
+        self, gulp: int = 512, start: int = 0, nsamps: int = None, **kwargs
+    ) -> TimeSeries:
         """Sum across all frequencies for each time sample.
 
         Parameters
@@ -60,13 +70,23 @@ class Filterbank(object):
             size = nsamps
         timar = np.zeros(size, dtype="float32")
         for nsamp, ii, data in self.readPlan(
-            gulp, start=start, nsamps=nsamps, **kwargs,
+            gulp,
+            start=start,
+            nsamps=nsamps,
+            **kwargs,
         ):
             lib.getTim(data, timar, self.header.nchans, nsamp, ii * gulp)
-        return TimeSeries(timar, self.header.newHeader({"nchans": 1, "refdm": 0.0}))
+        return TimeSeries(timar, self.header.newHeader({"nchans": 1, "refdm": 0}))
 
-    def invertFreq(self, gulp=512, start=0, nsamps=None, filename=None,
-                   back_compatible=True, **kwargs):
+    def invert_freq(
+        self,
+        gulp: int = 512,
+        start: int = 0,
+        nsamps: int = None,
+        filename: str = None,
+        back_compatible: bool = True,
+        **kwargs,
+    ) -> str:
         """Invert the frequency ordering of the data and write new data to a new file.
 
         Parameters
@@ -95,11 +115,10 @@ class Filterbank(object):
         else:
             size = nsamps
         out_ar = np.empty(size * self.header.nchans, dtype=self.header.dtype)
-        sign = 1.0 if self.header.foff >= 0.0 else -1.0
+        sign = 1 if self.header.foff >= 0 else -1
 
         changes = {
-            "fch1": self.header.fch1
-            + sign * (self.header.nchans - 1) * self.header.foff,
+            "fch1": self.header.fch1 + sign * (self.header.nchans - 1) * self.header.foff,
             "foff": self.header.foff * sign * (-1.0),
         }
         # NB bandwidth is +ive by default
@@ -107,7 +126,10 @@ class Filterbank(object):
             filename, changes, nbits=self.header.nbits, back_compatible=back_compatible
         )
         for nsamp, _ii, data in self.readPlan(
-            gulp, start=start, nsamps=nsamps, **kwargs,
+            gulp,
+            start=start,
+            nsamps=nsamps,
+            **kwargs,
         ):
             lib.invertFreq(data, out_ar, self.header.nchans, nsamp)
             out_file.cwrite(out_ar[: nsamp * self.header.nchans])
@@ -155,11 +177,11 @@ class Filterbank(object):
         If gulp < maximum dispersion delay, gulp is taken to be twice the
         maximum dispersion delay.
         """
-        chan_delays   = self.header.getDMdelays(dm)
-        max_delay     = int(chan_delays.max())
-        gulp          = max(2 * max_delay, gulp)
-        tim_len       = self.header.nsamples - max_delay
-        tim_ar        = np.zeros(tim_len, dtype="float32")
+        chan_delays = self.header.getDMdelays(dm)
+        max_delay = int(chan_delays.max())
+        gulp = max(2 * max_delay, gulp)
+        tim_len = self.header.nsamples - max_delay
+        tim_ar = np.zeros(tim_len, dtype="float32")
         for nsamps, ii, data in self.readPlan(gulp, skipback=max_delay, **kwargs):
             lib.dedisperse(
                 data,
@@ -191,21 +213,21 @@ class Filterbank(object):
         str
             name of output subbands file
         """
-        subfactor     = self.header.nchans // nsub
-        chan_delays   = self.header.getDMdelays(dm)
-        max_delay     = int(chan_delays.max())
-        gulp          = max(2 * max_delay, gulp)
+        subfactor = self.header.nchans // nsub
+        chan_delays = self.header.getDMdelays(dm)
+        max_delay = int(chan_delays.max())
+        gulp = max(2 * max_delay, gulp)
         # must be memset to zero in c code
-        out_ar        = np.empty((gulp - max_delay) * nsub, dtype="float32")
-        new_foff      = self.header.foff * self.header.nchans // nsub
-        new_fch1      = self.header.ftop - new_foff / 2
-        chan_to_sub   = np.arange(self.header.nchans, dtype="int32") // subfactor
+        out_ar = np.empty((gulp - max_delay) * nsub, dtype="float32")
+        new_foff = self.header.foff * self.header.nchans // nsub
+        new_fch1 = self.header.ftop - new_foff / 2
+        chan_to_sub = np.arange(self.header.nchans, dtype="int32") // subfactor
         changes = {
             "fch1": new_fch1,
             "foff": new_foff,
             "refdm": dm,
             "nchans": nsub,
-            "nbits": 32
+            "nbits": 32,
         }
         if filename is None:
             filename = f"{self.header.basename}_DM{dm:06.2f}.subbands"
@@ -254,8 +276,9 @@ class Filterbank(object):
             out_file.cwrite(data)
         return out_file.name
 
-    def applyChannelMask(self, chanmask, outfilename=None, gulp=512,
-                         back_compatible=True, **kwargs):
+    def applyChannelMask(
+        self, chanmask, outfilename=None, gulp=512, back_compatible=True, **kwargs
+    ):
         """Set the data in the given channels to zero.
 
         Parameters
@@ -283,8 +306,15 @@ class Filterbank(object):
             out_file.cwrite(data)
         return out_file.name
 
-    def downsample(self, tfactor=1, ffactor=1, gulp=512, filename=None,
-                   back_compatible=True, **kwargs):
+    def downsample(
+        self,
+        tfactor=1,
+        ffactor=1,
+        gulp=512,
+        filename=None,
+        back_compatible=True,
+        **kwargs,
+    ):
         """Downsample data in time and/or frequency and write to file.
 
         Parameters
@@ -325,21 +355,21 @@ class Filterbank(object):
                 "nchans": self.header.nchans // ffactor,
                 "foff": self.header.foff * ffactor,
             },
-            back_compatible=back_compatible
+            back_compatible=back_compatible,
         )
 
         write_ar = np.zeros(
-            gulp * self.header.nchans // ffactor // tfactor, dtype=self.header.dtype,
+            gulp * self.header.nchans // ffactor // tfactor,
+            dtype=self.header.dtype,
         )
         for nsamps, _ii, data in self.readPlan(gulp, **kwargs):
             lib.downsample(data, write_ar, tfactor, ffactor, self.header.nchans, nsamps)
-            out_file.cwrite(
-                write_ar[:nsamps * self.header.nchans // ffactor // tfactor]
-            )
+            out_file.cwrite(write_ar[: nsamps * self.header.nchans // ffactor // tfactor])
         return out_file.name
 
-    def fold(self, period, dm, accel=0, nbins=50, nints=32, nbands=32,
-             gulp=10000, **kwargs):
+    def fold(
+        self, period, dm, accel=0, nbins=50, nints=32, nbands=32, gulp=10000, **kwargs
+    ):
         """Fold data into discrete phase, subintegration and subband bins.
 
         Parameters
@@ -380,12 +410,12 @@ class Filterbank(object):
             print("WARNING: Number of phase bins is greater than period/sampling time")
         if (self.header.nsamples * self.header.nchans) // (nbands * nints * nbins) < 10:
             raise ValueError("nbands x nints x nbins is too large.")
-        nbands        = min(nbands, self.header.nchans)
-        chan_delays   = self.header.getDMdelays(dm)
-        max_delay     = int(chan_delays.max())
-        gulp          = max(2 * max_delay, gulp)
-        fold_ar       = np.zeros(nbins * nints * nbands, dtype="float32")
-        count_ar      = np.zeros(nbins * nints * nbands, dtype="int32")
+        nbands = min(nbands, self.header.nchans)
+        chan_delays = self.header.getDMdelays(dm)
+        max_delay = int(chan_delays.max())
+        gulp = max(2 * max_delay, gulp)
+        fold_ar = np.zeros(nbins * nints * nbands, dtype="float32")
+        count_ar = np.zeros(nbins * nints * nbands, dtype="int32")
         for nsamps, ii, data in self.readPlan(gulp, skipback=max_delay, **kwargs):
             lib.foldFil(
                 data,
@@ -405,7 +435,7 @@ class Filterbank(object):
                 ii * (gulp - max_delay),
             )
         fold_ar /= count_ar
-        fold_ar  = fold_ar.reshape(nints, nbands, nbins)
+        fold_ar = fold_ar.reshape(nints, nbands, nbins)
         return FoldedData(fold_ar, self.header.newHeader(), period, dm, accel)
 
     def getChan(self, chan, gulp=512, **kwargs):
@@ -437,8 +467,9 @@ class Filterbank(object):
             tim_ar, self.header.newHeader({"channel": chan, "refdm": 0.0, "nchans": 1})
         )
 
-    def split(self, start, nsamps, filename=None, gulp=1024,
-              back_compatible=True, **kwargs):
+    def split(
+        self, start, nsamps, filename=None, gulp=1024, back_compatible=True, **kwargs
+    ):
         """Split data in time.
 
         Parameters
@@ -463,10 +494,13 @@ class Filterbank(object):
             filename = f"{self.header.basename}_{start:d}_{start+nsamps:d}.fil"
         new_tstart = self.header.tstart + ((self.header.tsamp * start) / 86400.0)
         out_file = self.header.prepOutfile(
-            filename, updates={'tstart': new_tstart}, nbits=self.header.nbits
+            filename, updates={"tstart": new_tstart}, nbits=self.header.nbits
         )
         for _count, _ii, data in self.readPlan(
-            gulp, start=start, nsamps=nsamps, **kwargs,
+            gulp,
+            start=start,
+            nsamps=nsamps,
+            **kwargs,
         ):
             out_file.cwrite(data)
         out_file.close()
@@ -511,8 +545,9 @@ class Filterbank(object):
 
         return [out_file.name for out_file in out_files]
 
-    def splitToBands(self, chanpersub, chanstart=0, gulp=1024,
-                     back_compatible=True, **kwargs):
+    def splitToBands(
+        self, chanpersub, chanstart=0, gulp=1024, back_compatible=True, **kwargs
+    ):
         """Split the data into component Sub-bands and write to disk.
 
         Parameters
@@ -555,7 +590,8 @@ class Filterbank(object):
             for iband, out_band in enumerate(out_files):
                 data = data.reshape(nsamps, self.header.nchans)
                 subband_ar = data[
-                    :, chanstart + chanpersub * iband:chanstart + chanpersub * (iband + 1)
+                    :,
+                    chanstart + chanpersub * iband : chanstart + chanpersub * (iband + 1),
                 ]
                 out_band.cwrite(subband_ar.ravel())
 
@@ -584,7 +620,7 @@ class Filterbank(object):
         """
         maxima_ar = np.zeros(self.header.nchans, dtype="float32")
         minima_ar = np.zeros(self.header.nchans, dtype="float32")
-        count_ar  = np.zeros(self.header.nchans, dtype="int64")
+        count_ar = np.zeros(self.header.nchans, dtype="int64")
         M1_ar = np.zeros(self.header.nchans, dtype="float32")
         M2_ar = np.zeros(self.header.nchans, dtype="float32")
         M3_ar = np.zeros(self.header.nchans, dtype="float32")
@@ -605,7 +641,7 @@ class Filterbank(object):
             )
 
         means_ar = M1_ar
-        var_ar   = M2_ar / self.header.nsamples
+        var_ar = M2_ar / self.header.nsamples
         stdev_ar = np.sqrt(var_ar)
 
         M2_ar[M2_ar == 0] = np.nan
@@ -616,11 +652,11 @@ class Filterbank(object):
         skew_ar[np.isnan(skew_ar)] = 0
         kurt_ar[np.isnan(kurt_ar)] = -3.0
 
-        self.chan_means  = means_ar.astype('float32')
-        self.chan_vars   = var_ar.astype('float32')
-        self.chan_stdevs = stdev_ar.astype('float32')
-        self.chan_skews  = skew_ar.astype('float32')
-        self.chan_kurts  = kurt_ar.astype('float32')
+        self.chan_means = means_ar.astype("float32")
+        self.chan_vars = var_ar.astype("float32")
+        self.chan_stdevs = stdev_ar.astype("float32")
+        self.chan_skews = skew_ar.astype("float32")
+        self.chan_kurts = kurt_ar.astype("float32")
         self.chan_maxima = maxima_ar
         self.chan_minima = minima_ar
 
@@ -655,7 +691,8 @@ class Filterbank(object):
             self.getStats(gulp=gulp, **kwargs)
 
         out_ar = np.empty(
-            self.header.nsamples * self.header.nchans, dtype=self.header.dtype,
+            self.header.nsamples * self.header.nchans,
+            dtype=self.header.dtype,
         )
         out_file = self.header.prepOutfile(
             filename, nbits=self.header.nbits, back_compatible=back_compatible
@@ -699,8 +736,9 @@ class Filterbank(object):
 
         bpass = self.bandpass(gulp=gulp, **kwargs)
         chanwts = bpass / bpass.sum()
-        out_ar  = np.empty(
-            self.header.nsamples * self.header.nchans, dtype=self.header.dtype,
+        out_ar = np.empty(
+            self.header.nsamples * self.header.nchans,
+            dtype=self.header.dtype,
         )
         out_file = self.header.prepOutfile(
             filename, nbits=self.header.nbits, back_compatible=back_compatible
@@ -769,7 +807,8 @@ class FilterbankBlock(np.ndarray):
             raise ValueError("Bad frequency factor given")
         newnsamps = self.shape[1] - self.shape[1] % tfactor
         new_ar = np.empty(
-            newnsamps * self.shape[0] // ffactor // tfactor, dtype="float32",
+            newnsamps * self.shape[0] // ffactor // tfactor,
+            dtype="float32",
         )
         ar = self.transpose().ravel().copy()
         lib.downsample(ar, new_ar, tfactor, ffactor, self.shape[0], newnsamps)
@@ -799,8 +838,7 @@ class FilterbankBlock(np.ndarray):
         if filename is None:
             mjd_after = self.header.mjdAfterNsamps(self.shape[1])
             filename = (
-                f"{self.header.basename}_{self.header.tstart:d}_"
-                f"to_{mjd_after:d}.fil"
+                f"{self.header.basename}_{self.header.tstart:d}_" f"to_{mjd_after:d}.fil"
             )
         new_header = {"nbits": 32}
         out_file = self.header.prepOutfile(

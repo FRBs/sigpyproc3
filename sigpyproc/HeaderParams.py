@@ -1,11 +1,19 @@
 import numpy as np
 
 from dataclasses import dataclass
-from typing import Optional, ClassVar, Dict
+from typing import Optional, ClassVar, Dict, Any, Tuple, Callable
 
 
 @dataclass
 class BitsInfo(object):
+    """Class to handle bits info.
+
+    Raises
+    ------
+    ValueError
+        if input `nbits` not in [1, 2, 4, 8, 16, 32]
+    """
+
     nbits: int
     digi_sigma: Optional[float] = None
 
@@ -43,40 +51,55 @@ class BitsInfo(object):
 
     @property
     def dtype(self) -> np.dtype:
+        """Type of the data (`np.dtype`, read-only)."""
         return np.dtype(self.nbits_to_dtype[self.nbits])
 
     @property
     def itemsize(self) -> int:
+        """Element size of this data-type object (`int`, read-only)."""
         return self.dtype.itemsize
 
     @property
     def unpack(self) -> bool:
+        """Whether to unpack bits (`bool`, read-only)."""
         return bool(self.nbits in {1, 2, 4})
 
     @property
     def bitfact(self) -> int:
+        """Bit factor to unpack/pack bits (`int`, read-only)."""
         return 8 // self.nbits if self.unpack else 1
 
     @property
     def digi_min(self) -> Optional[int]:
+        """Minimum value used to quantize data (`int` or None, read-only)."""
         return None if self.nbits == self.float_bits else self._digi_min
 
     @property
     def digi_max(self) -> Optional[int]:
+        """Maximum value used to quantize data (`int` or None, read-only)."""
         return None if self.nbits == self.float_bits else self._digi_max
 
     @property
     def digi_mean(self) -> Optional[float]:
+        """Mean used to quantize data (`float` or None, read-only)."""
         return None if self.nbits == self.float_bits else self._digi_mean
 
     @property
     def digi_scale(self) -> Optional[float]:
+        """Scale used to quantize data (`float` or None, read-only)."""
         return None if self.nbits == self.float_bits else self._digi_scale
 
-    def properties(self):
+    def properties(self) -> Dict[str, Any]:
+        """Get a dict of all property attributes.
+
+        Returns
+        -------
+        dict
+            property attributes
+        """
         return {
             key: getattr(self, key)
-            for key, value in vars(type(self)).items()
+            for key, value in vars(type(self)).items()  # noqa: WPS421
             if isinstance(value, property)
         }
 
@@ -226,18 +249,24 @@ ids_to_machine = dict(zip(machine_ids.values(), machine_ids.keys()))
 telescope_lats_longs = {"Effelsberg": (50.52485, 6.883593)}
 
 # useful for creating inf files
-inf_to_header = {
-    "Data file name without suffix": ["basename", str],
-    "Telescope used": ["telescope_id", str],
-    "Instrument used": ["machine_id", str],
-    "Object being observed": ["source_name", str],
-    "J2000 Right Ascension (hh:mm:ss.ssss)": ["src_raj", str],
-    "J2000 Declination     (dd:mm:ss.ssss)": ["src_dej", str],
-    "Epoch of observation (MJD)": ["tstart", float],
-    "Barycentered?           (1=yes, 0=no)": ["barycentric", int],
-    "Number of bins in the time series": ["nsamples", int],
-    "Width of each time series bin (sec)": ["tsamp", float],
-    "Dispersion measure (cm-3 pc)": ["refdm", float],
+presto_inf: Dict[str, Tuple[str, Callable, str]] = {
+    "Data file name without suffix": ("basename", str, "s"),
+    "Telescope used": ("telescope", str, "s"),
+    "Instrument used": ("machine", str, "s"),
+    "Object being observed": ("source_name", str, "s"),
+    "J2000 Right Ascension (hh:mm:ss.ssss)": ("ra", str, "s"),
+    "J2000 Declination     (dd:mm:ss.ssss)": ("dec", str, "s"),
+    "Data observed by": ("observer", str, "s"),
+    "Epoch of observation (MJD)": ("tstart", float, "05.15f"),
+    "Barycentered?           (1=yes, 0=no)": ("barycentric", int, "d"),
+    "Number of bins in the time series": ("nsamples", int, "-11.0f"),
+    "Width of each time series bin (sec)": ("tsamp", float, ".15g"),
+    "Dispersion measure (cm-3 pc)": ("refdm", float, ".12g"),
+    "Central freq of low channel (Mhz)": ("freq_low", float, ".12g"),
+    "Total bandwidth (Mhz)": ("bandwidth", float, ".12g"),
+    "Number of channels": ("nchans", int, "d"),
+    "Channel bandwidth (Mhz)": ("foff", float, ".12g"),
+    "Data analyzed by": ("analyser", str, "s"),
 }
 
 # this could be expanded to begin adding support for PSRFITS
