@@ -1,69 +1,50 @@
-import os
+from __future__ import annotations
+import pathlib
 import numpy as np
 
-from sigpyproc import FoldedData
+from typing import Optional, Tuple, List
+
 from sigpyproc import TimeSeries
 from sigpyproc.Header import Header
+from sigpyproc.profile import PulseProfile
+from sigpyproc.Utils import InfoArray
 from sigpyproc import libSigPyProc as lib
 
 
-class PowerSpectrum(np.ndarray):
-    """Class to handle power spectra.
+class PowerSpectrum(InfoArray):
+    """Class to handle power spectra."""
 
-    Parameters
-    ----------
-    input_array : :py:obj:`numpy.ndarray`
-        1 dimensional array of shape (nsamples)
-    header : :class:`~sigpyproc.Header.Header`
-        observational metadata
-
-    Returns
-    -------
-    :py:obj:`numpy.ndarray`
-        1 dimensional power spectrum with header
-    """
-
-    def __new__(cls, input_array, header):
-        obj = np.asarray(input_array).astype(np.float32, copy=False).view(cls)
-        obj.header = header
-        return obj
-
-    def __array_finalize__(self, obj):
-        if obj is None:
-            return
-        self.header = getattr(obj, 'header', None)
-
-    def bin2freq(self, bin_):
+    def bin2freq(self, bin_num: int) -> float:
         """Return centre frequency of a given bin.
 
         Parameters
         ----------
-        bin_ : int
-            bin number
+        bin_num : int
+            Bin number
 
         Returns
         -------
         float
-            frequency of bin
+            frequency of the given bin
         """
-        return (bin_) / (self.header.tobs)
+        return bin_num / self.header.tobs
 
-    def bin2period(self, bin_):
+    def bin2period(self, bin_num: int) -> float:
         """Return centre period of a given bin.
 
         Parameters
         ----------
-        bin_ : int
-            bin number
+        bin_num : int
+            Bin number
 
         Returns
         -------
         float
             period of bin
         """
-        return 1 / self.bin2freq(bin_)
+        return 1 / self.bin2freq(bin_num)
 
-    def freq2bin(self, freq):
+    def freq2bin(self, freq: float) -> int:
         """Return nearest bin to a given frequency.
 
         Parameters
@@ -73,12 +54,12 @@ class PowerSpectrum(np.ndarray):
 
         Returns
         -------
-        float
+        int
             nearest bin to frequency
         """
         return int(round(freq * self.header.tobs))
 
-    def period2bin(self, period):
+    def period2bin(self, period: float) -> int:
         """Return nearest bin to a given periodicity.
 
         Parameters
@@ -88,12 +69,12 @@ class PowerSpectrum(np.ndarray):
 
         Returns
         -------
-        float
+        int
             nearest bin to period
         """
         return self.freq2bin(1 / period)
 
-    def harmonicFold(self, nfolds=1):
+    def harmonic_fold(self, nfolds: int = 1) -> List[PowerSpectrum]:
         """Perform Lyne-Ashworth harmonic folding of the power spectrum.
 
         Parameters
@@ -103,7 +84,7 @@ class PowerSpectrum(np.ndarray):
 
         Returns
         -------
-        list of :class:`~sigpyproc.FourierSeries.PowerSpectrum`
+        List[PowerSpectrum]
             A list of folded spectra where the i :sup:`th` element
             is the spectrum folded i times.
         """
@@ -112,7 +93,7 @@ class PowerSpectrum(np.ndarray):
         nfold1 = 0  # int(self.header.tsamp*2*self.size/maxperiod)
         folds = []
         for ii in range(nfolds):
-            nharm = 2**(ii + 1)
+            nharm = 2 ** (ii + 1)
             nfoldi = int(max(1, min(nharm * nfold1 - nharm // 2, self.size)))
             harm_ar = np.array(
                 [
@@ -133,8 +114,8 @@ class PowerSpectrum(np.ndarray):
         return folds
 
 
-class FourierSeries(np.ndarray):
-    """Class to handle output of FFT'd time series.
+class FourierSeries(InfoArray):
+    """Class to handle Fourier series with headers.
 
     Parameters
     ----------
@@ -149,28 +130,47 @@ class FourierSeries(np.ndarray):
         1 dimensional fourier series with header
     """
 
-    def __new__(cls, input_array, header):
-        obj = np.asarray(input_array).astype(np.float32, copy=False).view(cls)
-        obj.header = header
-        return obj
-
-    def __array_finalize__(self, obj):
-        if obj is None:
-            return
-        self.header = getattr(obj, 'header', None)
-
-    def __mul__(self, other):
+    def __mul__(self, other: FourierSeries) -> FourierSeries:  # type: ignore[override]
         if isinstance(other, FourierSeries):
             if other.size != self.size:
-                raise Exception("Instances must be the same size")
+                raise ValueError("Instances must be the same size")
             out_ar = lib.multiply_fs(self, other, self.size)
-            return FourierSeries(out_ar, self.header.newHeader())
+            return FourierSeries(out_ar, self.header.new_header())
         return super().__mul__(other)
 
-    def __rmul__(self, other):
-        self.__mul__(other)
+    def __rmul__(self, other: FourierSeries) -> FourierSeries:  # type: ignore[override]
+        return self.__mul__(other)
 
-    def formSpec(self, interpolated=True):
+    def ifft(self) -> TimeSeries.TimeSeries:
+        """Perform 1-D complex to real inverse FFT using FFTW3.
+
+        Returns
+        -------
+        TimeSeries.TimeSeries
+            a time series
+        """
+        fftsize = self.size - 2
+        tim_ar = lib.irfft(self, fftsize)
+        tim_ar *= 1.0 / fftsize
+        return TimeSeries.TimeSeries(tim_ar, self.header.new_header())
+
+    def conjugate(self) -> FourierSeries:
+        """Conjugate of the Fourier series.
+
+        Returns
+        -------
+        FourierSeries
+            conjugated Fourier series.
+
+        Notes
+        -----
+        Function assumes that the Fourier series is the non-conjugated
+        product of a real to complex FFT.
+        """
+        out_ar = lib.conjugate(self, self.size)
+        return FourierSeries(out_ar, self.header.new_header())
+
+    def form_spec(self, interpolated: bool = True) -> PowerSpectrum:
         """Form power spectrum.
 
         Parameters
@@ -185,22 +185,11 @@ class FourierSeries(np.ndarray):
         """
         specsize = self.size // 2
         spec_ar = lib.formSpec(self, specsize, interpolated=interpolated)
-        return PowerSpectrum(spec_ar, self.header.newHeader())
+        return PowerSpectrum(spec_ar, self.header.new_header())
 
-    def iFFT(self):
-        """Perform 1-D complex to real inverse FFT using FFTW3.
-
-        Returns
-        -------
-        :class:`~sigpyproc.TimeSeries.TimeSeries`
-            a time series
-        """
-        fftsize = self.size - 2
-        tim_ar = lib.irfft(self, fftsize)
-        tim_ar *= 1.0 / fftsize
-        return TimeSeries.TimeSeries(tim_ar, self.header.newHeader())
-
-    def rednoise(self, startwidth=6, endwidth=100, endfreq=1.0):
+    def rednoise(
+        self, startwidth: int = 6, endwidth: int = 100, endfreq: float = 1.0
+    ) -> FourierSeries:
         """Perform rednoise removal via Presto style method.
 
         Parameters
@@ -220,35 +209,20 @@ class FourierSeries(np.ndarray):
         buf_c1 = np.empty(2 * endwidth, dtype="float32")
         buf_c2 = np.empty(2 * endwidth, dtype="float32")
         buf_f1 = np.empty(endwidth, dtype="float32")
-        out_ar = lib.rednoise(self,
-                              buf_c1,
-                              buf_c2,
-                              buf_f1,
-                              self.size // 2,
-                              self.header.tsamp,
-                              startwidth,
-                              endwidth,
-                              endfreq,
-                              )
-        return FourierSeries(out_ar, self.header.newHeader())
+        out_ar = lib.rednoise(
+            self,
+            buf_c1,
+            buf_c2,
+            buf_f1,
+            self.size // 2,
+            self.header.tsamp,
+            startwidth,
+            endwidth,
+            endfreq,
+        )
+        return FourierSeries(out_ar, self.header.new_header())
 
-    def conjugate(self):
-        """Conjugate the Fourier series.
-
-        Returns
-        -------
-        :class:`sigpyproc.FourierSeries.FourierSeries`
-            conjugated Fourier series.
-
-        Notes
-        -----
-        Function assumes that the Fourier series is the non-conjugated
-        product of a real to complex FFT.
-        """
-        out_ar = lib.conjugate(self, self.size)
-        return FourierSeries(out_ar, self.header.newHeader())
-
-    def reconProf(self, freq, nharms=32):
+    def recon_prof(self, freq: float, nharms: int = 32) -> PulseProfile:
         """Reconstruct the time domain pulse profile from a signal and its harmonics.
 
         Parameters
@@ -260,18 +234,17 @@ class FourierSeries(np.ndarray):
 
         Returns
         -------
-        :class:`sigpyproc.FoldedData.Profile`
+        PulseProfile
             a pulse profile
         """
         bin_ = freq * self.header.tobs
-        real_ids = np.array([int(round(ii * 2 * bin_))
-                            for ii in range(1, nharms + 1)])
+        real_ids = np.array([int(round(ii * 2 * bin_)) for ii in range(1, nharms + 1)])
         imag_ids = real_ids + 1
         harms = self[real_ids] + 1j * self[imag_ids]
         harm_ar = np.hstack((harms, np.conj(harms[1:][::-1])))
-        return FoldedData.Profile(abs(np.fft.ifft(harm_ar)))
+        return PulseProfile(np.absolute(np.fft.ifft(harm_ar)), header=self.header)
 
-    def toFile(self, filename=None):
+    def to_file(self, filename: Optional[str] = None) -> str:
         """Write spectrum to file in sigpyproc format.
 
         Parameters
@@ -286,11 +259,11 @@ class FourierSeries(np.ndarray):
         """
         if filename is None:
             filename = f"{self.header.basename}.spec"
-        with self.header.prepOutfile(filename, nbits=32) as outfile:
+        with self.header.prep_outfile(filename, nbits=32) as outfile:
             outfile.cwrite(self)
         return filename
 
-    def toFFTFile(self, basename=None):
+    def to_fftfile(self, basename: Optional[str] = None) -> Tuple[str, str]:
         """Write spectrum to file in presto ``.fft`` format.
 
         Parameters
@@ -305,20 +278,19 @@ class FourierSeries(np.ndarray):
         """
         if basename is None:
             basename = self.header.basename
-        self.header.makeInf(outfile=f"{basename}.inf")
-        with open(f"{basename}.fft", "w+") as fftfile:
-            self.tofile(fftfile)
+        self.header.make_inf(outfile=f"{basename}.inf")
+        self.tofile(f"{basename}.fft")
         return f"{basename}.fft", f"{basename}.inf"
 
     @classmethod
-    def readFFT(cls, filename, inf=None):
+    def read_fft(cls, fftfile: str, inffile: Optional[str] = None) -> FourierSeries:
         """Read a presto format ``.fft`` file.
 
         Parameters
         ----------
-        filename : str
+        fftfile : str
             the name of the ``.fft`` file to read
-        inf : str, optional
+        inffile : str, optional
             the name of the corresponding ``.inf`` file, by default None
 
         Returns
@@ -333,23 +305,20 @@ class FourierSeries(np.ndarray):
 
         Notes
         -----
-        If inf=None, then the associated .inf file must be in the same directory.
+        If inf is None, then the associated .inf file must be in the same directory.
         """
-        fftfile = os.path.realpath(filename)
-        basename, ext = os.path.splitext(fftfile)
-        if inf is None:
-            inf = f"{basename}.inf"
-        if not os.path.isfile(inf):
-            raise IOError("No corresponding inf file found")
-        header = Header.parseInfHeader(inf)
-        header["basename"] = basename
-        header["inf"]      = inf
-        header["filename"] = filename
-        data = np.fromfile(filename, dtype="float32")
+        fftpath = pathlib.Path(fftfile).resolve()
+        if inffile is None:
+            inffile = fftpath.with_suffix(".inf").as_posix()
+        if not pathlib.Path(inffile).is_file():
+            raise IOError("No corresponding .inf file found")
+        data = np.fromfile(fftfile, dtype="float32")
+        header = Header.from_inffile(inffile)
+        header.filename = fftfile
         return cls(data, header)
 
     @classmethod
-    def readSpec(cls, filename):
+    def read_spec(cls, filename: str) -> FourierSeries:
         """Read a sigpyproc format ``.spec`` file.
 
         Parameters
@@ -368,7 +337,6 @@ class FourierSeries(np.ndarray):
         created by Sigprocs seek module. To do this would require
         a new header parser for that file format.
         """
-        header = Header.parseSigprocHeader(filename)
-        hdrlen = header["hdrlen"]
-        data = np.fromfile(filename, dtype="complex32", offset=hdrlen)
+        header = Header.from_sigproc(filename)
+        data = np.fromfile(filename, dtype="complex32", offset=header.hdrlen)
         return cls(data, header)

@@ -62,7 +62,10 @@ class Header(object):
     signed: bool = False
 
     filename: Optional[str] = None
+    hdrlen: int = 0
     nsamples: int = 0
+    period: float = 0
+    accel: float = 0
 
     def __post_init__(self) -> None:
         self._coord = parse_radec(self.src_raj, self.src_dej)
@@ -215,7 +218,10 @@ class Header(object):
         new = asdict(self)
         if update_dict is not None:
             new.update(update_dict)
-        return Header(**new)
+            new_check = {
+                key: value for key, value in new.items() if key in asdict(self).keys()
+            }
+        return Header(**new_check)
 
     def dedispersed_header(self, dm: float) -> Header:
         """Get a dedispersed version of the current header.

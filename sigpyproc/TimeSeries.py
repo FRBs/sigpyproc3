@@ -1,13 +1,18 @@
-import os
+from __future__ import annotations
+import pathlib
 import numpy as np
+
+from typing import Optional, Tuple, Union
+from numpy import typing as npt
 
 from sigpyproc import FoldedData
 from sigpyproc import FourierSeries
 from sigpyproc.Header import Header
+from sigpyproc.Utils import InfoArray
 from sigpyproc import libSigPyProc as lib
 
 
-class TimeSeries(np.ndarray):
+class TimeSeries(InfoArray):
     """Class for handling pulsar/FRB data in time series.
 
     Parameters
@@ -22,16 +27,6 @@ class TimeSeries(np.ndarray):
     :py:obj:`numpy.ndarray`
         1 dimensional time series with header
     """
-
-    def __new__(cls, input_array, header):
-        obj = np.asarray(input_array).astype(np.float32, copy=False).view(cls)
-        obj.header = header
-        return obj
-
-    def __array_finalize__(self, obj):
-        if obj is None:
-            return
-        self.header = getattr(obj, 'header', None)
 
     def fold(self, period, accel=0, nbins=50, nints=32):
         """Fold time series into discrete phase and subintegration bins.
@@ -59,7 +54,7 @@ class TimeSeries(np.ndarray):
         """
         if self.size // (nbins * nints) < 10:
             raise ValueError("nbins x nints is too large for length of data")
-        fold_ar  = np.zeros(nbins * nints, dtype="float64")
+        fold_ar = np.zeros(nbins * nints, dtype="float64")
         count_ar = np.zeros(nbins * nints, dtype="int32")
         lib.foldTim(
             self,
@@ -73,12 +68,12 @@ class TimeSeries(np.ndarray):
             nints,
         )
         fold_ar /= count_ar
-        fold_ar  = fold_ar.reshape(nints, 1, nbins)
+        fold_ar = fold_ar.reshape(nints, 1, nbins)
         return FoldedData.FoldedData(
-            fold_ar, self.header.newHeader(), period, self.header.refdm, accel
+            fold_ar, self.header.new_header(), period, self.header.refdm, accel
         )
 
-    def rFFT(self):
+    def rfft(self) -> FourierSeries.FourierSeries:
         """Perform 1-D real to complex forward FFT using FFTW3.
 
         Returns
@@ -91,9 +86,9 @@ class TimeSeries(np.ndarray):
         else:
             fftsize = self.size - 1
         fft_ar = lib.rfft(self, fftsize)
-        return FourierSeries.FourierSeries(fft_ar, self.header.newHeader())
+        return FourierSeries.FourierSeries(fft_ar, self.header.new_header())
 
-    def runningMean(self, window=10001):
+    def running_mean(self, window: int = 10001) -> TimeSeries:
         """Filter time series with a running mean.
 
         Parameters
@@ -108,7 +103,7 @@ class TimeSeries(np.ndarray):
 
         Raises
         ------
-        RuntimeError
+        ValueError
             If window size < 1
 
         Notes
@@ -117,11 +112,11 @@ class TimeSeries(np.ndarray):
         For more robust implemetation, use :py:obj:`scipy.ndimage.uniform_filter1d`.
         """
         if window < 1:
-            raise RuntimeError('incorrect window size')
+            raise ValueError("incorrect window size")
         tim_ar = lib.runningMean(self, window, self.size)
         return tim_ar.view(TimeSeries)
 
-    def runningMedian(self, window=10001):
+    def running_median(self, window: int = 10001) -> TimeSeries:
         """Filter time series with a running median.
 
         Parameters
@@ -141,7 +136,7 @@ class TimeSeries(np.ndarray):
         tim_ar = lib.runningMedian(self, window, self.size)
         return tim_ar.view(TimeSeries)
 
-    def applyBoxcar(self, width):
+    def apply_boxcar(self, width: int) -> TimeSeries:
         """Apply a boxcar filter to the time series.
 
         Parameters
@@ -162,7 +157,7 @@ class TimeSeries(np.ndarray):
         tim_ar = lib.runBoxcar(self, width, self.size)
         return tim_ar.view(TimeSeries)
 
-    def downsample(self, factor):
+    def downsample(self, factor: int) -> TimeSeries:
         """Downsample the time series.
 
         Parameters
@@ -181,13 +176,13 @@ class TimeSeries(np.ndarray):
         """
         if factor == 1:
             return self
-        newLen = self.size // factor
-        tim_ar = lib.downsampleTim(self, factor, newLen)
+        newlen = self.size // factor
+        tim_ar = lib.downsampleTim(self, factor, newlen)
         return TimeSeries(
-            tim_ar, self.header.newHeader({'tsamp': self.header.tsamp * factor})
+            tim_ar, self.header.new_header({"tsamp": self.header.tsamp * factor})
         )
 
-    def pad(self, npad):
+    def pad(self, npad: int) -> TimeSeries:
         """Pad a time series with mean valued data.
 
         Parameters
@@ -201,9 +196,9 @@ class TimeSeries(np.ndarray):
             padded time series
         """
         new_ar = np.hstack((self, self.mean() * np.ones(npad)))
-        return TimeSeries(new_ar, self.header.newHeader())
+        return TimeSeries(new_ar, self.header.new_header())
 
-    def resample(self, accel, jerk=0):
+    def resample(self, accel: float, jerk: float = 0) -> TimeSeries:
         """Perform time domain resampling to remove acceleration and jerk.
 
         Parameters
@@ -215,7 +210,7 @@ class TimeSeries(np.ndarray):
 
         Returns
         -------
-        :class:`~sigpyproc.TimeSeries.TimeSeries`
+        TimeSeries
             resampled time series
         """
         if accel > 0:
@@ -225,30 +220,35 @@ class TimeSeries(np.ndarray):
         out_ar = np.zeros(new_size, dtype="float32")
         lib.resample(self, out_ar, new_size, accel, self.header.tsamp)
 
-        new_header = self.header.newHeader({"nsamples": out_ar.size, "accel": accel})
+        new_header = self.header.new_header({"nsamples": out_ar.size, "accel": accel})
         return TimeSeries(out_ar, new_header)
 
-    def correlate(self, other):
+    def correlate(self, other: Union[TimeSeries, npt.ArrayLike]) -> TimeSeries:
         """Cross correlate with another time series of the same length.
 
         Parameters
         ----------
-        other : array to correlate with
-            :class:`numpy.ndarray`
+        other : Union[TimeSeries, npt.ArrayLike]
+            array to correlate with
 
         Returns
         -------
-        :class:`sigpyproc.TimeSeries.TimeSeries`
+        TimeSeries
             time series containing the correlation
+
+        Raises
+        ------
+        IOError
+            if input array ``other`` is not array like
         """
         if not isinstance(other, TimeSeries):
             try:
                 other = TimeSeries(other, self.header.newHeader())
             except Exception:
-                raise Exception("Could not convert argument to TimeSeries instance")
-        return (self.rFFT() * other.rFFT()).iFFT()
+                raise IOError("Could not convert input to TimeSeries instance")
+        return (self.rfft() * other.rfft()).ifft()
 
-    def toDat(self, basename):
+    def to_dat(self, basename: str) -> Tuple[str, str]:
         """Write time series in presto ``.dat`` format.
 
         Parameters
@@ -265,15 +265,14 @@ class TimeSeries(np.ndarray):
         -----
         Method also writes a corresponding .inf file from the header data
         """
-        self.header.makeInf(outfile=f"{basename}.inf")
-        with open(f"{basename}.dat", "w+") as datfile:
-            if self.size % 2 == 0:
-                self.tofile(datfile)
-            else:
-                self[:-1].tofile(datfile)
+        self.header.make_inf(outfile=f"{basename}.inf")
+        if self.size % 2 == 0:
+            self.tofile(f"{basename}.dat")
+        else:
+            self[:-1].tofile(f"{basename}.dat")
         return f"{basename}.dat", f"{basename}.inf"
 
-    def toFile(self, filename=None):
+    def to_file(self, filename: Optional[str] = None) -> str:
         """Write time series in sigproc format.
 
         Parameters
@@ -293,14 +292,14 @@ class TimeSeries(np.ndarray):
         return filename
 
     @classmethod
-    def readDat(cls, filename, inf=None):
+    def read_dat(cls, datfile: str, inffile: Optional[str] = None) -> TimeSeries:
         """Read a presto format ``.dat`` file.
 
         Parameters
         ----------
-        filename : str
+        datfile : str
             the name of the ``.dat`` file to read
-        inf : str, optional
+        inffile : str, optional
             the name of the corresponding ``.inf`` file, by default None
 
         Returns
@@ -315,29 +314,26 @@ class TimeSeries(np.ndarray):
 
         Notes
         -----
-        If inf=None, then the associated .inf file must be in the same directory.
+        If inf is None, then the associated .inf file must be in the same directory.
         """
-        datfile = os.path.realpath(filename)
-        basename, ext = os.path.splitext(datfile)
-        if inf is None:
-            inf = f"{basename}.inf"
-        if not os.path.isfile(inf):
+        datpath = pathlib.Path(datfile).resolve()
+        if inffile is None:
+            inffile = datpath.with_suffix(".inf").as_posix()
+        if not pathlib.Path(inffile).is_file():
             raise IOError("No corresponding .inf file found")
-        header = Header.parseInfHeader(inf)
-        data = np.fromfile(filename, dtype=np.float32)
-        header["basename"] = basename
-        header["inf"]      = inf
-        header["filename"] = filename
-        header["nsamples"] = data.size
+        data = np.fromfile(datfile, dtype=np.float32)
+        header = Header.from_inffile(inffile)
+        header.filename = datfile
+        header.nsamples = data.size
         return cls(data, header)
 
     @classmethod
-    def readTim(cls, filename):
+    def read_tim(cls, timfile: str) -> TimeSeries:
         """Read a sigproc format ``.tim`` file.
 
         Parameters
         ----------
-        filename : str
+        timfile : str
             the name of the ``.tim`` file to read
 
         Returns
@@ -345,8 +341,7 @@ class TimeSeries(np.ndarray):
         :class:`~sigpyproc.TimeSeries.TimeSeries`
             a new TimeSeries object
         """
-        header = Header.parseSigprocHeader(filename)
-        hdrlen = header["hdrlen"]
-        data = np.fromfile(filename, dtype=header["dtype"], offset=hdrlen)
+        header = Header.from_sigproc(timfile)
+        data = np.fromfile(timfile, dtype=header.dtype, offset=header.hdrlen)
         data = data.astype(np.float32, copy=False)
         return cls(data, header)

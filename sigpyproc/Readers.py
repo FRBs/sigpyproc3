@@ -1,7 +1,7 @@
 import numpy as np
 import inspect
 
-from typing import Union, Optional, Generator, List
+from typing import Union, Optional, Generator, List, Tuple
 from rich.progress import track, Progress
 
 from sigpyproc.io import FileReader
@@ -196,7 +196,7 @@ class FilReader(Filterbank):
         nsamps: Optional[int] = None,
         rich_desc: Optional[str] = None,
         verbose: bool = True,
-    ) -> Generator[int, int, np.ndarray]:
+    ) -> Generator[Tuple[int, int, np.ndarray], None, None]:
         """A generator used to perform filterbank reading.
 
         Parameters
