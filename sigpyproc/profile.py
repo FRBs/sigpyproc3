@@ -5,23 +5,38 @@ from typing import Optional, Tuple
 from numpy import typing as npt
 
 from sigpyproc.Header import Header
-from sigpyproc.Utils import InfoArray
 
 
-class PulseProfile(InfoArray):
-    """Class to handle a 1-D pulse profile. Pulse should be centered."""
+class PulseProfile(np.ndarray):
+    """An array class to handle a 1-D pulse profile. Pulse should be centered.
 
-    def __init__(self, input_array: npt.ArrayLike, header: Header) -> None:
-        """Construct Pulse profile.
+    Parameters
+    ----------
+    input_array : npt.ArrayLike
+        1-D array of timeseries
+    header : Header
+        observational metadata
 
-        Parameters
-        ----------
-        input_array : npt.ArrayLike
-            1-D array of timeseries
-        header : Header
-            observational metadata
-        """
-        self._boxcar_match()
+    Returns
+    -------
+    :py:obj:`numpy.ndarray`
+        1 dimensional array of shape (nsamples) with header metadata
+
+    Notes
+    -----
+    Data is converted to 32 bits regardless of original type.
+    """
+
+    def __new__(cls, input_array: npt.ArrayLike, header: Header) -> PulseProfile:
+        """Create a new 1D Pulse profile."""
+        obj = np.asarray(input_array).astype(np.float32, copy=False).view(cls)
+        obj.header = header
+        return obj
+
+    def __array_finalize__(self, obj):
+        if obj is None:
+            return
+        self.header = getattr(obj, "header", None)
 
     @property
     def nbins(self) -> int:

@@ -8,25 +8,39 @@ from numpy import typing as npt
 from sigpyproc import FoldedData
 from sigpyproc import FourierSeries
 from sigpyproc.Header import Header
-from sigpyproc.Utils import InfoArray
 from sigpyproc import libSigPyProc as lib
 
 
-class TimeSeries(InfoArray):
-    """Class for handling pulsar/FRB data in time series.
+class TimeSeries(np.ndarray):
+    """An array class to handle pulsar/FRB data in time series.
 
     Parameters
     ----------
-    input_array : :py:obj:`numpy.ndarray`
+    input_array : npt.ArrayLike
         1 dimensional array of shape (nsamples)
-    header : :class:`~sigpyproc.Header.Header`
+    header : Header
         observational metadata
 
     Returns
     -------
     :py:obj:`numpy.ndarray`
         1 dimensional time series with header
+
+    Notes
+    -----
+    Data is converted to 32 bits regardless of original type.
     """
+
+    def __new__(cls, input_array: npt.ArrayLike, header: Header) -> TimeSeries:
+        """Create a new TimeSeries array."""
+        obj = np.asarray(input_array).astype(np.float32, copy=False).view(cls)
+        obj.header = header
+        return obj
+
+    def __array_finalize__(self, obj):
+        if obj is None:
+            return
+        self.header = getattr(obj, "header", None)
 
     def fold(self, period, accel=0, nbins=50, nints=32):
         """Fold time series into discrete phase and subintegration bins.
@@ -287,7 +301,7 @@ class TimeSeries(InfoArray):
         """
         if filename is None:
             filename = f"{self.header.basename}.tim"
-        with self.header.prepOutfile(filename, nbits=32) as outfile:
+        with self.header.prep_outfile(filename, nbits=32) as outfile:
             outfile.cwrite(self)
         return filename
 

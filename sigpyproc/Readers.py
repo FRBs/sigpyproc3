@@ -39,8 +39,8 @@ class FilReader(Filterbank):
         if isinstance(filenames, str):
             filenames = [filenames]
         self._filenames = filenames
-        self._header = Header.parseSigprocHeader(
-            self.filenames, check_contiguity=check_contiguity
+        self._header = Header.from_sigproc(
+            self._filenames, check_contiguity=check_contiguity
         )
         self._file = FileReader(
             self._filenames,

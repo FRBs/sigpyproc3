@@ -1,13 +1,12 @@
 from __future__ import annotations
 import struct
 import pathlib
-import erfa
+import attr
 import numpy as np
 
 from typing import Dict, List, Any, Union, Optional
-from dataclasses import dataclass, asdict
 
-from astropy.time import Time
+from astropy.time import Time, TimeDelta
 from astropy.coordinates import SkyCoord
 from astropy import units, constants
 
@@ -24,7 +23,7 @@ DM_CONSTANT_SI = (
 ).value  # Precise SI constants
 
 
-@dataclass
+@attr.s(auto_attribs=True, kw_only=True)
 class Header(object):
     """Container object to handle observation metadata.
 
@@ -41,6 +40,7 @@ class Header(object):
     """
 
     rawdatafile: str
+    filename: str
     data_type: int
     nchans: int
     foff: float
@@ -48,8 +48,10 @@ class Header(object):
     nbits: int
     tsamp: float
     tstart: float
+    nsamples: int
+
     ibeam: int = 0
-    nbeams: int = 1
+    nbeams: int = 0
     refdm: float = 0
     nifs: int = 1
     telescope_id: int = 0
@@ -60,28 +62,30 @@ class Header(object):
     az_start: float = 0
     source_name: str = "None"
     signed: bool = False
-
-    filename: Optional[str] = None
-    hdrlen: int = 0
-    nsamples: int = 0
+    barycentric: bool = False
+    pulsarcentric: bool = False
     period: float = 0
     accel: float = 0
+    hdrlen: int = 0
+    datalen: int = 0
 
-    def __post_init__(self) -> None:
+    hdrlens: List[int] = attr.Factory(list)
+    datalens: List[int] = attr.Factory(list)
+    filenames: List[str] = attr.Factory(list)
+    nsamples_files: List[int] = attr.Factory(list)
+    tstart_files: List[float] = attr.Factory(list)
+
+    def __attrs_post_init__(self) -> None:
         self._coord = parse_radec(self.src_raj, self.src_dej)
 
     @property
-    def basename(self) -> Optional[str]:
-        """Basename of header filename (`str` or None, read-only)."""
-        if self.filename is None:
-            return None
+    def basename(self) -> str:
+        """Basename of header filename (`str`, read-only)."""
         return pathlib.Path(self.filename).stem
 
     @property
-    def extension(self) -> Optional[str]:
-        """Extension of header filename (`str` or None, read-only)."""
-        if self.filename is None:
-            return None
+    def extension(self) -> str:
+        """Extension of header filename (`str`, read-only)."""
         return pathlib.Path(self.filename).suffix
 
     @property
@@ -167,10 +171,9 @@ class Header(object):
     @property
     def obs_date(self) -> str:
         """Observation date and time (`str`, read-only)."""
-        precision = int(np.ceil(abs(np.log10(self.tsamp))))
-        return Time(self.tstart, format="mjd", scale="utc", precision=precision).iso
+        return get_time_after_nsamps(self.tstart, self.tsamp).iso
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self, with_properties=True) -> Dict[str, Any]:
         """Get a dict of all attributes including property attributes.
 
         Returns
@@ -178,13 +181,14 @@ class Header(object):
         dict
             attributes
         """
-        prop = {
-            key: getattr(self, key)
-            for key, value in vars(type(self)).items()  # noqa: WPS421
-            if isinstance(value, property)
-        }
-        attributes = asdict(self)
-        attributes.update(prop)
+        attributes = attr.asdict(self)
+        if with_properties:
+            prop = {
+                key: getattr(self, key)
+                for key, value in vars(type(self)).items()  # noqa: WPS421
+                if isinstance(value, property)
+            }
+            attributes.update(prop)
         return attributes
 
     def mjd_after_nsamps(self, nsamps: int) -> float:
@@ -200,7 +204,7 @@ class Header(object):
         float
             Modified Julian Date
         """
-        return self.tstart + ((nsamps * self.tsamp) / erfa.DAYSEC)
+        return get_time_after_nsamps(self.tstart, self.tsamp, nsamps).mjd
 
     def new_header(self, update_dict: Optional[Dict[str, Any]] = None) -> Header:
         """Get a new instance of :class:`~sigpyproc.Header.Header`.
@@ -215,13 +219,15 @@ class Header(object):
         :class:`~sigpyproc.Header.Header`
             new header information
         """
-        new = asdict(self)
+        new = attr.asdict(self)
         if update_dict is not None:
             new.update(update_dict)
-            new_check = {
-                key: value for key, value in new.items() if key in asdict(self).keys()
+            new_checked = {
+                key: value
+                for key, value in new.items()
+                if key in attr.asdict(self).keys()
             }
-        return Header(**new_check)
+        return Header(**new_checked)
 
     def dedispersed_header(self, dm: float) -> Header:
         """Get a dedispersed version of the current header.
@@ -251,18 +257,18 @@ class Header(object):
         str
             header in binary format
         """
-        header = self._write_header("HEADER_START")
+        header = encode_header("HEADER_START")
 
-        for key in list(self.keys()):
+        for key in attr.asdict(self).keys():
             if back_compatible and key not in conf.sigproc_keys:
                 continue
             elif not back_compatible and key not in conf.header_keys:
                 continue
 
             key_fmt = conf.header_keys[key]
-            header += self._write_header(key, value=self[key], value_type=key_fmt)
+            header += encode_header(key, value=self[key], value_type=key_fmt)
 
-        header += self._write_header("HEADER_END")
+        header += encode_header("HEADER_END")
         return header
 
     def get_dmdelays(self, dm: float, in_samples: bool = True) -> np.ndarray:
@@ -390,13 +396,16 @@ class Header(object):
                 key, keytype, _keyformat = conf.presto_inf[desc]
                 header[key] = keytype(val)
 
+        header["fch1"] = header["freq_low"] + header["foff"] * header["nchans"]
         header["src_raj"] = float(str(header["ra"]).replace(":", ""))
         header["src_dej"] = float(str(header["dec"]).replace(":", ""))
-        header["telescope_id"] = conf.telescope_ids.get(header["telescope"], 10)
+        header["telescope_id"] = conf.telescope_ids.get(header["telescope"], 11)
         header["machine_id"] = conf.machine_ids.get(header["machine"], 9)
         header.update({"data_type": 2, "nbits": 32, "nchans": 1, "hdrlen": 0})
         header_check = {
-            key: value for key, value in header.items() if key in asdict(cls).keys()
+            key: value
+            for key, value in header.items()
+            if key in attr.fields_dict(cls).keys()
         }
         return cls(**header_check)
 
@@ -421,92 +430,69 @@ class Header(object):
             filenames = [filenames]
 
         header = parse_sigproc_header(filenames[0])
-        header["hdrlens"] = [header["hdrlen"]]
-        header["datalens"] = [header["nbytes"]]
-        header["nsamples_list"] = [header["nsamples"]]
-        header["tstart_list"] = [header["tstart"]]
-        header["filenames"] = [header["filename"]]
+        # Set multifile header values
+        header.hdrlens = [header.hdrlen]
+        header.datalens = [header.datalen]
+        header.nsamples_files = [header.nsamples]
+        header.tstart_files = [header.tstart]
+        header.filenames = [header.filename]
+
         if len(filenames) > 1:
             for filename in filenames[1:]:
                 hdr = parse_sigproc_header(filename)
-                for key in conf.sigproc_keys:
-                    if key in {"tstart", "rawdatafile"}:
-                        continue
-                    if key in header:  # TODO Fix later
-                        assert (
-                            hdr[key] == header[key]
-                        ), f"Header value '{hdr[key]}' do not match for file {filename}"
-                header["hdrlens"].append(hdr["hdrlen"])
-                header["datalens"].append(hdr["nbytes"])
-                header["nsamples_list"].append(hdr["nsamples"])
-                header["tstart_list"].append(hdr["tstart"])
-                header["filenames"].append(hdr["filename"])
+                match_header(header, hdr)
+
+                header.hdrlens.append(hdr.hdrlen)
+                header.datalens.append(hdr.datalen)
+                header.nsamples_files.append(hdr.nsamples)
+                header.tstart_files.append(hdr.tstart)
+                header.filenames.append(hdr.filename)
 
             if check_contiguity:
-                cls._ensure_contiguity(header)
+                ensure_contiguity(header)
 
-        return cls(**header)
-
-    @staticmethod
-    def _ensure_contiguity(header):
-        """Check if list of sigproc files are contiguous/sequential.
-
-        Parameters
-        ----------
-        header : dict
-            A dict of sigproc header keys for input files
-
-        Raises
-        ------
-        ValueError
-            if files are not contiguous
-        """
-        filenames = header["filenames"]
-        for ii, _file in enumerate(filenames[:-1]):
-            end_time = (
-                header["tstart_list"][ii]
-                + header["nsamples_list"][ii] * header["tsamp"] / 86400
-            )
-            difference = header["tstart_list"][ii + 1] - end_time
-            if abs(difference) > 0.9 * header["tsamp"]:
-                samp_diff = int(abs(difference) / header["tsamp"])
-                raise ValueError(
-                    f"files {filenames[ii]} and {filenames[ii + 1]} are off by "
-                    f"at least {samp_diff} samples."
-                )
-
-    @staticmethod
-    def _write_header(key, value=None, value_type="str"):
-        """Encode the header key to a bytes string.
-
-        Parameters
-        ----------
-        key : str
-            header key
-        value : int, float, str, optional
-            value of the header key, by default None
-        value_type : str, optional
-            type of the header key, by default "str"
-
-        Returns
-        -------
-        str
-            bytes string
-        """
-        if value is None:
-            return struct.pack("I", len(key)) + key.encode()
-
-        if value_type == "str":
-            return (
-                struct.pack("I", len(key))
-                + key.encode()
-                + struct.pack("I", len(value))
-                + value.encode()
-            )
-        return struct.pack("I", len(key)) + key.encode() + struct.pack(value_type, value)
+        header.nsamples = sum(header.nsamples_files)
+        return cls(**header.to_dict(with_properties=False))
 
 
-def parse_sigproc_header(filename: str) -> Dict[str, Any]:
+def edit_header(filename: str, key: str, value: Union[int, float, str]) -> None:
+    """Edit a sigproc style header directly in place for the given file.
+
+    Parameters
+    ----------
+    filename : str
+        name of the sigproc file to modify header.
+    key : str
+        name of parameter to change (must be a valid sigproc key)
+    value : Union[int, float, str]
+        new value to enter into header
+
+    Raises
+    ------
+    ValueError
+        if the new header to be written to file is longer or shorter than
+        the header that was previously in the file.
+
+    Notes
+    -----
+       It is up to the user to be responsible with this function, as it will directly
+       change the file on which it is being operated.
+    """
+    header = Header.from_sigproc(filename)
+    if key == "source_name" and isinstance(value, str):
+        oldlen = len(header.source_name)
+        value = value[:oldlen] + " " * (oldlen - len(value))
+    new_hdr = header.new_header({key: value})
+    new_header = new_hdr.spp_header(back_compatible=True)
+    if header.hdrlens[0] == len(new_header):
+        with open(filename, "r+") as fp:
+            fp.seek(0)
+            fp.write(new_header)
+    else:
+        raise ValueError("New header is too long/short for file")
+
+
+def parse_sigproc_header(filename: str) -> Header:
     """Parse the metadata from a single Sigproc-style file.
 
     Parameters
@@ -516,7 +502,7 @@ def parse_sigproc_header(filename: str) -> Dict[str, Any]:
 
     Returns
     -------
-    dict
+    Header
         observational metadata
 
     Raises
@@ -537,9 +523,6 @@ def parse_sigproc_header(filename: str) -> Dict[str, Any]:
             if key == "HEADER_END":
                 break
 
-            if key not in conf.header_keys:
-                raise IOError(f"'{key}' is not a recognised sigproc header param")
-
             key_fmt = conf.header_keys[key]
             if key_fmt == "str":
                 header[key] = _read_string(fp)
@@ -548,11 +531,17 @@ def parse_sigproc_header(filename: str) -> Dict[str, Any]:
         header["hdrlen"] = fp.tell()
         fp.seek(0, 2)
         header["filelen"] = fp.tell()
-        header["nbytes"] = header["filelen"] - header["hdrlen"]
-        header["nsamples"] = 8 * header["nbytes"] // header["nbits"] // header["nchans"]
+        header["datalen"] = header["filelen"] - header["hdrlen"]
+        header["nsamples"] = 8 * header["datalen"] // header["nbits"] // header["nchans"]
         fp.seek(0)
         header["filename"] = filename
-    return header
+
+    header_check = {
+        key: value
+        for key, value in header.items()
+        if key in attr.fields_dict(Header).keys()
+    }
+    return Header(**header_check)
 
 
 def _read_string(fp):
@@ -572,46 +561,93 @@ def _read_string(fp):
     return fp.read(strlen).decode()
 
 
-def edit_header(filename, key, value):
-    """Edit a sigproc style header in place for the given file.
+def encode_header(
+    key: str, value: Optional[Union[int, float, str]] = None, value_type: str = "str"
+) -> bytes:
+    """Encode given header key to a bytes string.
 
     Parameters
     ----------
-    filename : str
-        name of the sigproc file to modify header.
     key : str
-        name of parameter to change (must be a valid sigproc key)
-    value : int, float or str
-        new value to enter into header
+        header key
+    value : Optional[Union[int, float, str]], optional
+        value of the header key, by default None
+    value_type : str, optional
+        type of the header key, by default "str"
+
+    Returns
+    -------
+    bytes
+        bytes encoded string
+    """
+    if value is None:
+        return struct.pack("I", len(key)) + key.encode()
+
+    if value_type == "str" and isinstance(value, str):
+        return (
+            struct.pack("I", len(key))
+            + key.encode()
+            + struct.pack("I", len(value))
+            + value.encode()
+        )
+    return struct.pack("I", len(key)) + key.encode() + struct.pack(value_type, value)
+
+
+def match_header(header1: Header, header2: Header) -> None:
+    """Match header keywords between two parsed sigproc headers.
+
+    Parameters
+    ----------
+    header1 : Header
+        parsed header from file 1.
+    header2 : Header
+        parsed header from file 2.
 
     Raises
     ------
     ValueError
-        [description]
-
-    Notes
-    -----
-       It is up to the user to be responsible with this function, as it will directly
-       change the file on which it is being operated. The only fail contition of
-       editInplace comes when the new header to be written to file is longer or shorter than the
-       header that was previously in the file.
+        if key values do not match.
     """
-    header = Header.parseSigprocHeader(filename)
-    if key == "source_name":
-        oldlen = len(header.source_name)
-        value = value[:oldlen] + " " * (oldlen - len(value))
-    header[key] = value
-    new_header = header.SPPHeader(back_compatible=True)
-    if header.hdrlen == len(new_header):
-        with open(filename, "r+") as fp:
-            fp.seek(0)
-            fp.write(new_header)
-    else:
-        raise ValueError("New header is too long/short for file")
+    keys_nomatch = {"tstart", "rawdatafile"}
+    for key in conf.sigproc_keys:
+        if key in keys_nomatch:
+            continue
+        if getattr(header1, key) != getattr(header2, key):
+            raise ValueError(
+                f'Header key "{key} = {getattr(header1, key)} and {getattr(header2, key)}"'
+                f"do not match for file {header2.filename}"
+            )
+
+
+def ensure_contiguity(header: Header) -> None:
+    """Check if list of sigproc files are contiguous/sequential.
+
+    Parameters
+    ----------
+    header : Header
+        parsed header of sigproc files
+
+    Raises
+    ------
+    ValueError
+        if files are not contiguous
+    """
+    for ifile, _file in enumerate(header.filenames[:-1]):
+        end_time = get_time_after_nsamps(
+            header.tstart_files[ifile], header.tsamp, header.nsamples_files[ifile]
+        )
+        end_mjd = end_time.mjd
+        difference = header.tstart_files[ifile + 1] - end_mjd
+        if abs(difference) > header.tsamp:
+            samp_diff = int(abs(difference) / header.tsamp)
+            raise ValueError(
+                f"files {header.filenames[ifile]} and {header.filenames[ifile + 1]} are off by "
+                f"at least {samp_diff} samples."
+            )
 
 
 def parse_radec(src_raj: float, src_dej: float) -> SkyCoord:
-    """Parse Sigproc format RADEC float to Astropy SkyCoord.
+    """Parse Sigproc format RADEC float as Astropy SkyCoord.
 
     Parameters
     ----------
@@ -634,3 +670,29 @@ def parse_radec(src_raj: float, src_dej: float) -> SkyCoord:
 
     radec_str = f"{int(ho)} {int(mi)} {se} {sign* int(de)} {int(ami)} {ase}"
     return SkyCoord(radec_str, unit=(units.hourangle, units.deg))
+
+
+def get_time_after_nsamps(
+    tstart: float, tsamp: float, nsamps: Optional[int] = None
+) -> Time:
+    """Get precise time nsamps after input tstart. If nsamps is not given then just return tstart.
+
+    Parameters
+    ----------
+    tstart : float
+        starting mjd.
+    tsamp : float
+        sampling time in seconds.
+    nsamps : Optional[int], optional
+        number of samples, by default None
+
+    Returns
+    -------
+    Time
+        Astropy Time object after given nsamps
+    """
+    precision = int(np.ceil(abs(np.log10(tsamp))))
+    tstart = Time(tstart, format="mjd", scale="utc", precision=precision)
+    if nsamps:
+        return tstart + TimeDelta(nsamps * tsamp, format="sec")
+    return tstart
