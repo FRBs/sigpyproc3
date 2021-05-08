@@ -196,7 +196,7 @@ class Filterbank(ABC):
         tim_len = self.header.nsamples - max_delay
         tim_ar = np.zeros(tim_len, dtype="float32")
         for nsamps, ii, data in self.read_plan(gulp, skipback=max_delay, **kwargs):
-            lib.dedisperse(
+            lib.dedisperse_sum(
                 data,
                 tim_ar,
                 chan_delays,

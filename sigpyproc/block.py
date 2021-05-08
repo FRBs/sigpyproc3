@@ -181,7 +181,7 @@ class FilterbankBlock(np.ndarray):
         Frequency dependent delays are applied as rotations to each
         channel in the block.
         """
-        delays = self.header.getDMdelays(dm)
+        delays = self.header.get_dmdelays(dm)
         if only_valid_samples:
             if self.shape[1] < delays[-1]:
                 raise ValueError(

@@ -3,16 +3,44 @@ import pathlib
 import numpy as np
 
 from typing import Optional, Tuple, List
+from numpy import typing as npt
 
 from sigpyproc import TimeSeries
 from sigpyproc.Header import Header
 from sigpyproc.profile import PulseProfile
-from sigpyproc.Utils import InfoArray
 from sigpyproc import libSigPyProc as lib
 
 
-class PowerSpectrum(InfoArray):
-    """Class to handle power spectra."""
+class PowerSpectrum(np.ndarray):
+    """An array class to handle pulsar/FRB power spectra.
+
+    Parameters
+    ----------
+    input_array : npt.ArrayLike
+        1 dimensional array of shape (nsamples)
+    header : Header
+        observational metadata
+
+    Returns
+    -------
+    :py:obj:`numpy.ndarray`
+        1 dimensional power spectra with header
+
+    Notes
+    -----
+    Data is converted to 32 bits regardless of original type.
+    """
+
+    def __new__(cls, input_array: npt.ArrayLike, header: Header) -> PowerSpectrum:
+        """Create a new PowerSpectrum array."""
+        obj = np.asarray(input_array).astype(np.float32, copy=False).view(cls)
+        obj.header = header
+        return obj
+
+    def __array_finalize__(self, obj):
+        if obj is None:
+            return
+        self.header = getattr(obj, "header", None)
 
     def bin2freq(self, bin_num: int) -> float:
         """Return centre frequency of a given bin.
@@ -114,14 +142,14 @@ class PowerSpectrum(InfoArray):
         return folds
 
 
-class FourierSeries(InfoArray):
-    """Class to handle Fourier series with headers.
+class FourierSeries(np.ndarray):
+    """An array class to handle Fourier series with headers.
 
     Parameters
     ----------
-    input_array : :py:obj:`numpy.ndarray`
+    input_array : npt.ArrayLike
         1 dimensional array of shape (nsamples)
-    header : :class:`~sigpyproc.Header.Header`
+    header : Header
         observational metadata
 
     Returns
@@ -129,6 +157,17 @@ class FourierSeries(InfoArray):
     :py:obj:`numpy.ndarray`
         1 dimensional fourier series with header
     """
+
+    def __new__(cls, input_array: npt.ArrayLike, header: Header) -> FourierSeries:
+        """Create a new Fourier series array."""
+        obj = np.asarray(input_array).astype(np.float32, copy=False).view(cls)
+        obj.header = header
+        return obj
+
+    def __array_finalize__(self, obj):
+        if obj is None:
+            return
+        self.header = getattr(obj, "header", None)
 
     def __mul__(self, other: FourierSeries) -> FourierSeries:  # type: ignore[override]
         if isinstance(other, FourierSeries):

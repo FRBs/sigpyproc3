@@ -1,10 +1,12 @@
+import attr
 import numpy as np
 
-from dataclasses import dataclass
 from typing import Optional, ClassVar, Dict, Any, Tuple, Callable
 
+nbits_to_dtype = {1: "<u1", 2: "<u1", 4: "<u1", 8: "<u1", 16: "<u2", 32: "<f4"}
 
-@dataclass
+
+@attr.s(auto_attribs=True)
 class BitsInfo(object):
     """Class to handle bits info.
 
@@ -14,18 +16,10 @@ class BitsInfo(object):
         if input `nbits` not in [1, 2, 4, 8, 16, 32]
     """
 
-    nbits: int
-    digi_sigma: Optional[float] = None
+    nbits: int = attr.ib(validator=attr.validators.in_(nbits_to_dtype.keys()))
+    digi_sigma: float = attr.ib()
 
     float_bits: ClassVar[int] = 32
-    nbits_to_dtype: ClassVar[Dict[int, str]] = {
-        1: "<u1",
-        2: "<u1",
-        4: "<u1",
-        8: "<u1",
-        16: "<u2",
-        32: "<f4",
-    }
     default_sigma: ClassVar[Dict[int, float]] = {
         1: 0.5,
         2: 1.5,
@@ -35,24 +29,16 @@ class BitsInfo(object):
         32: 6,
     }
 
-    def __post_init__(self) -> None:
-        # validate nbits
-        if self.nbits not in self.nbits_to_dtype.keys():
-            raise ValueError(f"nbits = {self.nbits} not supported.")
-
-        # default digi_sigma
-        if self.digi_sigma is None:
-            self.digi_sigma = self.default_sigma[self.nbits]  # noqa: WPS601
-
+    def __attrs_post_init__(self) -> None:
         self._digi_min = 0
         self._digi_max = (1 << self.nbits) - 1
         self._digi_mean = (1 << (self.nbits - 1)) - 0.5
-        self._digi_scale = self._digi_min / self.digi_sigma
+        self._digi_scale = self._digi_mean / self.digi_sigma
 
     @property
     def dtype(self) -> np.dtype:
         """Type of the data (`np.dtype`, read-only)."""
-        return np.dtype(self.nbits_to_dtype[self.nbits])
+        return np.dtype(nbits_to_dtype[self.nbits])
 
     @property
     def itemsize(self) -> int:
@@ -89,7 +75,7 @@ class BitsInfo(object):
         """Scale used to quantize data (`float` or None, read-only)."""
         return None if self.nbits == self.float_bits else self._digi_scale
 
-    def properties(self) -> Dict[str, Any]:
+    def to_dict(self) -> Dict[str, Any]:
         """Get a dict of all property attributes.
 
         Returns
@@ -103,8 +89,12 @@ class BitsInfo(object):
             if isinstance(value, property)
         }
 
+    @digi_sigma.default
+    def _set_digi_sigma(self):
+        return self.default_sigma[self.nbits]
 
-bits_info = {nbits: BitsInfo(nbits) for nbits in BitsInfo.nbits_to_dtype.keys()}
+
+bits_info = {nbits: BitsInfo(nbits) for nbits in nbits_to_dtype.keys()}
 
 # dictionary to define the sizes of header elements
 header_keys = {

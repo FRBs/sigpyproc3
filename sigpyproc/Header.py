@@ -39,7 +39,6 @@ class Header(object):
         channel width in MHz
     """
 
-    rawdatafile: str
     filename: str
     data_type: int
     nchans: int
@@ -50,6 +49,7 @@ class Header(object):
     tstart: float
     nsamples: int
 
+    rawdatafile: Optional[str] = None
     ibeam: int = 0
     nbeams: int = 0
     refdm: float = 0

@@ -1,44 +1,9 @@
-import os
 import pytest
 import numpy as np
+from pathlib import Path
 
-_topdir = os.path.dirname(os.path.abspath(os.path.dirname(__file__)))
-_testdir = os.path.abspath(os.path.dirname(__file__))
-
-
-@pytest.fixture(scope="session", autouse=True)
-def filfile():
-    return os.path.join(_topdir, "examples/tutorial_2bit.fil")
-
-
-@pytest.fixture(scope="session", autouse=True)
-def filfile_8bit_1():
-    return os.path.join(_testdir, "data/parkes_8bit_1.fil")
-
-
-@pytest.fixture(scope="session", autouse=True)
-def filfile_8bit_2():
-    return os.path.join(_testdir, "data/parkes_8bit_2.fil")
-
-
-@pytest.fixture(scope="session", autouse=True)
-def timfile():
-    return os.path.join(_testdir, "data/Lband_DM0.00.tim")
-
-
-@pytest.fixture(scope="session", autouse=True)
-def datfile():
-    return os.path.join(_testdir, "data/Lband_DM0.00.dat")
-
-
-@pytest.fixture(scope="session", autouse=True)
-def fftfile():
-    return os.path.join(_testdir, "data/Lband_DM0.00.fft")
-
-
-@pytest.fixture(scope="session", autouse=True)
-def inffile():
-    return os.path.join(_testdir, "data/Lband_DM0.00.inf")
+_testdir = Path(__file__).resolve().parent
+_datadir = _testdir / "data"
 
 
 @pytest.fixture(scope="session")
@@ -48,6 +13,76 @@ def tmpfile(tmp_path_factory, content=""):
     return fn.as_posix()
 
 
+@pytest.fixture(scope="session", autouse=True)
+def filfile_1bit():
+    return Path(_datadir / "parkes_1bit.fil").as_posix()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def filfile_2bit():
+    return Path(_datadir / "parkes_2bit.fil").as_posix()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def filfile_4bit():
+    return Path(_datadir / "parkes_4bit.fil").as_posix()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def filfile_8bit_1():
+    return Path(_datadir / "parkes_8bit_1.fil").as_posix()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def filfile_8bit_2():
+    return Path(_datadir / "parkes_8bit_2.fil").as_posix()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def timfile():
+    return Path(_datadir / "GBT_J1807-0847.tim").as_posix()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def timfile_mean():
+    return 100
+
+
+@pytest.fixture(scope="session", autouse=True)
+def timfile_std():
+    return 691
+
+
+@pytest.fixture(scope="session", autouse=True)
+def datfile():
+    return Path(_datadir / "GBT_J1807-0847.dat").as_posix()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def datfile_mean():
+    return 445404
+
+
+@pytest.fixture(scope="session", autouse=True)
+def datfile_std():
+    return 3753
+
+
+@pytest.fixture(scope="session", autouse=True)
+def fftfile():
+    return Path(_datadir / "GBT_J1807-0847.fft").as_posix()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def fftfile_mean():
+    return 443190
+
+
+@pytest.fixture(scope="session", autouse=True)
+def inffile():
+    return Path(_datadir / "GBT_J1807-0847.inf").as_posix()
+
+
 @pytest.fixture(scope="class", autouse=True)
 def tim_data():
     np.random.seed(5)
@@ -55,30 +90,25 @@ def tim_data():
 
 
 @pytest.fixture(scope="class", autouse=True)
-def fourier_data():
-    np.random.seed(5)
-    data = np.random.normal(128, 20, 10000)
-    fft = np.fft.rfft(data)
-    return fft.view(np.float64).astype(np.float32)
+def tim_header():
+    header = {}
+    header["rawdatafile"] = "tmp_test.tim"
+    header["filename"] = "tmp_test.tim"
+    header["data_type"] = 2
+    header["nchans"] = 1
+    header["foff"] = 1
+    header["fch1"] = 2000
+    header["nbits"] = 32
+    header["tsamp"] = 0.000064
+    header["tstart"] = 50000.0
+    header["nsamples"] = 10000
+    return header
 
 
 @pytest.fixture(scope="class", autouse=True)
-def tim_header():
-    header = {}
-    header["telescope_id"] = 10
-    header["machine_id"] = 9
-    header["source_name"] = "test"
-    header["basename"] = "tmp_test"
-    header["src_raj"] = 0
-    header["src_dej"] = 0
-    header["tstart"] = 50000.0
-    header["tsamp"] = 1
-    header["data_type"] = 2
-    header["nchans"] = 1
-    header["nbits"] = 32
-    header["hdrlen"] = 0
-    header["nsamples"] = 0
-    return header
+def fourier_data(tim_data):  # noqa: WPS442
+    fft = np.fft.rfft(tim_data)
+    return fft.view(np.float64).astype(np.float32)
 
 
 @pytest.fixture(scope="class", autouse=True)
@@ -119,3 +149,21 @@ def filfile_8bit_1_header():
     header["nifs"] = 1
     header["nsamples"] = 2048
     return header
+
+
+@pytest.fixture(scope="class", autouse=True)
+def gaus_data():
+    return [5, 10, 25, 50, 25, 10, 5]
+
+
+@pytest.fixture(scope="class", autouse=True)
+def gaus_data_snr(gaus_data):  # noqa: WPS442
+    return np.array(gaus_data) / np.sqrt(len(gaus_data))
+
+
+@pytest.fixture(scope="class", autouse=True)
+def profile_data(gaus_data):  # noqa: WPS442
+    np.random.seed(5)
+    data = np.random.normal(0, 1, 1024)
+    data[497:504] = gaus_data  # noqa: WPS362
+    return data

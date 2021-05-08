@@ -2,7 +2,7 @@ from __future__ import annotations
 import numpy as np
 import logging
 
-from typing import Union, Optional, Any
+from typing import Union
 from numpy import typing as npt
 
 from datetime import datetime
@@ -15,44 +15,6 @@ class AttrDict(dict):  # noqa:WPS600
         """Dict class to expose keys as attributes."""
         super().__init__(*args, **kwargs)
         self.__dict__ = self
-
-
-class InfoArray(np.ndarray):
-    """Standard ndarray with extra attributes."""
-
-    def __new__(
-        cls, input_array: npt.ArrayLike, header: Optional[Any] = None, **kwargs
-    ) -> InfoArray:
-        """Constructor.
-
-        Parameters
-        ----------
-        input_array : npt.ArrayLike
-            input array like data
-        header : Optional[Any], optional
-            metadata, by default None
-
-        Returns
-        -------
-        InfoArray
-            Standard ndarray with attributes
-        """
-        # Input array is an already formed ndarray instance
-        # We first cast to be our class type
-        obj = np.asarray(input_array).astype(np.float32, copy=False).view(cls)
-        obj.header = header
-        for key, value in kwargs.items():
-            setattr(obj, key, value)
-        return obj
-
-    def __array_finalize__(self, obj):
-        """This method ensures creation of default values for objects in all ways including views on the array."""
-        if obj is None:
-            return
-        self.header = getattr(obj, "header", None)
-        if hasattr(obj, "__dict__"):  # noqa: WPS421
-            for attr, value in vars(obj).items():  # noqa: WPS421
-                setattr(self, attr, value)
 
 
 def roll_array(arr: npt.ArrayLike, shift: int, axis: int) -> np.ndarray:

@@ -1,6 +1,10 @@
 from __future__ import annotations
 import numpy as np
 
+from astropy.modeling.models import Box1D, Gaussian1D, Lorentz1D
+from astropy.convolution import convolve_fft
+from astropy.convolution.kernels import Model1DKernel
+
 from typing import Optional, Tuple
 from numpy import typing as npt
 
@@ -21,10 +25,6 @@ class PulseProfile(np.ndarray):
     -------
     :py:obj:`numpy.ndarray`
         1 dimensional array of shape (nsamples) with header metadata
-
-    Notes
-    -----
-    Data is converted to 32 bits regardless of original type.
     """
 
     def __new__(cls, input_array: npt.ArrayLike, header: Header) -> PulseProfile:
@@ -69,35 +69,110 @@ class PulseProfile(np.ndarray):
         quantiles = np.quantile(self, [0.25, 0.75])
         return np.diff(quantiles)[0] / 1.3489795003921634  # noqa:WPS432
 
-    @property
-    def on_pulse(self) -> Tuple[int, int]:
-        """Best match boxcar pulse region (`Tuple[int, int]`, read-only)."""
-        return (self._boxcar_start, self._boxcar_start + self._boxcar_width)
+    def normalize(self) -> PulseProfile:
+        norm_prof = (self - self.mu) / self.std
+        return norm_prof.view(PulseProfile)
 
-    @property
-    def best_width(self) -> int:
-        """Best match boxcar width in bins (`int`, read-only)."""
-        return self._boxcar_width
+    def box_snr(self, on_pulse: Tuple[int, int]) -> float:
+        """Calculate Signal-to-noise ratio for the given pulse region.
+
+        Parameters
+        ----------
+        on_pulse : Tuple[int, int]
+            start and end bins of pulse
+
+        Returns
+        -------
+        float
+            Signal-to-noise ratio
+        """
+        return get_box_snr(self, on_pulse, mu_baseline=self.mu, std_baseline=self.std)
+
+    def fit_template(self, widths, kind="boxcar"):
+        return MatchedFilter(self, widths, kind=kind)
+
+
+class MatchedFilter(object):
+    def __init__(
+        self, profile: npt.ArrayLike, widths: npt.ArrayLike, kind="boxcar"
+    ) -> None:
+        self._profile = np.array(profile, dtype=np.float32)
+        self._widths = np.array(widths)
+        self._kind = kind
+
+        # Generate a list of pulse templates
+        temps, temp_ref_bins = zip(
+            *[get_template(iwidth, kind=self._kind) for iwidth in self._widths]
+        )
+
+        # templates are already normalized
+        convs = np.array(
+            [convolve_fft(self._profile, temp, normalize_kernel=False) for temp in temps]
+        )
+
+        itemp, ibin = np.unravel_index(convs.argmax(), convs.shape)
+        self._peak_bin = ibin
+        self._best_temp = temps[itemp]
+        self._best_snr = convs[itemp, ibin]
+        self._best_width = self._widths[itemp]
+
+        temp_ref_bin = temp_ref_bins[itemp]
+        best_temp_padded = np.pad(
+            self._best_temp.array, (0, self._profile.size - self._best_temp.array.size)
+        )
+        self._best_model = (
+            np.roll(best_temp_padded, self._peak_bin - temp_ref_bin) * self._best_snr
+        )
 
     @property
     def snr(self) -> float:
-        """Signal-to-noise based on best match boxcar on pulse."""
-        return get_box_snr(self, self.on_pulse)
+        """Signal-to-noise ratio based on best match template on pulse."""
+        return self._best_snr
 
-    def _boxcar_match(self):
-        prof_ar = self.copy()
-        prof_ar = (prof_ar - self.mu) / self.std
-        box_widths = np.arange(1, self.nbins)
-        templates = []
-        for iwidth in box_widths:
-            temp = np.ones(iwidth) / np.sqrt(iwidth)
-            temp_pad = np.pad(temp, (0, self.nbins - temp.size))
-            templates.append(temp_pad)
+    @property
+    def best_model(self) -> np.ndarray:
+        """Best match template fit (`np.ndarray`, read-only)."""
+        return self._best_model
 
-        convs = np.fft.irfft(np.fft.rfft(prof_ar) * np.fft.rfft(templates))
-        itemp, ibin = np.unravel_index(convs.argmax(), convs.shape)
-        self._boxcar_width = box_widths[itemp]
-        self._boxcar_start = ibin
+    @property
+    def best_width(self):
+        """Best match template width in bins (`int`, read-only)."""
+        return self._best_width
+
+    @property
+    def peak_bin(self) -> int:
+        """Best match template peak bin (`int`, read-only)."""
+        return self._peak_bin
+
+    @property
+    def on_pulse(self):
+        """Best match template pulse region (`Tuple[int, int]`, read-only)."""
+        return (
+            self._peak_bin - round(self._best_width // 2),
+            self._peak_bin + round(self._best_width // 2),
+        )
+
+
+def get_template(width, kind="boxcar"):
+    if kind == "boxcar":
+        norm = 1 / np.sqrt(width)
+        temp = Model1DKernel(Box1D(norm, 0, width), x_size=width)
+        ref_bin = temp.center
+    elif kind == "gaussian":
+        stddev = width / (2 * np.sqrt(2 * np.log(2)))
+        norm = 1 / (np.sqrt(np.sqrt(np.pi) * stddev))
+        size = np.ceil(8 * stddev) // 2 * 2 + 1  # Round up to odd_integer
+        temp = Model1DKernel(Gaussian1D(norm, 0, stddev), x_size=int(size))
+        ref_bin = temp.center
+    elif kind == "lorentzian":
+        stddev = width / (2 * np.sqrt(2 * np.log(2)))
+        norm = 1 / (np.sqrt((np.pi * width) / 4))
+        size = np.ceil(8 * stddev) // 2 * 2 + 1  # Round up to odd_integer
+        temp = Model1DKernel(Lorentz1D(norm, 0, width), x_size=int(size))
+        ref_bin = temp.center
+    else:
+        raise ValueError(f"{kind} not implemented yet.")
+    return temp, ref_bin
 
 
 def get_box_snr(

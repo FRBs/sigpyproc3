@@ -5,11 +5,36 @@ from numpy import typing as npt
 
 from sigpyproc.profile import PulseProfile
 from sigpyproc.Header import Header, DM_CONSTANT_LK
-from sigpyproc.Utils import InfoArray, roll_array
+from sigpyproc.Utils import roll_array
 
 
-class FoldSlice(InfoArray):
-    """Class to handle a 2-D slice of a :class:`~sigpyproc.FoldedData.FoldedData` instance."""
+class FoldSlice(np.ndarray):
+    """An array class to handle a 2-D slice of :class:`~sigpyproc.FoldedData.FoldedData`.
+
+    Parameters
+    ----------
+    input_array : npt.ArrayLike
+        2-D array with phase in x axis.
+    header : Header
+        observational metadata
+
+    Returns
+    -------
+    :py:obj:`numpy.ndarray`
+        1 dimensional time series with header
+
+    """
+
+    def __new__(cls, input_array: npt.ArrayLike, header: Header) -> FoldSlice:
+        """Create a new FoldSlice array."""
+        obj = np.asarray(input_array).astype(np.float32, copy=False).view(cls)
+        obj.header = header
+        return obj
+
+    def __array_finalize__(self, obj):
+        if obj is None:
+            return
+        self.header = getattr(obj, "header", None)
 
     def normalize(self) -> FoldSlice:
         """Normalise the slice by dividing each row by its mean.
@@ -32,42 +57,57 @@ class FoldSlice(InfoArray):
         return self.sum(axis=0).view(PulseProfile)
 
 
-class FoldedData(InfoArray):
-    """3-D array of folded data with header metadata produced by any of the sigpyproc folding methods."""
+class FoldedData(np.ndarray):
+    """An array class to handle a data cube produced by any of the folding methods.
 
-    def __init__(
-        self,
+    Parameters
+    ----------
+    input_array : npt.ArrayLike
+        3-D array of folded data
+    header : Header
+        observational metadata
+    period : float
+        period that data was folded with
+    dm : float
+        DM that data was folded with
+    accel : float, optional
+        accleration that data was folded with, by default 0
+
+    Returns
+    -------
+    :py:obj:`numpy.ndarray`
+        3-D array of folded data with header metadata
+
+    Notes
+    -----
+    Input array should have the shape:
+    (number of subintegrations, number of subbands, number of profile bins)
+    """
+
+    def __new__(
+        cls,
         input_array: npt.ArrayLike,
         header: Header,
         period: float,
         dm: float,
         accel: float = 0,
-    ) -> None:
-        """Construct Folded Data cube.
+    ):
+        """Construct Folded Data cube."""
+        obj = np.asarray(input_array).astype(np.float32, copy=False).view(cls)
+        obj.header = header
+        obj.period = period
+        obj.dm = dm
+        obj.accel = accel
+        obj._set_defaults()
+        return obj
 
-        Parameters
-        ----------
-        input_array : npt.ArrayLike
-            3-D array of folded data
-        header : Header
-            observational metadata
-        period : float
-            period that data was folded with
-        dm : float
-            DM that data was folded with
-        accel : float, optional
-            accleration that data was folded with, by default 0
-
-        Notes
-        -----
-        Input array should have the shape:
-        (number of subintegrations, number of subbands, number of profile bins)
-        """
-        self._period = period
-        self._dm = dm
-        self._accel = accel
-        self._tph_shifts = np.zeros(self.nints, dtype="int32")
-        self._fph_shifts = np.zeros(self.nbands, dtype="int32")
+    def __array_finalize__(self, obj):
+        if obj is None:
+            return
+        self.header = getattr(obj, "header", None)
+        self.period = getattr(obj, "period", None)
+        self.dm = getattr(obj, "dm", None)
+        self.accel = getattr(obj, "accel", None)
 
     @property
     def nints(self) -> int:
@@ -83,63 +123,6 @@ class FoldedData(InfoArray):
     def nbins(self) -> int:
         """Number of bins in the data cube(`int`, read-only)."""
         return self.shape[2]
-
-    @property
-    def dm(self) -> float:
-        """DM of the data cube (`float`, read-only)."""
-        return self._dm
-
-    @dm.setter
-    def dm(self, dm: float) -> None:
-        """Install a new DM in the data cube.
-
-        Parameters
-        ----------
-        dm : [type]
-            the new DM to dedisperse to
-        """
-        dmdelays = self._get_dmdelays(dm)
-        for iint in range(self.nints):
-            for iband in range(self.nbands):
-                self[iint][iband] = roll_array(self[iint][iband], dmdelays[iband], 0)
-        self._dm = dm
-        self.header.refdm = dm
-
-    @property
-    def period(self) -> float:
-        """Folding period of the data cube (`float`, read-only)."""
-        return self._period
-
-    @period.setter
-    def period(self, period: float) -> None:
-        """Install a new folding period in the data cube.
-
-        Parameters
-        ----------
-        period : [type]
-            the new period to fold with
-        """
-        pdelays = self._get_pdelays(period)
-        for iint in range(self.nints):
-            for iband in range(self.nbands):
-                self[iint][iband] = roll_array(self[iint][iband], pdelays[iint], 0)
-        self._period = period
-        self.header.period = period
-
-    @property
-    def accel(self) -> float:
-        """DM of the data cube (`float`, read-only)."""
-        return self._accel
-
-    def get_centred(self) -> FoldedData:
-        """Return the data cube with to pulse in the center."""
-        prof = self.get_profile()
-        on_pulse = prof.on_pulse
-        peak = (on_pulse[0] + on_pulse[1]) // 2
-        arr = roll_array(self, (peak - self.nbins // 2), 2)
-        return FoldedData(
-            arr, header=self.header, period=self.period, dm=self.dm, accel=self.accel
-        )
 
     def get_subint(self, nint: int) -> FoldSlice:
         """Return a single subintegration from the data cube.
@@ -200,6 +183,49 @@ class FoldedData(InfoArray):
             a 2-D array containing the frequency vs. phase plane
         """
         return self.sum(axis=0).view(FoldSlice)
+
+    def centre(self) -> FoldedData:
+        """Roll the data cube to center the pulse."""
+        prof = self.get_profile()
+        on_pulse = prof.on_pulse
+        peak = (on_pulse[0] + on_pulse[1]) // 2
+        return roll_array(self, (peak - self.nbins // 2), 2).view(FoldedData)
+
+    def update_dm(self, dm: float) -> None:
+        """Install a new DM in the data cube.
+
+        Parameters
+        ----------
+        dm : float
+            the new DM to dedisperse to
+        """
+        dmdelays = self._get_dmdelays(dm)
+        for iint in range(self.nints):
+            for iband in range(self.nbands):
+                self[iint][iband] = roll_array(self[iint][iband], dmdelays[iband], 0)
+        self.dm = dm
+        self.header.refdm = dm
+
+    def update_period(self, period: float) -> None:
+        """Install a new folding period in the data cube.
+
+        Parameters
+        ----------
+        period : float
+            the new period to fold with
+        """
+        pdelays = self._get_pdelays(period)
+        for iint in range(self.nints):
+            for iband in range(self.nbands):
+                self[iint][iband] = roll_array(self[iint][iband], pdelays[iint], 0)
+        self.period = period
+
+    def _set_defaults(self) -> None:
+        self._period = self.period
+        self._dm = self.dm
+        self._accel = self.accel
+        self._tph_shifts = np.zeros(self.nints, dtype="int32")
+        self._fph_shifts = np.zeros(self.nbands, dtype="int32")
 
     def _get_dmdelays(self, newdm: float) -> np.ndarray:
         delta_dm = newdm - self._dm

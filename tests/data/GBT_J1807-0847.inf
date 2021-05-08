@@ -1,0 +1,25 @@
+ Data file name without suffix          =  GBT_J1807-0847
+ Telescope used                         =  GBT
+ Instrument used                        =  VEGAS
+ Object being observed                  =  J1807-0847
+ J2000 Right Ascension (hh:mm:ss.ssss)  =  18:07:37.9999
+ J2000 Declination     (dd:mm:ss.ssss)  =  -08:47:43.7463
+ Data observed by                       =  unset
+ Epoch of observation (MJD)             =  59313.309837974340741
+ Barycentered?           (1 yes, 0 no)  =  0
+ Number of bins in the time series      =  131072     
+ Width of each time series bin (sec)    =  0.00016384
+ Any breaks in the data? (1 yes, 0 no)  =  0
+ Type of observation (EM band)          =  Radio
+ Beam diameter (arcsec)                 =  234000
+ Dispersion measure (cm-3 pc)           =  112.3802
+ Central freq of low channel (MHz)      =  720.78125
+ Total bandwidth (MHz)                  =  200
+ Number of channels                     =  256
+ Channel bandwidth (MHz)                =  0.78125
+ Data analyzed by                       =  pkumar
+ Any additional notes:
+    Project ID unset, Date: 2021-04-09T07:26:10.001.
+    4 polns were not summed.  Samples have 8 bits.
+
+
