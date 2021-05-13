@@ -72,9 +72,7 @@ class FilReader(Filterbank):
         """Sample size in input data (`int`, read-only)."""
         return self.header.nchans * self.bitsinfo.itemsize // self.bitsinfo.bitfact
 
-    def read_block(
-        self, start: int, nsamps: int, as_filterbank_block: bool = True
-    ) -> Union[FilterbankBlock, np.ndarray]:
+    def read_block(self, start: int, nsamps: int) -> FilterbankBlock:
         """Read a block of filterbank data.
 
         Parameters
@@ -83,12 +81,10 @@ class FilReader(Filterbank):
             first time sample of the block to be read
         nsamps : int
             number of samples in the block (i.e. block will be nsamps*nchans in size)
-        as_filterbank_block : bool, optional
-            whether to read data as filterbankBlock or numpy array, by default True
 
         Returns
         -------
-        :class:`~sigpyproc.Filterbank.FilterbankBlock` or :py:obj:`numpy.ndarray`
+        :class:`~sigpyproc.Filterbank.FilterbankBlock`
             2-D array of filterbank data
         """
         self._file.seek(start * self.sampsize)
@@ -97,18 +93,15 @@ class FilReader(Filterbank):
         data = data.reshape(nsamps_read, self.header.nchans).transpose()
         start_mjd = self.header.mjd_after_nsamps(start)
         new_header = self.header.new_header({"tstart": start_mjd})
-        if as_filterbank_block:
-            return FilterbankBlock(data, new_header)
-        return data
+        return FilterbankBlock(data, new_header)
 
     def read_dedispersed_block(
         self,
         start: int,
         nsamps: int,
         dm: float,
-        as_filterbank_block: bool = True,
         small_reads: bool = True,
-    ) -> Union[FilterbankBlock, np.ndarray]:
+    ) -> FilterbankBlock:
         """Read a block of dedispersed filterbank data.
 
         Best used in cases where I/O time dominates reading a block of data.
@@ -121,24 +114,22 @@ class FilReader(Filterbank):
             number of samples in the block (i.e. block will be nsamps*nchans in size)
         dm : float
             dispersion measure to dedisperse at
-        as_filterbank_block : bool, optional
-            whether to read data as filterbankBlock or numpy array, by default True
         small_reads : bool, optional
             if the datum size is greater than 1 byte, only read the data needed
             instead of every frequency of every sample, by default True
 
         Returns
         -------
-        :class:`~sigpyproc.Filterbank.FilterbankBlock` or :py:obj:`numpy.ndarray`
+        :class:`~sigpyproc.Filterbank.FilterbankBlock`
             2-D array of filterbank data
         """
         data = np.zeros((self.header.nchans, nsamps), dtype=self._file.dtype)
-        min_sample = start + self.header.getDMdelays(dm)
+        min_sample = start + self.header.get_dmdelays(dm)
         max_sample = min_sample + nsamps
         curr_sample = np.zeros(self.header.nchans, dtype=int)
 
-        start_mjd = self.header.mjdAfterNsamps(start)
-        new_header = self.header.newHeader({"tstart": start_mjd})
+        start_mjd = self.header.mjd_after_nsamps(start)
+        new_header = self.header.new_header({"tstart": start_mjd})
 
         lowest_chan, highest_chan, sample_offset = (0, 0, start)
         with Progress() as progress:
@@ -183,10 +174,8 @@ class FilReader(Filterbank):
 
                 progress.update(task, advance=read_length)
 
-        if as_filterbank_block:
-            data = FilterbankBlock(data, new_header)
-            data.dm = dm
-            return data
+        data = FilterbankBlock(data, new_header)
+        data.dm = dm
         return data
 
     def read_plan(

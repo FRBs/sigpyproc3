@@ -3,9 +3,71 @@ import numpy as np
 
 from numpy import typing as npt
 
-from sigpyproc.profile import PulseProfile
 from sigpyproc.Header import Header, DM_CONSTANT_LK
 from sigpyproc.Utils import roll_array
+
+
+class Profile(np.ndarray):
+    """An array class to handle a 1-D pulse profile.
+
+    Parameters
+    ----------
+    input_array : npt.ArrayLike
+        1-D array of a pulse profile
+
+    Returns
+    -------
+    :py:obj:`numpy.ndarray`
+        Pulse profile
+    """
+
+    def __new__(cls, input_array: npt.ArrayLike) -> Profile:
+        """Create a new 1D Pulse profile."""
+        return np.asarray(input_array).astype(np.float32, copy=False).view(cls)
+
+    def __array_finalize__(self, obj):
+        if obj is None:
+            return
+
+    def snr(self):
+        """Calculate a rudimentary Signal-to-noise ratio for the profile.
+
+        Returns
+        -------
+        float
+            Signal-to-noise ratio
+
+        Notes
+        -----
+        This is a bare-bones, quick-n'-dirty algorithm that should not be used for
+        high quality signal-to-noise measurements.
+        """
+        tmp_ar = self.copy()
+        width = self._get_width()
+        baseline = self._get_baseline(width)
+        tmp_ar -= baseline.mean()
+        tmp_ar /= baseline.std()
+        return float(tmp_ar.sum() / np.sqrt(width))
+
+    def _get_width(self):
+        tmp_ar = self.copy()
+        tmp_ar -= np.median(tmp_ar)
+        trial_widths = np.arange(1, tmp_ar.size)
+        convmaxs = np.array(
+            [
+                np.convolve(np.ones(ii), tmp_ar, mode="same").max() / np.sqrt(ii)
+                for ii in trial_widths
+            ]
+        )
+        return trial_widths[convmaxs.argmax()]
+
+    def _get_position(self, width):
+        return np.convolve(np.ones(width), self, mode="same").argmax()
+
+    def _get_baseline(self, width):
+        pos = self._get_position(width)
+        wing = np.ceil(width / 2.0)
+        return np.hstack((self[: pos - wing], self[pos + wing + 1 :]))
 
 
 class FoldSlice(np.ndarray):
@@ -15,26 +77,21 @@ class FoldSlice(np.ndarray):
     ----------
     input_array : npt.ArrayLike
         2-D array with phase in x axis.
-    header : Header
-        observational metadata
 
     Returns
     -------
     :py:obj:`numpy.ndarray`
-        1 dimensional time series with header
+        2-D array array
 
     """
 
-    def __new__(cls, input_array: npt.ArrayLike, header: Header) -> FoldSlice:
+    def __new__(cls, input_array: npt.ArrayLike) -> FoldSlice:
         """Create a new FoldSlice array."""
-        obj = np.asarray(input_array).astype(np.float32, copy=False).view(cls)
-        obj.header = header
-        return obj
+        return np.asarray(input_array).astype(np.float32, copy=False).view(cls)
 
     def __array_finalize__(self, obj):
         if obj is None:
             return
-        self.header = getattr(obj, "header", None)
 
     def normalize(self) -> FoldSlice:
         """Normalise the slice by dividing each row by its mean.
@@ -46,7 +103,7 @@ class FoldSlice(np.ndarray):
         """
         return self / self.mean(axis=1).reshape(self.shape[0], 1)
 
-    def get_profile(self) -> PulseProfile:
+    def get_profile(self) -> Profile:
         """Return the pulse profile from the slice.
 
         Returns
@@ -54,7 +111,7 @@ class FoldSlice(np.ndarray):
         :class:`~sigpyproc.FoldedData.Profile`
             a pulse profile
         """
-        return self.sum(axis=0).view(PulseProfile)
+        return self.sum(axis=0).view(Profile)
 
 
 class FoldedData(np.ndarray):
@@ -154,7 +211,7 @@ class FoldedData(np.ndarray):
         """
         return self[:, nint].view(FoldSlice)
 
-    def get_profile(self) -> PulseProfile:
+    def get_profile(self) -> Profile:
         """Return a the data cube summed in time and frequency.
 
         Returns
@@ -162,7 +219,7 @@ class FoldedData(np.ndarray):
         :class:`~sigpyproc.FoldedData.Profile`
             a 1-D array containing the power as a function of phase (pulse profile)
         """
-        return self.sum(axis=0).sum(axis=0).view(PulseProfile)
+        return self.sum(axis=0).sum(axis=0).view(Profile)
 
     def get_time_phase(self) -> FoldSlice:
         """Return the data cube collapsed in frequency.
@@ -187,9 +244,13 @@ class FoldedData(np.ndarray):
     def centre(self) -> FoldedData:
         """Roll the data cube to center the pulse."""
         prof = self.get_profile()
-        on_pulse = prof.on_pulse
-        peak = (on_pulse[0] + on_pulse[1]) // 2
-        return roll_array(self, (peak - self.nbins // 2), 2).view(FoldedData)
+        pos = prof._get_position(prof._get_width())
+        return roll_array(self, (pos - self.nbins // 2), 2).view(FoldedData)
+
+    def replace_nan(self):
+        bad_ids = np.where(np.isnan(self))
+        good_ids = np.where(np.isfinite(self))
+        self[bad_ids] = np.median(self[good_ids])
 
     def update_dm(self, dm: float) -> None:
         """Install a new DM in the data cube.

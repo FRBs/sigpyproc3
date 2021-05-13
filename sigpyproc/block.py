@@ -3,7 +3,6 @@ import numpy as np
 from numpy import typing as npt
 
 from sigpyproc.Header import Header
-from sigpyproc.profile import PulseProfile
 from sigpyproc.TimeSeries import TimeSeries
 from sigpyproc.Utils import roll_array
 from sigpyproc import libSigPyProc as lib
@@ -133,17 +132,6 @@ class FilterbankBlock(np.ndarray):
         """
         ts = self.sum(axis=0)
         return TimeSeries(ts, self.header.new_header())
-
-    def get_profile(self) -> PulseProfile:
-        """Sum across all frequencies for each time sample.
-
-        Returns
-        -------
-        PulseProfile
-            1-D pulse profile
-        """
-        ts = self.sum(axis=0)
-        return PulseProfile(ts, self.header.new_header())
 
     def get_bandpass(self) -> npt.ArrayLike:
         """Average across each time sample for all frequencies.
