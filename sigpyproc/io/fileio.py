@@ -3,9 +3,9 @@ import os
 import warnings
 import numpy as np
 
-from sigpyproc import libSigPyProc as lib
-from sigpyproc import HeaderParams as conf
-from sigpyproc.Utils import get_logger
+from sigpyproc import libcpp
+from sigpyproc.io.bits import BitsInfo
+from sigpyproc.utils import get_logger
 
 
 class _FileBase(object):
@@ -44,7 +44,7 @@ class FileReader(_FileBase):
         self.hdrlens = hdrlens
         self.datalens = datalens
         self.nbits = nbits
-        self.bitsinfo = conf.bits_info[nbits]
+        self.bitsinfo = BitsInfo(nbits)
         self._configure_logger()
 
         super().__init__(files, mode)
@@ -85,7 +85,7 @@ class FileReader(_FileBase):
 
         data = np.concatenate(data)
         if self.bitsinfo.unpack:
-            return lib.unpack(data, self.nbits)
+            return libcpp.unpack(data, self.nbits)
         return data
 
     def seek(self, offset, whence=0):
@@ -158,7 +158,7 @@ class FileWriter(_FileBase):
         super().__init__([file], mode)
         self.name = file
         self.nbits = nbits
-        self.bitsinfo = conf.bits_info[nbits]
+        self.bitsinfo = BitsInfo(nbits)
         self.quantize = quantize
 
         if self.quantize:
@@ -212,7 +212,7 @@ class FileWriter(_FileBase):
         # is, say 2-bit, then the output will be garbage, hence the casting above is
         # necessary.
         if self.bitsinfo.unpack:
-            packed = lib.pack(ar, self.nbits)
+            packed = libcpp.pack(ar, self.nbits)
             packed.tofile(self.file_obj)
         else:
             ar.tofile(self.file_obj)
