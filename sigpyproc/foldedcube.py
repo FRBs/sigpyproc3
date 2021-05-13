@@ -3,8 +3,8 @@ import numpy as np
 
 from numpy import typing as npt
 
-from sigpyproc.Header import Header, DM_CONSTANT_LK
-from sigpyproc.Utils import roll_array
+from sigpyproc.header import Header, DM_CONSTANT_LK
+from sigpyproc.utils import roll_array
 
 
 class Profile(np.ndarray):

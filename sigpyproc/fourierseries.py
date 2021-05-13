@@ -5,10 +5,10 @@ import numpy as np
 from typing import Optional, Tuple, List
 from numpy import typing as npt
 
-from sigpyproc import TimeSeries
-from sigpyproc.Header import Header
-from sigpyproc.profile import PulseProfile
-from sigpyproc import libSigPyProc as lib
+from sigpyproc import timeseries
+from sigpyproc.header import Header
+from sigpyproc.foldedcube import Profile
+from sigpyproc import libcpp  # type: ignore
 
 
 class PowerSpectrum(np.ndarray):
@@ -135,7 +135,7 @@ class PowerSpectrum(np.ndarray):
                 [(kk * nfoldi + nharm // 2) / nharm for kk in range(1, nharm, 2)]
             ).astype("int32")
 
-            lib.sumHarms(self, sum_ar, harm_ar, facts_ar, nharm, self.size, nfoldi)
+            libcpp.sum_harms(self, sum_ar, harm_ar, facts_ar, nharm, self.size, nfoldi)
 
             new_header = self.header.newHeader({"tsamp": self.header.tsamp * nharm})
             folds.append(PowerSpectrum(sum_ar, new_header))
@@ -173,25 +173,25 @@ class FourierSeries(np.ndarray):
         if isinstance(other, FourierSeries):
             if other.size != self.size:
                 raise ValueError("Instances must be the same size")
-            out_ar = lib.multiply_fs(self, other, self.size)
+            out_ar = libcpp.multiply_fs(self, other, self.size)
             return FourierSeries(out_ar, self.header.new_header())
         return super().__mul__(other)
 
     def __rmul__(self, other: FourierSeries) -> FourierSeries:  # type: ignore[override]
         return self.__mul__(other)
 
-    def ifft(self) -> TimeSeries.TimeSeries:
+    def ifft(self) -> timeseries.TimeSeries:
         """Perform 1-D complex to real inverse FFT using FFTW3.
 
         Returns
         -------
-        TimeSeries.TimeSeries
+        timeseries.TimeSeries
             a time series
         """
         fftsize = self.size - 2
-        tim_ar = lib.irfft(self, fftsize)
+        tim_ar = libcpp.irfft(self, fftsize)
         tim_ar *= 1.0 / fftsize
-        return TimeSeries.TimeSeries(tim_ar, self.header.new_header())
+        return timeseries.TimeSeries(tim_ar, self.header.new_header())
 
     def conjugate(self) -> FourierSeries:
         """Conjugate of the Fourier series.
@@ -206,7 +206,7 @@ class FourierSeries(np.ndarray):
         Function assumes that the Fourier series is the non-conjugated
         product of a real to complex FFT.
         """
-        out_ar = lib.conjugate(self, self.size)
+        out_ar = libcpp.conjugate(self, self.size)
         return FourierSeries(out_ar, self.header.new_header())
 
     def form_spec(self, interpolated: bool = True) -> PowerSpectrum:
@@ -223,7 +223,7 @@ class FourierSeries(np.ndarray):
             a power spectrum
         """
         specsize = self.size // 2
-        spec_ar = lib.formSpec(self, specsize, interpolated=interpolated)
+        spec_ar = libcpp.form_spec(self, specsize, interpolated=interpolated)
         return PowerSpectrum(spec_ar, self.header.new_header())
 
     def rednoise(
@@ -248,7 +248,7 @@ class FourierSeries(np.ndarray):
         buf_c1 = np.empty(2 * endwidth, dtype="float32")
         buf_c2 = np.empty(2 * endwidth, dtype="float32")
         buf_f1 = np.empty(endwidth, dtype="float32")
-        out_ar = lib.rednoise(
+        out_ar = libcpp.rednoise(
             self,
             buf_c1,
             buf_c2,
@@ -261,7 +261,7 @@ class FourierSeries(np.ndarray):
         )
         return FourierSeries(out_ar, self.header.new_header())
 
-    def recon_prof(self, freq: float, nharms: int = 32) -> PulseProfile:
+    def recon_prof(self, freq: float, nharms: int = 32) -> Profile:
         """Reconstruct the time domain pulse profile from a signal and its harmonics.
 
         Parameters
@@ -273,7 +273,7 @@ class FourierSeries(np.ndarray):
 
         Returns
         -------
-        PulseProfile
+        Profile
             a pulse profile
         """
         bin_ = freq * self.header.tobs
@@ -281,7 +281,7 @@ class FourierSeries(np.ndarray):
         imag_ids = real_ids + 1
         harms = self[real_ids] + 1j * self[imag_ids]
         harm_ar = np.hstack((harms, np.conj(harms[1:][::-1])))
-        return PulseProfile(np.absolute(np.fft.ifft(harm_ar)), header=self.header)
+        return Profile(np.absolute(np.fft.ifft(harm_ar)))
 
     def to_file(self, filename: Optional[str] = None) -> str:
         """Write spectrum to file in sigpyproc format.

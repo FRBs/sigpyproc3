@@ -25,8 +25,6 @@ def get_include_dirs():
     prefix_dirs = ["/usr", "/usr/local"]
     dirs = []
     sys_include = sysconfig.get_config_var("INCLUDEDIR")
-    if "FFTW_PATH" in os.environ:
-        append_path(dirs, os.environ.get("FFTW_PATH", ""), "include")
     if sys_include is not None:
         append_path(dirs, sys_include, TRIPLET)
         append_path(dirs, sys_include)
@@ -40,8 +38,6 @@ def get_library_dirs():
     prefix_dirs = ["/usr", "/usr/local"]
     dirs = []
     sys_lib = sysconfig.get_config_var("LIBDIR")
-    if "FFTW_PATH" in os.environ:
-        append_path(dirs, os.environ.get("FFTW_PATH", ""), "lib")
     if sys_lib is not None:
         append_path(dirs, sys_lib, TRIPLET)
         append_path(dirs, sys_lib)
@@ -62,7 +58,7 @@ def get_compile_flags():
 
 
 def get_link_flags():
-    lflags = ["-lm", "-lfftw3", "-lfftw3f"]
+    lflags = ["-lm"]
     if MACOS:
         lflags += ["-lomp"]
     else:
@@ -81,9 +77,9 @@ def get_link_flags():
 
 ext_modules = [
     Pybind11Extension(
-        "sigpyproc.libSigPyProc",
-        sources=["c_src/bindings.cpp"],
-        include_dirs=get_include_dirs() + ["c_src/"],
+        "sigpyproc.libcpp",
+        sources=["sigpyproc/cpp/bindings.cpp"],
+        include_dirs=get_include_dirs(),
         library_dirs=get_library_dirs(),
         extra_link_args=get_link_flags(),
         extra_compile_args=get_compile_flags(),

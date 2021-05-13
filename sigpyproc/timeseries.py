@@ -5,10 +5,10 @@ import numpy as np
 from typing import Optional, Tuple, Union
 from numpy import typing as npt
 
-from sigpyproc import FoldedData
-from sigpyproc import FourierSeries
-from sigpyproc.Header import Header
-from sigpyproc import libSigPyProc as lib
+from sigpyproc import foldedcube
+from sigpyproc import fourierseries
+from sigpyproc.header import Header
+from sigpyproc import libcpp  # type: ignore
 
 
 class TimeSeries(np.ndarray):
@@ -70,7 +70,7 @@ class TimeSeries(np.ndarray):
             raise ValueError("nbins x nints is too large for length of data")
         fold_ar = np.zeros(nbins * nints, dtype="float64")
         count_ar = np.zeros(nbins * nints, dtype="int32")
-        lib.foldTim(
+        libcpp.fold_tim(
             self,
             fold_ar,
             count_ar,
@@ -83,11 +83,11 @@ class TimeSeries(np.ndarray):
         )
         fold_ar /= count_ar
         fold_ar = fold_ar.reshape(nints, 1, nbins)
-        return FoldedData.FoldedData(
+        return foldedcube.FoldedData(
             fold_ar, self.header.new_header(), period, self.header.refdm, accel
         )
 
-    def rfft(self) -> FourierSeries.FourierSeries:
+    def rfft(self) -> fourierseries.FourierSeries:
         """Perform 1-D real to complex forward FFT using FFTW3.
 
         Returns
@@ -100,7 +100,7 @@ class TimeSeries(np.ndarray):
         else:
             fftsize = self.size - 1
         fft_ar = lib.rfft(self, fftsize)
-        return FourierSeries.FourierSeries(fft_ar, self.header.new_header())
+        return fourierseries.FourierSeries(fft_ar, self.header.new_header())
 
     def running_mean(self, window: int = 10001) -> TimeSeries:
         """Filter time series with a running mean.
@@ -127,7 +127,7 @@ class TimeSeries(np.ndarray):
         """
         if window < 1:
             raise ValueError("incorrect window size")
-        tim_ar = lib.runningMean(self, window, self.size)
+        tim_ar = libcpp.running_mean(self, window, self.size)
         return tim_ar.view(TimeSeries)
 
     def running_median(self, window: int = 10001) -> TimeSeries:
@@ -147,7 +147,7 @@ class TimeSeries(np.ndarray):
         -----
         Window edges will be dealt with only at the start of the time series.
         """
-        tim_ar = lib.runningMedian(self, window, self.size)
+        tim_ar = libcpp.running_median(self, window, self.size)
         return tim_ar.view(TimeSeries)
 
     def apply_boxcar(self, width: int) -> TimeSeries:
@@ -168,7 +168,7 @@ class TimeSeries(np.ndarray):
         Time series returned is of size nsamples-width with width/2
         removed from either end.
         """
-        tim_ar = lib.runBoxcar(self, width, self.size)
+        tim_ar = libcpp.run_boxcar(self, width, self.size)
         return tim_ar.view(TimeSeries)
 
     def downsample(self, factor: int) -> TimeSeries:
@@ -191,7 +191,7 @@ class TimeSeries(np.ndarray):
         if factor == 1:
             return self
         newlen = self.size // factor
-        tim_ar = lib.downsampleTim(self, factor, newlen)
+        tim_ar = libcpp.downsample_tim(self, factor, newlen)
         return TimeSeries(
             tim_ar, self.header.new_header({"tsamp": self.header.tsamp * factor})
         )
@@ -232,7 +232,7 @@ class TimeSeries(np.ndarray):
         else:
             new_size = self.size
         out_ar = np.zeros(new_size, dtype="float32")
-        lib.resample(self, out_ar, new_size, accel, self.header.tsamp)
+        libcpp.resample(self, out_ar, new_size, accel, self.header.tsamp)
 
         new_header = self.header.new_header({"nsamples": out_ar.size, "accel": accel})
         return TimeSeries(out_ar, new_header)

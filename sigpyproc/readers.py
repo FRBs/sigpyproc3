@@ -5,9 +5,9 @@ from typing import Union, Optional, Generator, List, Tuple
 from rich.progress import track, Progress
 
 from sigpyproc.io.fileio import FileReader
-from sigpyproc.Header import Header
-from sigpyproc.HeaderParams import BitsInfo
-from sigpyproc.Filterbank import Filterbank
+from sigpyproc.header import Header
+from sigpyproc.params import BitsInfo
+from sigpyproc.base import Filterbank
 from sigpyproc.block import FilterbankBlock
 
 

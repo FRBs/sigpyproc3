@@ -2,17 +2,15 @@
 
 #include <cmath>
 #include <omp.h>
-#include <fftw3.h>
-#include <complex.h>
 
-#include "utils.hpp"
+#include "stats.hpp"
 
 /*----------------------------------------------------------------------------*/
 
 namespace sigpyproc {
 
 template <typename T>
-void running_Median(T* inbuffer, T* outbuffer, int window, int nsamps) {
+void running_median(T* inbuffer, T* outbuffer, int window, int nsamps) {
     T* arrayWithBoundary = addBoundary<T>(inbuffer, window, nsamps);
     int outSize          = nsamps + (window / 2) * 2;
 
@@ -32,7 +30,7 @@ void running_Median(T* inbuffer, T* outbuffer, int window, int nsamps) {
 }
 
 template <class T>
-void running_Mean(T* inbuffer, float* outbuffer, int window, int nsamps) {
+void running_mean(T* inbuffer, float* outbuffer, int window, int nsamps) {
     T* arrayWithBoundary = addBoundary<T>(inbuffer, window, nsamps);
     int outSize          = nsamps + (window / 2) * 2;
 
@@ -54,7 +52,7 @@ void running_Mean(T* inbuffer, float* outbuffer, int window, int nsamps) {
     delete[] arrayWithBoundary;
 }
 
-void runBoxcar(float* inbuffer, float* outbuffer, int window, int nsamps) {
+void run_boxcar(float* inbuffer, float* outbuffer, int window, int nsamps) {
     double sum = 0;
     for (int ii = 0; ii < window; ii++) {
         sum += inbuffer[ii];
@@ -73,7 +71,7 @@ void runBoxcar(float* inbuffer, float* outbuffer, int window, int nsamps) {
     }
 }
 
-void downsampleTim(float* inbuffer, float* outbuffer, int factor, int newLen) {
+void downsample_tim(float* inbuffer, float* outbuffer, int factor, int newLen) {
 #pragma omp parallel for default(shared)
     for (int ii = 0; ii < newLen; ii++) {
         for (int jj = 0; jj < factor; jj++)
@@ -81,7 +79,7 @@ void downsampleTim(float* inbuffer, float* outbuffer, int factor, int newLen) {
     }
 }
 
-void foldTim(float* buffer, double* foldbuffer, int32_t* counts, double tsamp,
+void fold_tim(float* buffer, double* foldbuffer, int32_t* counts, double tsamp,
              double period, double accel, int nsamps, int nbins, int nints) {
     int phasebin, subbint, factor1;
     float tobs, tj;
@@ -102,22 +100,6 @@ void foldTim(float* buffer, double* foldbuffer, int32_t* counts, double tsamp,
     }
 }
 
-/**
- * @brief One-Dimensional DFTs from real input to complex-Hermitian output
- *
- * @param inbuffer  Input real array
- * @param outbuffer Output complex array
- * @param size      Logical size of the DFT
- *
- * @see http://www.fftw.org/fftw3_doc/One_002dDimensional-DFTs-of-Real-Data.html
- */
-void rfft(float* inbuffer, float* outbuffer, int size) {
-    fftwf_plan plan;
-    plan = fftwf_plan_dft_r2c_1d(size, inbuffer, (fftwf_complex*)outbuffer,
-                                 FFTW_ESTIMATE);
-    fftwf_execute(plan);
-    fftwf_destroy_plan(plan);
-}
 
 void resample(float* inbuffer, float* outbuffer, int nsamps, float accel,
               float tsamp) {

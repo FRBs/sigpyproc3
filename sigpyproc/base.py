@@ -1,14 +1,15 @@
 from __future__ import annotations
+import warnings
 import numpy as np
 
 from numpy import typing as npt
 from typing import List, Optional, Generator, Tuple
 from abc import ABC, abstractmethod
 
-from sigpyproc.FoldedData import FoldedData
-from sigpyproc.TimeSeries import TimeSeries
-from sigpyproc.Header import Header
-from sigpyproc import libSigPyProc as lib
+from sigpyproc.foldedcube import FoldedData
+from sigpyproc.timeseries import TimeSeries
+from sigpyproc.header import Header
+from sigpyproc import libcpp  # type: ignore
 
 
 class Filterbank(ABC):
@@ -41,12 +42,12 @@ class Filterbank(ABC):
         raise NotImplementedError()
 
     @property
-    def omp_threads(self):
+    def omp_threads(self) -> int:
         """Number of omp threads (`int`)."""
-        return lib.get_omp_threads()
+        return libcpp.get_omp_threads()
 
     @omp_threads.setter
-    def omp_threads(self, nthreads: Optional[int] = None):
+    def omp_threads(self, nthreads: Optional[int] = None) -> None:
         """Set the number of threads available to OpenMP.
 
         Parameters
@@ -56,7 +57,7 @@ class Filterbank(ABC):
         """
         if nthreads is None:
             nthreads = 4
-        lib.set_omp_threads(nthreads)
+        libcpp.set_omp_threads(nthreads)
 
     def collapse(
         self, gulp: int = 512, start: int = 0, nsamps: int = None, **kwargs
@@ -88,7 +89,7 @@ class Filterbank(ABC):
             nsamps=nsamps,
             **kwargs,
         ):
-            lib.getTim(data, timar, self.header.nchans, nsamp, ii * gulp)
+            libcpp.get_tim(data, timar, self.header.nchans, nsamp, ii * gulp)
         return TimeSeries(timar, self.header.new_header({"nchans": 1, "refdm": 0}))
 
     def invert_freq(
@@ -144,7 +145,7 @@ class Filterbank(ABC):
             nsamps=nsamps,
             **kwargs,
         ):
-            lib.invertFreq(data, out_ar, self.header.nchans, nsamp)
+            libcpp.invert_freq(data, out_ar, self.header.nchans, nsamp)
             out_file.cwrite(out_ar[: nsamp * self.header.nchans])
         out_file.close()
         return out_file.name
@@ -165,7 +166,7 @@ class Filterbank(ABC):
         bpass_ar = np.zeros(self.header.nchans, dtype="float64")
         num_samples = 0
         for nsamps, _ii, data in self.read_plan(gulp, **kwargs):
-            lib.getBpass(data, bpass_ar, self.header.nchans, nsamps)
+            libcpp.get_bpass(data, bpass_ar, self.header.nchans, nsamps)
             num_samples += nsamps
         bpass_ar /= num_samples
         return TimeSeries(bpass_ar, self.header.new_header({"nchans": 1}))
@@ -196,7 +197,7 @@ class Filterbank(ABC):
         tim_len = self.header.nsamples - max_delay
         tim_ar = np.zeros(tim_len, dtype="float32")
         for nsamps, ii, data in self.read_plan(gulp, skipback=max_delay, **kwargs):
-            lib.dedisperse_sum(
+            libcpp.dedisperse(
                 data,
                 tim_ar,
                 chan_delays,
@@ -251,7 +252,7 @@ class Filterbank(ABC):
         )
 
         for nsamps, _ii, data in self.read_plan(gulp, skipback=max_delay, **kwargs):
-            lib.subband(
+            libcpp.subband(
                 data,
                 out_ar,
                 chan_delays,
@@ -264,7 +265,7 @@ class Filterbank(ABC):
             out_file.cwrite(out_ar[: (nsamps - max_delay) * nsub])
         return filename
 
-    def upTo8bit(
+    def to_8bit(
         self,
         filename: str = None,
         gulp: int = 512,
@@ -328,7 +329,7 @@ class Filterbank(ABC):
         mask = np.array(chanmask).astype("ubyte")
         out_file = self.header.prep_outfile(outfilename, back_compatible=back_compatible)
         for nsamps, _ii, data in self.read_plan(gulp, **kwargs):
-            lib.maskChannels(data, mask, self.header.nchans, nsamps)
+            libcpp.mask_channels(data, mask, self.header.nchans, nsamps)
             out_file.cwrite(data)
         return out_file.name
 
@@ -389,7 +390,9 @@ class Filterbank(ABC):
             dtype=self.header.dtype,
         )
         for nsamps, _ii, data in self.read_plan(gulp, **kwargs):
-            lib.downsample(data, write_ar, tfactor, ffactor, self.header.nchans, nsamps)
+            libcpp.downsample(
+                data, write_ar, tfactor, ffactor, self.header.nchans, nsamps
+            )
             out_file.cwrite(write_ar[: nsamps * self.header.nchans // ffactor // tfactor])
         return out_file.name
 
@@ -438,10 +441,10 @@ class Filterbank(ABC):
         If gulp < maximum dispersion delay, gulp is taken to be twice the
         maximum dispersion delay.
         """
-        if np.modf(period / self.header.tsamp)[0] < 0.001:
-            print("WARNING: Foldng interval is an integer multiple of the sampling time")
+        if np.isclose(np.modf(period / self.header.tsamp)[0], 0.001, atol=0):
+            warnings.warn("Foldng interval is an integer multiple of the sampling time")
         if nbins > period / self.header.tsamp:
-            print("WARNING: Number of phase bins is greater than period/sampling time")
+            warnings.warn("Number of phase bins is greater than period/sampling time")
         if (self.header.nsamples * self.header.nchans) // (nbands * nints * nbins) < 10:
             raise ValueError("nbands x nints x nbins is too large.")
         nbands = min(nbands, self.header.nchans)
@@ -451,7 +454,7 @@ class Filterbank(ABC):
         fold_ar = np.zeros(nbins * nints * nbands, dtype="float32")
         count_ar = np.zeros(nbins * nints * nbands, dtype="int32")
         for nsamps, ii, data in self.read_plan(gulp, skipback=max_delay, **kwargs):
-            lib.foldFil(
+            libcpp.foldfil(
                 data,
                 fold_ar,
                 count_ar,
@@ -496,7 +499,7 @@ class Filterbank(ABC):
             raise ValueError("Selected channel out of range.")
         tim_ar = np.empty(self.header.nsamples, dtype="float32")
         for nsamps, ii, data in self.read_plan(gulp, **kwargs):
-            lib.getChan(data, tim_ar, chan, self.header.nchans, nsamps, ii * gulp)
+            libcpp.get_chan(data, tim_ar, chan, self.header.nchans, nsamps, ii * gulp)
         return TimeSeries(
             tim_ar, self.header.new_header({"channel": chan, "refdm": 0.0, "nchans": 1})
         )
@@ -579,7 +582,7 @@ class Filterbank(ABC):
             for ii in range(self.header.nchans)
         ]
         for nsamps, _ii, data in self.read_plan(gulp, **kwargs):
-            lib.splitToChans(data, tim_ar, self.header.nchans, nsamps, gulp)
+            libcpp.splitToChans(data, tim_ar, self.header.nchans, nsamps, gulp)
             for ifile, out_file in enumerate(out_files):
                 out_file.cwrite(tim_ar[ifile][:nsamps])
 
@@ -648,7 +651,7 @@ class Filterbank(ABC):
 
         return [out_file.name for out_file in out_files]
 
-    def get_stats(self, gulp: int = 512, **kwargs) -> None:
+    def compute_stats(self, gulp: int = 512, **kwargs) -> None:
         """Retrieve channelwise statistics of data.
 
         Parameters
@@ -669,17 +672,17 @@ class Filterbank(ABC):
         maxima_ar = np.zeros(self.header.nchans, dtype="float32")
         minima_ar = np.zeros(self.header.nchans, dtype="float32")
         count_ar = np.zeros(self.header.nchans, dtype="int64")
-        M1_ar = np.zeros(self.header.nchans, dtype="float32")
-        M2_ar = np.zeros(self.header.nchans, dtype="float32")
-        M3_ar = np.zeros(self.header.nchans, dtype="float32")
-        M4_ar = np.zeros(self.header.nchans, dtype="float32")
+        m1_ar = np.zeros(self.header.nchans, dtype="float32")
+        m2_ar = np.zeros(self.header.nchans, dtype="float32")
+        m3_ar = np.zeros(self.header.nchans, dtype="float32")
+        m4_ar = np.zeros(self.header.nchans, dtype="float32")
         for nsamps, ii, data in self.read_plan(gulp, **kwargs):
-            lib.getStats(
+            libcpp.get_stats(
                 data,
-                M1_ar,
-                M2_ar,
-                M3_ar,
-                M4_ar,
+                m1_ar,
+                m2_ar,
+                m3_ar,
+                m4_ar,
                 maxima_ar,
                 minima_ar,
                 count_ar,
@@ -688,13 +691,13 @@ class Filterbank(ABC):
                 ii,
             )
 
-        means_ar = M1_ar
-        var_ar = M2_ar / self.header.nsamples
+        means_ar = m1_ar
+        var_ar = m2_ar / self.header.nsamples
         stdev_ar = np.sqrt(var_ar)
 
-        M2_ar[M2_ar == 0] = np.nan
-        skew_ar = M3_ar / np.power(M2_ar, 1.5) * np.sqrt(self.header.nsamples)
-        kurt_ar = M4_ar / np.power(M2_ar, 2.0) * self.header.nsamples - 3.0
+        m2_ar[m2_ar == 0] = np.nan
+        skew_ar = m3_ar / np.power(m2_ar, 1.5) * np.sqrt(self.header.nsamples)
+        kurt_ar = m4_ar / np.power(m2_ar, 2.0) * self.header.nsamples - 3.0
 
         stdev_ar[np.isnan(stdev_ar)] = 0
         skew_ar[np.isnan(skew_ar)] = 0
@@ -742,7 +745,7 @@ class Filterbank(ABC):
             filename = f"{self.header.basename}_bpcorr.fil"
 
         if self.chan_stdevs is None:
-            self.get_stats(gulp=gulp, **kwargs)
+            self.compute_stats(gulp=gulp, **kwargs)
 
         out_ar = np.empty(
             self.header.nsamples * self.header.nchans,
@@ -752,7 +755,7 @@ class Filterbank(ABC):
             filename, nbits=self.header.nbits, back_compatible=back_compatible
         )
         for nsamps, _ii, data in self.read_plan(gulp, **kwargs):
-            lib.removeBandpass(
+            libcpp.remove_bandpass(
                 data,
                 out_ar,
                 self.chan_means,
@@ -804,7 +807,7 @@ class Filterbank(ABC):
             filename, nbits=self.header.nbits, back_compatible=back_compatible
         )
         for nsamps, _ii, data in self.read_plan(gulp, **kwargs):
-            lib.remove_zerodm(data, out_ar, bpass, chanwts, self.header.nchans, nsamps)
+            libcpp.remove_zerodm(data, out_ar, bpass, chanwts, self.header.nchans, nsamps)
             out_file.cwrite(out_ar[: nsamps * self.header.nchans])
         out_file.close()
         return out_file.name

@@ -2,49 +2,14 @@
 
 #include <cmath>
 #include <cstring>
-#include <fftw3.h>
-#include <complex.h>
 
-#include "utils.hpp"
+#include "stats.hpp"
 
 /*----------------------------------------------------------------------------*/
 
 namespace sigpyproc {
 
-/**
- * @brief Calculate One-Dimensional DFT
- *
- * @param inbuffer  Input complex array
- * @param outbuffer Output complex array
- * @param size      Size of the transform
- */
-void ccfft(float* inbuffer, float* outbuffer, int size) {
-    fftwf_plan plan;
-    plan = fftwf_plan_dft_1d(size, (fftwf_complex*)inbuffer,
-                             (fftwf_complex*)outbuffer, FFTW_BACKWARD,
-                             FFTW_ESTIMATE);
-    fftwf_execute(plan);
-    fftwf_destroy_plan(plan);
-}
-
-/**
- * @brief One-Dimensional DFTs from complex-Hermitian input to real output
- *
- * @param inbuffer  Input complex array
- * @param outbuffer Output real array
- * @param size      Logical size of the DFT
- *
- * @see http://www.fftw.org/fftw3_doc/One_002dDimensional-DFTs-of-Real-Data.html
- */
-void irfft(float* inbuffer, float* outbuffer, int size) {
-    fftwf_plan plan;
-    plan = fftwf_plan_dft_c2r_1d(size, (fftwf_complex*)inbuffer, outbuffer,
-                                 FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
-    fftwf_execute(plan);
-    fftwf_destroy_plan(plan);
-}
-
-void formSpecInterpolated(float* fftbuffer, float* specbuffer, int specsize) {
+void form_spec_interpolated(float* fftbuffer, float* specbuffer, int specsize) {
     float i, r, a, b;
     float rl = 0.0, il = 0.0;
     for (int ii = 0; ii < specsize; ii++) {
@@ -60,7 +25,7 @@ void formSpecInterpolated(float* fftbuffer, float* specbuffer, int specsize) {
     }
 }
 
-void formSpec(float* fftbuffer, float* specbuffer, int specsize) {
+void form_spec(float* fftbuffer, float* specbuffer, int specsize) {
     float i, r;
     for (int ii = 0; ii < specsize; ii++) {
         r = fftbuffer[2 * ii];
@@ -164,8 +129,8 @@ void conjugate(float* specbuffer, float* outbuffer, int size) {
     }
 }
 
-void sumHarms(float* specbuffer, float* sumbuffer, int32_t* sumarray,
-              int32_t* factarray, int nharms, int nsamps, int nfoldi) {
+void sum_harms(float* specbuffer, float* sumbuffer, int32_t* sumarray,
+               int32_t* factarray, int nharms, int nsamps, int nfoldi) {
     for (int ii = nfoldi; ii < nsamps - (nharms - 1); ii += nharms) {
         for (int jj = 0; jj < nharms; jj++) {
             for (int kk = 0; kk < nharms / 2; kk++) {

@@ -8,8 +8,6 @@
 #include <queue>
 #include <algorithm>
 
-#define MACRO_STRINGIFY(x) #x
-
 /**
  * @brief Get a random number for given statistics
  *
