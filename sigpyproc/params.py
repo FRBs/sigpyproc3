@@ -119,7 +119,7 @@ presto_inf: Dict[str, Tuple[str, Callable, str]] = {
     "Data file name without suffix": ("basename", str, "s"),
     "Telescope used": ("telescope", str, "s"),
     "Instrument used": ("backend", str, "s"),
-    "Object being observed": ("source_name", str, "s"),
+    "Object being observed": ("source", str, "s"),
     "J2000 Right Ascension (hh:mm:ss.ssss)": ("ra", str, "s"),
     "J2000 Declination     (dd:mm:ss.ssss)": ("dec", str, "s"),
     "Data observed by": ("observer", str, "s"),
@@ -127,11 +127,11 @@ presto_inf: Dict[str, Tuple[str, Callable, str]] = {
     "Barycentered?           (1=yes, 0=no)": ("barycentric", int, "d"),
     "Number of bins in the time series": ("nsamples", int, "-11.0f"),
     "Width of each time series bin (sec)": ("tsamp", float, ".15g"),
-    "Dispersion measure (cm-3 pc)": ("refdm", float, ".12g"),
-    "Central freq of low channel (Mhz)": ("freq_low", float, ".12g"),
+    "Dispersion measure (cm-3 pc)": ("dm", float, ".12g"),
+    "Central freq of low channel (MHz)": ("freq_low", float, ".12g"),
     "Total bandwidth (Mhz)": ("bandwidth", float, ".12g"),
     "Number of channels": ("nchans", int, "d"),
-    "Channel bandwidth (Mhz)": ("foff", float, ".12g"),
+    "Channel bandwidth (MHz)": ("foff", float, ".12g"),
     "Data analyzed by": ("analyser", str, "s"),
 }
 

@@ -10,11 +10,6 @@ class TestFourierSeries(object):
         fs = FourierSeries(fourier_data, Header(**tim_header))
         assert fs.header.nbits == 32
 
-    def test_ifft(self, fourier_data, tim_header, tim_data):
-        fs = FourierSeries(fourier_data, Header(**tim_header))
-        tim = fs.ifft()
-        np.testing.assert_allclose(tim, tim_data, atol=0.01)
-
     def test_to_file(self, fourier_data, tim_header, tmpfile):
         fs = FourierSeries(fourier_data, Header(**tim_header))
         outfile = fs.to_file(tmpfile)

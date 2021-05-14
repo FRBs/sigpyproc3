@@ -4,7 +4,7 @@ from numpy import typing as npt
 
 from sigpyproc.header import Header
 from sigpyproc.timeseries import TimeSeries
-from sigpyproc.Utils import roll_array
+from sigpyproc.utils import roll_array
 from sigpyproc import libcpp  # type: ignore
 
 

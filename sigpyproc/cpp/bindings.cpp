@@ -459,6 +459,7 @@ PYBIND11_MODULE(libcpp, m) {
     m.doc() = "sigpyproc C++ backend.";
 
     m.def("omp_get_max_threads", []() { return omp_get_max_threads(); });
+    m.def("omp_get_num_threads", []() { return omp_get_num_threads(); });
     m.def("omp_set_num_threads",
           [](int nthread) { omp_set_num_threads(nthread); });
 

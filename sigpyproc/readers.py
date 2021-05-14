@@ -5,8 +5,8 @@ from typing import Union, Optional, Generator, List, Tuple
 from rich.progress import track, Progress
 
 from sigpyproc.io.fileio import FileReader
+from sigpyproc.io.bits import BitsInfo
 from sigpyproc.header import Header
-from sigpyproc.params import BitsInfo
 from sigpyproc.base import Filterbank
 from sigpyproc.block import FilterbankBlock
 
@@ -123,7 +123,7 @@ class FilReader(Filterbank):
         :class:`~sigpyproc.Filterbank.FilterbankBlock`
             2-D array of filterbank data
         """
-        data = np.zeros((self.header.nchans, nsamps), dtype=self._file.dtype)
+        data = np.zeros((self.header.nchans, nsamps), dtype=self._file.bitsinfo.dtype)
         min_sample = start + self.header.get_dmdelays(dm)
         max_sample = min_sample + nsamps
         curr_sample = np.zeros(self.header.nchans, dtype=int)
@@ -150,7 +150,8 @@ class FilReader(Filterbank):
                         sample_offset * self.sampsize
                         + lowest_chan * self.bitsinfo.itemsize
                     )
-                    self._file.seek(self.header.hdrlen + next_offset)
+                    # TODO fix for multifile
+                    self._file.seek(self.header.hdrlens[0] + next_offset)
 
                     data[sampled_chans, curr_sample[sampled_chans]] = self._file.cread(
                         read_length
@@ -158,7 +159,8 @@ class FilReader(Filterbank):
 
                 else:
                     next_offset = sample_offset * self.sampsize
-                    self._file.seek(self.header.hdrlen + next_offset)
+                    # TODO fix for multifile
+                    self._file.seek(self.header.hdrlens[0] + next_offset)
 
                     sample = self._file.cread(self.sampsize)
                     data[sampled_chans, curr_sample[sampled_chans]] = sample[
@@ -248,10 +250,8 @@ class FilReader(Filterbank):
         if lastread != 0:
             blocks.append((nreads, lastread * self.header.nchans, 0))
 
-        self.logger.debug(f"Reading plan: nsamps = {nsamps}, nreads = {nreads}")
-        self.logger.debug(
-            f"Reading plan: gulp = {gulp}, lastread = {lastread}, skipback = {skipback}"
-        )
+        # / self.logger.debug(f"Reading plan: nsamps = {nsamps}, nreads = {nreads}")
+        # / self.logger.debug(f"Reading plan: gulp = {gulp}, lastread = {lastread}, skipback = {skipback}")
         for ii, block, skip in track(blocks, description=f"{inspect.stack()[1][3]} : "):
             data = self._file.cread(block)
             self._file.seek(

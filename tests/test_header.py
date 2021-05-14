@@ -5,7 +5,7 @@ from sigpyproc.header import Header
 
 class TestHeader(object):
     @pytest.mark.parametrize(
-        "key, newval", [("nchans", 2000), ("fch1", 4000.5), ("source_name", "new_source")]
+        "key, newval", [("nchans", 2000), ("fch1", 4000.5), ("source", "new_source")]
     )
     def test_new_header_pass(self, filfile_4bit, key, newval):
         header = Header.from_sigproc(filfile_4bit)
@@ -21,29 +21,27 @@ class TestHeader(object):
     def test_dedispersed_header(self, filfile_4bit):
         header = Header.from_sigproc(filfile_4bit)
         newhdr = header.dedispersed_header(dm=10)
-        assert newhdr.refdm == 10
+        assert newhdr.dm == 10
         assert newhdr.nchans == 1
 
-    def test_spp_header(self, filfile_4bit):
+    def test_to_sigproc(self, filfile_4bit):
         header = Header.from_sigproc(filfile_4bit)
-        spphdr = header.spp_header()
-        assert len(spphdr) == header.hdrlen
+        spphdr = header.to_sigproc()
+        assert len(spphdr) >= header.hdrlens[0]
         assert isinstance(spphdr, bytes)
 
-    @pytest.mark.parametrize("dm, maxdelay", [(0, 2000), (100, 4000.5), (5000, 10)])
+    @pytest.mark.parametrize("dm, maxdelay", [(0, 0), (100, 0.8), (5000, 40.4)])
     def test_get_dmdelays(self, filfile_4bit, dm, maxdelay):
         header = Header.from_sigproc(filfile_4bit)
         delays_time = header.get_dmdelays(dm=dm, in_samples=False)
-        delays_samp = header.get_dmdelays(dm=dm, in_samples=True)
-        np.testing.assert_allclose(delays_time.max(), maxdelay, atol=0.01)
-        np.testing.assert_equal(delays_samp.max(), round(maxdelay / header.tsamp))
+        np.testing.assert_allclose(delays_time.max(), maxdelay, atol=0.1)
 
     def test_prep_outfile(self, filfile_4bit, tmpfile):
         header = Header.from_sigproc(filfile_4bit)
         with header.prep_outfile(tmpfile) as outfile:
             outfilename = outfile.name
         out_header = Header.from_sigproc(outfilename)
-        np.testing.assert_equal(out_header.spp_header(), header.spp_header())
+        np.testing.assert_equal(out_header.to_sigproc(), header.to_sigproc())
 
     def test_from_inffile(self, inffile, inf_header):
         infheader = Header.from_inffile(inffile)

@@ -25,7 +25,7 @@ def header_string(header: Header) -> str:
     temp = "{0:<33}: {1}"
     print_hdr.extend(
         [
-            temp.format("Data file", header.rawdatafile),
+            temp.format("Data file", header.filename),
             temp.format("Header size (bytes)", header.hdrlens[0]),
             temp.format("Data size (bytes)", header.datalens[0]),
             temp.format("Data type", f"{header.data_type} ({header.frame})"),
@@ -34,8 +34,8 @@ def header_string(header: Header) -> str:
             temp.format("Source Name", header.source),
             temp.format("Source RA (J2000)", header.ra),
             temp.format("Source DEC (J2000)", header.dec),
-            temp.format("Start AZ (deg)", header.azimuth),
-            temp.format("Start ZA (deg)", header.zenith),
+            temp.format("Start AZ (deg)", header.azimuth.deg),
+            temp.format("Start ZA (deg)", header.zenith.deg),
         ]
     )
 

@@ -59,9 +59,14 @@ class Filterbank(ABC):
         raise NotImplementedError()
 
     @property
+    def omp_max_threads(self) -> int:
+        """Maximum number of omp threads (`int`)."""
+        return libcpp.omp_get_max_threads()
+
+    @property
     def omp_threads(self) -> int:
         """Number of omp threads (`int`)."""
-        return libcpp.get_omp_threads()
+        return libcpp.omp_get_num_threads()
 
     def set_omp_threads(self, nthreads: Optional[int] = None) -> None:
         """Set the number of threads available to OpenMP.
@@ -73,7 +78,7 @@ class Filterbank(ABC):
         """
         if nthreads is None:
             nthreads = 4
-        libcpp.set_omp_threads(nthreads)
+        libcpp.omp_set_num_threads(nthreads)
 
     def compute_stats(self, gulp: int = 512, **kwargs) -> None:
         """Compute channelwise statistics of data (upto kurtosis).
@@ -399,13 +404,12 @@ class Filterbank(ABC):
         else:
             size = nsamps
         out_ar = np.empty(size * self.header.nchans, dtype=self.header.dtype)
-        sign = 1 if self.header.foff >= 0 else -1
 
         changes = {
-            "fch1": self.header.fch1 + sign * (self.header.nchans - 1) * self.header.foff,
-            "foff": self.header.foff * sign * (-1.0),
+            "fch1": self.header.fch1 + (self.header.nchans - 1) * self.header.foff,
+            "foff": self.header.foff * -1,
         }
-        # NB bandwidth is +ive by default
+
         out_file = self.header.prep_outfile(
             filename, changes, nbits=self.header.nbits, back_compatible=back_compatible
         )

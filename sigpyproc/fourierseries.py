@@ -5,6 +5,12 @@ import numpy as np
 from typing import Optional, Tuple, List
 from numpy import typing as npt
 
+try:
+    from pyfftw.interfaces import numpy_fft
+except ModuleNotFoundError:
+    from numpy import fft as numpy_fft
+
+
 from sigpyproc import timeseries
 from sigpyproc.header import Header
 from sigpyproc.foldedcube import Profile
@@ -189,7 +195,7 @@ class FourierSeries(np.ndarray):
             a time series
         """
         fftsize = self.size - 2
-        tim_ar = libcpp.irfft(self, fftsize)
+        tim_ar = numpy_fft.irfft(self, fftsize)
         tim_ar *= 1.0 / fftsize
         return timeseries.TimeSeries(tim_ar, self.header.new_header())
 
@@ -377,5 +383,5 @@ class FourierSeries(np.ndarray):
         a new header parser for that file format.
         """
         header = Header.from_sigproc(filename)
-        data = np.fromfile(filename, dtype="complex32", offset=header.hdrlen)
+        data = np.fromfile(filename, dtype="complex32", offset=header.hdrlens[0])
         return cls(data, header)

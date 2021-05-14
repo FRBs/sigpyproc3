@@ -215,12 +215,12 @@ def match_header(header1: Dict, header2: Dict) -> None:
         if key values do not match.
     """
     keys_nomatch = {"tstart", "rawdatafile"}
-    for key in header_keys:
-        if key in keys_nomatch:
+    for key, value in header1.items():
+        if key in keys_nomatch or key not in header_keys:
             continue
-        if header1[key] != header2[key]:
+        if value != header2[key]:
             raise ValueError(
-                f'Header key "{key} = {header1[key]} and {header2[key]}"'
+                f'Header key "{key} = {value} and {header2[key]}"'
                 + f'do not match for file {header2["filename"]}'
             )
 
@@ -238,7 +238,7 @@ def ensure_contiguity(header: Dict) -> None:
     ValueError
         if files are not contiguous
     """
-    for ifile, _file in enumerate(header["filenames[:-1]"]):
+    for ifile, _file in enumerate(header["filenames"][:-1]):
         precision = int(np.ceil(abs(np.log10(header["tsamp"]))))
         tstart = Time(
             header["tstart_files"][ifile], format="mjd", scale="utc", precision=precision

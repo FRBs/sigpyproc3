@@ -94,7 +94,7 @@ def tim_header():
     header = {}
     header["rawdatafile"] = "tmp_test.tim"
     header["filename"] = "tmp_test.tim"
-    header["data_type"] = 2
+    header["data_type"] = "time series"
     header["nchans"] = 1
     header["foff"] = 1
     header["fch1"] = 2000
@@ -114,20 +114,19 @@ def fourier_data(tim_data):  # noqa: WPS442
 @pytest.fixture(scope="class", autouse=True)
 def inf_header():
     header = {}
-    header["basename"] = "Lband_DM0.00"
+    header["basename"] = "GBT_J1807-0847"
     header["telescope"] = "GBT"
-    header["machine"] = "Unknown"
-    header["source_name"] = "Mystery_PSR"
-    header["ra"] = "16:43:38.1000"
-    header["dec"] = "-12:24:58.7000"
-    header["tstart"] = 53010.484826388892543
-    header["barycentric"] = 0
-    header["nsamples"] = 66250
-    header["tsamp"] = 0.000072
-    header["freq_low"] = 1352.5
-    header["bandwidth"] = 96
-    header["nchans"] = 96
-    header["foff"] = 1
+    header["backend"] = "VEGAS"
+    header["source"] = "J1807-0847"
+    header["ra"] = "18:07:37.9999"
+    header["dec"] = "-08:47:43.7463"
+    header["tstart"] = 59313.309837974340741
+    header["nsamples"] = 131072
+    header["tsamp"] = 0.00016384
+    # / header["freq_low"] = 720.78125
+    header["bandwidth"] = 0.78125
+    header["nchans"] = 1
+    header["foff"] = 0.78125
     return header
 
 
@@ -139,13 +138,13 @@ def filfile_8bit_1_header():
     header["source_name"] = "J0534+2200"
     header["src_raj"] = 53431.9
     header["src_dej"] = 220052.0
-    header["tstart"] = 58543.3303690369
-    header["tsamp"] = 0.000256
+    header["tstart"] = 58543.330387241345
+    header["tsamp"] = 0.000512
     header["data_type"] = 1
-    header["nchans"] = 1664
+    header["nchans"] = 832
     header["nbits"] = 8
-    header["fch1"] = 4031.0
-    header["foff"] = -2.0
+    header["fch1"] = 4030.0
+    header["foff"] = -4.0
     header["nifs"] = 1
-    header["nsamples"] = 2048
+    header["nsamples"] = 4096
     return header

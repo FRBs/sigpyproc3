@@ -5,6 +5,11 @@ import numpy as np
 from typing import Optional, Tuple, Union
 from numpy import typing as npt
 
+try:
+    from pyfftw.interfaces import numpy_fft
+except ModuleNotFoundError:
+    from numpy import fft as numpy_fft
+
 from sigpyproc import foldedcube
 from sigpyproc import fourierseries
 from sigpyproc.header import Header
@@ -99,7 +104,7 @@ class TimeSeries(np.ndarray):
             fftsize = self.size
         else:
             fftsize = self.size - 1
-        fft_ar = lib.rfft(self, fftsize)
+        fft_ar = numpy_fft.rfft(self, fftsize)
         return fourierseries.FourierSeries(fft_ar, self.header.new_header())
 
     def running_mean(self, window: int = 10001) -> TimeSeries:
@@ -356,6 +361,6 @@ class TimeSeries(np.ndarray):
             a new TimeSeries object
         """
         header = Header.from_sigproc(timfile)
-        data = np.fromfile(timfile, dtype=header.dtype, offset=header.hdrlen)
+        data = np.fromfile(timfile, dtype=header.dtype, offset=header.hdrlens[0])
         data = data.astype(np.float32, copy=False)
         return cls(data, header)

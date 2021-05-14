@@ -42,9 +42,9 @@ class Header(object):
     tsamp: float
     tstart: float
     nsamples: int
-    nifs: int
-    coord: SkyCoord
 
+    nifs: int = 1
+    coord: SkyCoord = SkyCoord(0, 0, unit='deg')
     azimuth: Angle = Angle("0d")
     zenith: Angle = Angle("0d")
     telescope: str = "Fake"
@@ -78,12 +78,12 @@ class Header(object):
     @property
     def telescope_id(self) -> int:
         """Telescope id (`int`, read-only)."""
-        return sigproc.telescope_ids[self.telescope]
+        return sigproc.telescope_ids.get(self.telescope, 0)
 
     @property
     def machine_id(self) -> int:
         """Machine id (`str`, read-only)."""
-        return sigproc.machine_ids[self.backend]
+        return sigproc.machine_ids.get(self.backend, 0)
 
     @property
     def bandwidth(self) -> float:
@@ -208,11 +208,9 @@ class Header(object):
         new = attr.asdict(self)
         if update_dict is not None:
             new.update(update_dict)
-            new_checked = {
-                key: value
-                for key, value in new.items()
-                if key in attr.asdict(self).keys()
-            }
+        new_checked = {
+            key: value for key, value in new.items() if key in attr.asdict(self).keys()
+        }
         return Header(**new_checked)
 
     def dedispersed_header(self, dm: float) -> Header:
@@ -382,10 +380,12 @@ class Header(object):
                 header[key] = keytype(val)
 
         hdr_update = {
+            "filename": header["basename"],
             "data_type": "time series",
             "fch1": header["freq_low"] + header["foff"] * header["nchans"],
             "nbits": 32,
             "nchans": 1,
+            "nifs": 1,
             "coord": SkyCoord(
                 header["ra"], header["dec"], unit=(units.hourangle, units.deg)
             ),
@@ -420,10 +420,11 @@ class Header(object):
         frame = "barycentric" if header.get("barycentric") else "topocentric"
         hdr_update = {
             "data_type": params.data_types[header["data_type"]],
-            "telescope": sigproc.telescope_ids.inverse[header["data_type"]],
+            "telescope": sigproc.telescope_ids.inverse[header["telescope_id"]],
             "backend": sigproc.machine_ids.inverse[header["machine_id"]],
             "source": header["source_name"],
-            "dm": header["refdm"],
+            "dm": header.get("refdm", 0),
+            "foff": header.get("foff", 0),
             "coord": sigproc.parse_radec(header["src_raj"], header["src_dej"]),
             "azimuth": Angle(header["az_start"] * units.deg),
             "zenith": Angle(header["za_start"] * units.deg),
