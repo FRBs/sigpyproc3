@@ -151,16 +151,16 @@ void foldfil(T* inbuffer, float* foldbuffer, int32_t* countbuffer,
 }
 
 /**
- * getStats: Computing central moments in one pass through the data,
+ * compute_moments: Computing central moments in one pass through the data,
  * the algorithm is numerically stable and accurate.
  * Ref:
  * https://www.johndcook.com/blog/skewness_kurtosis/
  * https://prod-ng.sandia.gov/techlib-noauth/access-control.cgi/2008/086212.pdf
  */
 template <class T>
-void get_stats(T* inbuffer, float* M1, float* M2, float* M3, float* M4,
-               float* maxbuffer, float* minbuffer, int64_t* count, int nchans,
-               int nsamps, int startflag) {
+void compute_moments(T* inbuffer, float* M1, float* M2, float* M3, float* M4,
+                     float* maxbuffer, float* minbuffer, int64_t* count,
+                     int nchans, int nsamps, int startflag) {
     T val;
     if (startflag == 0) {
         for (int jj = 0; jj < nchans; jj++) {
@@ -185,6 +185,38 @@ void get_stats(T* inbuffer, float* M1, float* M2, float* M3, float* M4,
                       + 6 * delta_n2 * M2[jj] - 4 * delta_n * M3[jj];
             M3[jj] += term1 * delta_n * (n - 2) - 3 * delta_n * M2[jj];
             M2[jj] += term1;
+
+            if (val > maxbuffer[jj])
+                maxbuffer[jj] = val;
+            else if (val < minbuffer[jj])
+                minbuffer[jj] = val;
+        }
+    }
+}
+
+template <class T>
+void compute_moments_simple(T* inbuffer, float* M1, float* M2, float* maxbuffer,
+                            float* minbuffer, int64_t* count, int nchans,
+                            int nsamps, int startflag) {
+    T val;
+    if (startflag == 0) {
+        for (int jj = 0; jj < nchans; jj++) {
+            maxbuffer[jj] = inbuffer[jj];
+            minbuffer[jj] = inbuffer[jj];
+        }
+    }
+#pragma omp parallel for default(shared)
+    for (int jj = 0; jj < nchans; jj++) {
+        double delta, delta_n;
+        for (int ii = 0; ii < nsamps; ii++) {
+            val = inbuffer[(nchans * ii) + jj];
+            count[jj] += 1;
+            long long n = count[jj];
+
+            delta   = val - M1[jj];
+            delta_n = delta / n;
+            M1[jj] += delta_n;
+            M2[jj] += delta * delta_n * (n - 1);
 
             if (val > maxbuffer[jj])
                 maxbuffer[jj] = val;

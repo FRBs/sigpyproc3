@@ -1,8 +1,8 @@
 import numpy as np
 from pathlib import Path
 
-from sigpyproc.Header import Header
-from sigpyproc.TimeSeries import TimeSeries
+from sigpyproc.header import Header
+from sigpyproc.timeseries import TimeSeries
 
 
 class TestTimeSeries(object):

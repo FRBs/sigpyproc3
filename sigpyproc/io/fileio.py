@@ -3,13 +3,15 @@ import os
 import warnings
 import numpy as np
 
-from sigpyproc import libcpp
+from typing import List
+
+from sigpyproc import libcpp  # type: ignore
 from sigpyproc.io.bits import BitsInfo
 from sigpyproc.utils import get_logger
 
 
 class _FileBase(object):
-    """File I/O base class"""
+    """File I/O base class."""
 
     def __init__(self, files, mode, opener=None):
         self.files = files
@@ -40,7 +42,14 @@ class _FileBase(object):
 
 
 class FileReader(_FileBase):
-    def __init__(self, files, hdrlens, datalens, mode="r", nbits=8):
+    def __init__(
+        self,
+        files: List[str],
+        hdrlens: List[int],
+        datalens: List[int],
+        mode: str = "r",
+        nbits: int = 8,
+    ) -> None:
         self.hdrlens = hdrlens
         self.datalens = datalens
         self.nbits = nbits
@@ -50,10 +59,10 @@ class FileReader(_FileBase):
         super().__init__(files, mode)
 
     @property
-    def cur_data_pos(self):
+    def cur_data_pos(self) -> int:
         return self.file_obj.tell() - self.hdrlens[self.ifile_cur]
 
-    def cread(self, nunits):
+    def cread(self, nunits: int) -> np.ndarray:
         """Read nunits (nbytes) of data from the file.
 
         Parameters
@@ -63,11 +72,16 @@ class FileReader(_FileBase):
 
         Returns
         -------
-        :py:obj:`numpy.ndarray`
+        np.ndarray
             an 1-D array containing the read data
+
+        Raises
+        ------
+        IOError
+            if file is closed.
         """
         if self.file_obj.closed:
-            raise ValueError("Cannot read closed file.")
+            raise IOError("Cannot read closed file.")
 
         count = nunits // self.bitsinfo.bitfact
         data = []
@@ -83,20 +97,28 @@ class FileReader(_FileBase):
                 break
             self._seek2hdr(self.ifile_cur + 1)
 
-        data = np.concatenate(data)
+        data_ar = np.concatenate(np.asarray(data))
         if self.bitsinfo.unpack:
-            return libcpp.unpack(data, self.nbits)
-        return data
+            return libcpp.unpack(data_ar, self.nbits)
+        return data_ar
 
-    def seek(self, offset, whence=0):
+    def seek(self, offset: int, whence: int = 0) -> None:
         """Change the multifile stream position to the given data offset.
+
         offset is always interpreted for a headerless file and is
         relative to start of the first file.
 
         Parameters
         ----------
-        nbytes_data : int
+        offset : int
             Absolute position to seek in the data stream
+        whence : int
+            0 (SEEK_SET) 1 (SEEK_CUR)
+
+        Raises
+        ------
+        ValueError
+            if whence is not 0 or 1.
         """
         if self.file_obj.closed:
             raise ValueError("Cannot read closed file.")
@@ -203,7 +225,7 @@ class FileWriter(_FileBase):
         if self.bitsinfo.dtype != ar.dtype:
             warnings.warn(
                 f"Given data (dtype={ar.dtype}) will be unsafely cast to the"
-                f"requested dtype={self.bitsinfo.dtype} before being written out to file",
+                + f"requested dtype={self.bitsinfo.dtype} before being written out to file",
                 stacklevel=2,
             )
             ar = ar.astype(self.bitsinfo.dtype, casting="unsafe")
@@ -219,7 +241,8 @@ class FileWriter(_FileBase):
 
     def write(self, bo):
         """Write the given bytes-like object, bo to the file stream.
-        Wrapper for io.RawIOBase.write()
+
+        Wrapper for io.RawIOBase.write().
 
         Parameters
         ----------

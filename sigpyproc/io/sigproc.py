@@ -29,8 +29,9 @@ header_keys = {
     "rawdatafile": "str",
     "data_type": "I",
     "machine_id": "I",
+    "barycentric": "I",
+    "pulsarcentric": "I",
 }
-
 
 telescope_ids = bidict(
     {
@@ -88,16 +89,20 @@ def edit_header(filename: str, key: str, value: Union[int, float, str]) -> None:
        It is up to the user to be responsible with this function, as it will directly
        change the file on which it is being operated.
     """
-    header = Header.from_sigproc(filename)
+    if key not in header_keys:
+        raise ValueError(f"Key '{key}' is not a valid sigproc key.")
+    header = parse_header(filename)
     if key == "source_name" and isinstance(value, str):
-        oldlen = len(header.source_name)
+        oldlen = len(header["source_name"])
         value = value[:oldlen] + " " * (oldlen - len(value))
-    new_hdr = header.new_header({key: value})
-    new_header = new_hdr.spp_header(back_compatible=True)
-    if header.hdrlens[0] == len(new_header):
-        with open(filename, "r+") as fp:
+
+    hdr = header.copy()
+    hdr.update({key: value})
+    new_hdr = encode_header(hdr)
+    if header["hdrlen"] == len(new_hdr):
+        with open(filename, "rb+") as fp:
             fp.seek(0)
-            fp.write(new_header)
+            fp.write(new_hdr)
     else:
         raise ValueError("New header is too long/short for file")
 
@@ -216,7 +221,7 @@ def match_header(header1: Dict, header2: Dict) -> None:
         if header1[key] != header2[key]:
             raise ValueError(
                 f'Header key "{key} = {header1[key]} and {header2[key]}"'
-                f'do not match for file {header2["filename"]}'
+                + f'do not match for file {header2["filename"]}'
             )
 
 
@@ -247,7 +252,7 @@ def ensure_contiguity(header: Dict) -> None:
             samp_diff = int(abs(difference) / header["tsamp"])
             raise ValueError(
                 f"files {header['filenames'][ifile]} and {header['filenames'][ifile + 1]} "
-                f"are off by at least {samp_diff} samples."
+                + f"are off by at least {samp_diff} samples."
             )
 
 

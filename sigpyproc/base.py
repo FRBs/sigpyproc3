@@ -15,6 +15,23 @@ from sigpyproc import libcpp  # type: ignore
 class Filterbank(ABC):
     """Class exporting methods for the manipulation of frequency-major order pulsar data.
 
+    Attributes
+    ----------
+    chan_means : np.ndarray
+        the mean value of each channel
+    chan_vars : np.ndarray
+        the variance of each channel
+    chan_stdevs : np.ndarray
+        the standard deviation of each channel
+    chan_skews : np.ndarray
+        the skewness of each channel
+    chan_kurts : np.ndarray
+        the kurtosis of each channel
+    chan_max : np.ndarray
+        the maximum value of each channel
+    chan_min : np.ndarray
+        the minimum value of each channel
+
     Notes
     -----
     The Filterbank class should never be instantiated directly. Instead it
@@ -46,8 +63,7 @@ class Filterbank(ABC):
         """Number of omp threads (`int`)."""
         return libcpp.get_omp_threads()
 
-    @omp_threads.setter
-    def omp_threads(self, nthreads: Optional[int] = None) -> None:
+    def set_omp_threads(self, nthreads: Optional[int] = None) -> None:
         """Set the number of threads available to OpenMP.
 
         Parameters
@@ -58,6 +74,96 @@ class Filterbank(ABC):
         if nthreads is None:
             nthreads = 4
         libcpp.set_omp_threads(nthreads)
+
+    def compute_stats(self, gulp: int = 512, **kwargs) -> None:
+        """Compute channelwise statistics of data (upto kurtosis).
+
+        Parameters
+        ----------
+        gulp : int, optional
+            number of samples in each read, by default 512
+
+        """
+        maxima_ar = np.zeros(self.header.nchans, dtype="float32")
+        minima_ar = np.zeros(self.header.nchans, dtype="float32")
+        count_ar = np.zeros(self.header.nchans, dtype="int64")
+        m1_ar = np.zeros(self.header.nchans, dtype="float32")
+        m2_ar = np.zeros(self.header.nchans, dtype="float32")
+        m3_ar = np.zeros(self.header.nchans, dtype="float32")
+        m4_ar = np.zeros(self.header.nchans, dtype="float32")
+        for nsamps, ii, data in self.read_plan(gulp, **kwargs):
+            libcpp.compute_moments(
+                data,
+                m1_ar,
+                m2_ar,
+                m3_ar,
+                m4_ar,
+                maxima_ar,
+                minima_ar,
+                count_ar,
+                self.header.nchans,
+                nsamps,
+                ii,
+            )
+
+        means_ar = m1_ar
+        var_ar = m2_ar / self.header.nsamples
+        stdev_ar = np.sqrt(var_ar)
+
+        m2_ar[m2_ar == 0] = np.nan
+        skew_ar = m3_ar / np.power(m2_ar, 1.5) * np.sqrt(self.header.nsamples)
+        kurt_ar = m4_ar / np.power(m2_ar, 2.0) * self.header.nsamples - 3.0
+
+        stdev_ar[np.isnan(stdev_ar)] = 0
+        skew_ar[np.isnan(skew_ar)] = 0
+        kurt_ar[np.isnan(kurt_ar)] = -3.0
+
+        self.chan_means = means_ar.astype("float32")
+        self.chan_vars = var_ar.astype("float32")
+        self.chan_stdevs = stdev_ar.astype("float32")
+        self.chan_skews = skew_ar.astype("float32")
+        self.chan_kurts = kurt_ar.astype("float32")
+        self.chan_maxima = maxima_ar
+        self.chan_minima = minima_ar
+
+    def compute_stats_simple(self, gulp: int = 512, **kwargs) -> None:
+        """Compute channelwise statistics of data (mean and rms).
+
+        Parameters
+        ----------
+        gulp : int, optional
+            number of samples in each read, by default 512
+
+        """
+        maxima_ar = np.zeros(self.header.nchans, dtype="float32")
+        minima_ar = np.zeros(self.header.nchans, dtype="float32")
+        count_ar = np.zeros(self.header.nchans, dtype="int64")
+        m1_ar = np.zeros(self.header.nchans, dtype="float32")
+        m2_ar = np.zeros(self.header.nchans, dtype="float32")
+        for nsamps, ii, data in self.read_plan(gulp, **kwargs):
+            libcpp.compute_moments_simple(
+                data,
+                m1_ar,
+                m2_ar,
+                maxima_ar,
+                minima_ar,
+                count_ar,
+                self.header.nchans,
+                nsamps,
+                ii,
+            )
+
+        means_ar = m1_ar
+        var_ar = m2_ar / self.header.nsamples
+        stdev_ar = np.sqrt(var_ar)
+        m2_ar[m2_ar == 0] = np.nan
+        stdev_ar[np.isnan(stdev_ar)] = 0
+
+        self.chan_means = means_ar.astype("float32")
+        self.chan_vars = var_ar.astype("float32")
+        self.chan_stdevs = stdev_ar.astype("float32")
+        self.chan_maxima = maxima_ar
+        self.chan_minima = minima_ar
 
     def collapse(
         self, gulp: int = 512, start: int = 0, nsamps: int = None, **kwargs
@@ -90,7 +196,171 @@ class Filterbank(ABC):
             **kwargs,
         ):
             libcpp.get_tim(data, timar, self.header.nchans, nsamp, ii * gulp)
-        return TimeSeries(timar, self.header.new_header({"nchans": 1, "refdm": 0}))
+        return TimeSeries(timar, self.header.new_header({"nchans": 1, "dm": 0}))
+
+    def bandpass(self, gulp: int = 512, **kwargs) -> TimeSeries:
+        """Average across each time sample for all frequencies.
+
+        Parameters
+        ----------
+        gulp : int, optional
+            number of samples in each read, by default 512
+
+        Returns
+        -------
+        :class:`~sigpyproc.TimeSeries.TimeSeries`
+            the bandpass of the data
+        """
+        bpass_ar = np.zeros(self.header.nchans, dtype="float64")
+        num_samples = 0
+        for nsamps, _ii, data in self.read_plan(gulp, **kwargs):
+            libcpp.get_bpass(data, bpass_ar, self.header.nchans, nsamps)
+            num_samples += nsamps
+        bpass_ar /= num_samples
+        return TimeSeries(bpass_ar, self.header.new_header({"nchans": 1}))
+
+    def dedisperse(self, dm: float, gulp: int = 10000, **kwargs) -> TimeSeries:
+        """Dedisperse the data to a time series.
+
+        Parameters
+        ----------
+        dm : float
+            dispersion measure to dedisperse to
+        gulp : int, optional
+            number of samples in each read, by default 10000
+
+        Returns
+        -------
+        :class:`~sigpyproc.TimeSeries.TimeSeries`
+            a dedispersed time series
+
+        Notes
+        -----
+        If gulp < maximum dispersion delay, gulp is taken to be twice the
+        maximum dispersion delay.
+        """
+        chan_delays = self.header.get_dmdelays(dm)
+        max_delay = int(chan_delays.max())
+        gulp = max(2 * max_delay, gulp)
+        tim_len = self.header.nsamples - max_delay
+        tim_ar = np.zeros(tim_len, dtype="float32")
+        for nsamps, ii, data in self.read_plan(gulp, skipback=max_delay, **kwargs):
+            libcpp.dedisperse(
+                data,
+                tim_ar,
+                chan_delays,
+                max_delay,
+                self.header.nchans,
+                nsamps,
+                ii * (gulp - max_delay),
+            )
+        return TimeSeries(tim_ar, self.header.new_header({"nchans": 1, "dm": dm}))
+
+    def get_chan(self, chan: int, gulp: int = 512, **kwargs) -> TimeSeries:
+        """Retrieve a single frequency channel from the data.
+
+        Parameters
+        ----------
+        chan : int
+            channel to retrieve (0 is the highest frequency channel)
+        gulp : int, optional
+            number of samples in each read, by default 512
+
+        Returns
+        -------
+        :class:`~sigpyproc.TimeSeries.TimeSeries`
+            selected channel as a time series
+
+        Raises
+        ------
+        ValueError
+            If chan is out of range (chan < 0 or chan > total channels).
+        """
+        if chan >= self.header.nchans or chan < 0:
+            raise ValueError("Selected channel out of range.")
+        tim_ar = np.empty(self.header.nsamples, dtype="float32")
+        for nsamps, ii, data in self.read_plan(gulp, **kwargs):
+            libcpp.get_chan(data, tim_ar, chan, self.header.nchans, nsamps, ii * gulp)
+        return TimeSeries(tim_ar, self.header.new_header({"dm": 0, "nchans": 1}))
+
+    def fold(
+        self,
+        period: float,
+        dm: float,
+        accel: float = 0,
+        nbins: int = 50,
+        nints: int = 32,
+        nbands: int = 32,
+        gulp: int = 10000,
+        **kwargs,
+    ) -> FoldedData:
+        """Fold data into discrete phase, subintegration and subband bins.
+
+        Parameters
+        ----------
+        period : float
+            period in seconds to fold with
+        dm : float
+            dispersion measure to dedisperse to
+        accel : float, optional
+            acceleration in m/s/s to fold with, by default 0
+        nbins : int, optional
+            number of phase bins in output, by default 50
+        nints : int, optional
+            number of subintegrations in output, by default 32
+        nbands : int, optional
+            number of subbands in output, by default 32
+        gulp : int, optional
+            number of samples in each read, by default 10000
+
+        Returns
+        -------
+        :class:`~sigpyproc.FoldedData.FoldedData`
+            3 dimensional data cube
+
+        Raises
+        ------
+        ValueError
+            If `nbands * nints * nbins` is too large
+
+        Notes
+        -----
+        If gulp < maximum dispersion delay, gulp is taken to be twice the
+        maximum dispersion delay.
+        """
+        if np.isclose(np.modf(period / self.header.tsamp)[0], 0.001, atol=0):
+            warnings.warn("Foldng interval is an integer multiple of the sampling time")
+        if nbins > period / self.header.tsamp:
+            warnings.warn("Number of phase bins is greater than period/sampling time")
+        if (self.header.nsamples * self.header.nchans) // (nbands * nints * nbins) < 10:
+            raise ValueError("nbands x nints x nbins is too large.")
+        nbands = min(nbands, self.header.nchans)
+        chan_delays = self.header.get_dmdelays(dm)
+        max_delay = int(chan_delays.max())
+        gulp = max(2 * max_delay, gulp)
+        fold_ar = np.zeros(nbins * nints * nbands, dtype="float32")
+        count_ar = np.zeros(nbins * nints * nbands, dtype="int32")
+        for nsamps, ii, data in self.read_plan(gulp, skipback=max_delay, **kwargs):
+            libcpp.foldfil(
+                data,
+                fold_ar,
+                count_ar,
+                chan_delays,
+                max_delay,
+                self.header.tsamp,
+                period,
+                accel,
+                self.header.nsamples,
+                nsamps,
+                self.header.nchans,
+                nbins,
+                nints,
+                nbands,
+                ii * (gulp - max_delay),
+            )
+        fold_ar /= count_ar
+        fold_ar = fold_ar.reshape(nints, nbands, nbins)
+        return FoldedData(fold_ar, self.header.new_header(), period, dm, accel)
 
     def invert_freq(
         self,
@@ -149,64 +419,6 @@ class Filterbank(ABC):
             out_file.cwrite(out_ar[: nsamp * self.header.nchans])
         out_file.close()
         return out_file.name
-
-    def bandpass(self, gulp: int = 512, **kwargs) -> TimeSeries:
-        """Average across each time sample for all frequencies.
-
-        Parameters
-        ----------
-        gulp : int, optional
-            number of samples in each read, by default 512
-
-        Returns
-        -------
-        :class:`~sigpyproc.TimeSeries.TimeSeries`
-            the bandpass of the data
-        """
-        bpass_ar = np.zeros(self.header.nchans, dtype="float64")
-        num_samples = 0
-        for nsamps, _ii, data in self.read_plan(gulp, **kwargs):
-            libcpp.get_bpass(data, bpass_ar, self.header.nchans, nsamps)
-            num_samples += nsamps
-        bpass_ar /= num_samples
-        return TimeSeries(bpass_ar, self.header.new_header({"nchans": 1}))
-
-    def dedisperse(self, dm: float, gulp: int = 10000, **kwargs) -> TimeSeries:
-        """Dedisperse the data to a time series.
-
-        Parameters
-        ----------
-        dm : float
-            dispersion measure to dedisperse to
-        gulp : int, optional
-            number of samples in each read, by default 10000
-
-        Returns
-        -------
-        :class:`~sigpyproc.TimeSeries.TimeSeries`
-            a dedispersed time series
-
-        Notes
-        -----
-        If gulp < maximum dispersion delay, gulp is taken to be twice the
-        maximum dispersion delay.
-        """
-        chan_delays = self.header.get_dmdelays(dm)
-        max_delay = int(chan_delays.max())
-        gulp = max(2 * max_delay, gulp)
-        tim_len = self.header.nsamples - max_delay
-        tim_ar = np.zeros(tim_len, dtype="float32")
-        for nsamps, ii, data in self.read_plan(gulp, skipback=max_delay, **kwargs):
-            libcpp.dedisperse(
-                data,
-                tim_ar,
-                chan_delays,
-                max_delay,
-                self.header.nchans,
-                nsamps,
-                ii * (gulp - max_delay),
-            )
-        return TimeSeries(tim_ar, self.header.new_header({"nchans": 1, "refdm": dm}))
 
     def subband(
         self, dm: float, nsub: int, filename: str = None, gulp: int = 10000, **kwargs
@@ -396,114 +608,6 @@ class Filterbank(ABC):
             out_file.cwrite(write_ar[: nsamps * self.header.nchans // ffactor // tfactor])
         return out_file.name
 
-    def fold(
-        self,
-        period: float,
-        dm: float,
-        accel: float = 0,
-        nbins: int = 50,
-        nints: int = 32,
-        nbands: int = 32,
-        gulp: int = 10000,
-        **kwargs,
-    ) -> FoldedData:
-        """Fold data into discrete phase, subintegration and subband bins.
-
-        Parameters
-        ----------
-        period : float
-            period in seconds to fold with
-        dm : float
-            dispersion measure to dedisperse to
-        accel : float, optional
-            acceleration in m/s/s to fold with, by default 0
-        nbins : int, optional
-            number of phase bins in output, by default 50
-        nints : int, optional
-            number of subintegrations in output, by default 32
-        nbands : int, optional
-            number of subbands in output, by default 32
-        gulp : int, optional
-            number of samples in each read, by default 10000
-
-        Returns
-        -------
-        :class:`~sigpyproc.FoldedData.FoldedData`
-            3 dimensional data cube
-
-        Raises
-        ------
-        ValueError
-            If `nbands * nints * nbins` is too large
-
-        Notes
-        -----
-        If gulp < maximum dispersion delay, gulp is taken to be twice the
-        maximum dispersion delay.
-        """
-        if np.isclose(np.modf(period / self.header.tsamp)[0], 0.001, atol=0):
-            warnings.warn("Foldng interval is an integer multiple of the sampling time")
-        if nbins > period / self.header.tsamp:
-            warnings.warn("Number of phase bins is greater than period/sampling time")
-        if (self.header.nsamples * self.header.nchans) // (nbands * nints * nbins) < 10:
-            raise ValueError("nbands x nints x nbins is too large.")
-        nbands = min(nbands, self.header.nchans)
-        chan_delays = self.header.get_dmdelays(dm)
-        max_delay = int(chan_delays.max())
-        gulp = max(2 * max_delay, gulp)
-        fold_ar = np.zeros(nbins * nints * nbands, dtype="float32")
-        count_ar = np.zeros(nbins * nints * nbands, dtype="int32")
-        for nsamps, ii, data in self.read_plan(gulp, skipback=max_delay, **kwargs):
-            libcpp.foldfil(
-                data,
-                fold_ar,
-                count_ar,
-                chan_delays,
-                max_delay,
-                self.header.tsamp,
-                period,
-                accel,
-                self.header.nsamples,
-                nsamps,
-                self.header.nchans,
-                nbins,
-                nints,
-                nbands,
-                ii * (gulp - max_delay),
-            )
-        fold_ar /= count_ar
-        fold_ar = fold_ar.reshape(nints, nbands, nbins)
-        return FoldedData(fold_ar, self.header.new_header(), period, dm, accel)
-
-    def get_chan(self, chan: int, gulp: int = 512, **kwargs) -> TimeSeries:
-        """Retrieve a single frequency channel from the data.
-
-        Parameters
-        ----------
-        chan : int
-            channel to retrieve (0 is the highest frequency channel)
-        gulp : int, optional
-            number of samples in each read, by default 512
-
-        Returns
-        -------
-        :class:`~sigpyproc.TimeSeries.TimeSeries`
-            selected channel as a time series
-
-        Raises
-        ------
-        ValueError
-            If chan is out of range (chan < 0 or chan > total channels).
-        """
-        if chan >= self.header.nchans or chan < 0:
-            raise ValueError("Selected channel out of range.")
-        tim_ar = np.empty(self.header.nsamples, dtype="float32")
-        for nsamps, ii, data in self.read_plan(gulp, **kwargs):
-            libcpp.get_chan(data, tim_ar, chan, self.header.nchans, nsamps, ii * gulp)
-        return TimeSeries(
-            tim_ar, self.header.new_header({"channel": chan, "refdm": 0.0, "nchans": 1})
-        )
-
     def split(
         self,
         start: int,
@@ -650,66 +754,6 @@ class Filterbank(ABC):
             out_file.close()
 
         return [out_file.name for out_file in out_files]
-
-    def compute_stats(self, gulp: int = 512, **kwargs) -> None:
-        """Retrieve channelwise statistics of data.
-
-        Parameters
-        ----------
-        gulp : int, optional
-            number of samples in each read, by default 512
-
-        Function creates following instance attributes:
-
-           * :attr:`chan_means`: the mean value of each channel
-           * :attr:`chan_vars`: the variance of each channel
-           * :attr:`chan_stdevs`: the standard deviation of each channel
-           * :attr:`chan_skews`: the skewness of each channel
-           * :attr:`chan_kurts`: the kurtosis of each channel
-           * :attr:`chan_max`: the maximum value of each channel
-           * :attr:`chan_min`: the minimum value of each channel
-        """
-        maxima_ar = np.zeros(self.header.nchans, dtype="float32")
-        minima_ar = np.zeros(self.header.nchans, dtype="float32")
-        count_ar = np.zeros(self.header.nchans, dtype="int64")
-        m1_ar = np.zeros(self.header.nchans, dtype="float32")
-        m2_ar = np.zeros(self.header.nchans, dtype="float32")
-        m3_ar = np.zeros(self.header.nchans, dtype="float32")
-        m4_ar = np.zeros(self.header.nchans, dtype="float32")
-        for nsamps, ii, data in self.read_plan(gulp, **kwargs):
-            libcpp.get_stats(
-                data,
-                m1_ar,
-                m2_ar,
-                m3_ar,
-                m4_ar,
-                maxima_ar,
-                minima_ar,
-                count_ar,
-                self.header.nchans,
-                nsamps,
-                ii,
-            )
-
-        means_ar = m1_ar
-        var_ar = m2_ar / self.header.nsamples
-        stdev_ar = np.sqrt(var_ar)
-
-        m2_ar[m2_ar == 0] = np.nan
-        skew_ar = m3_ar / np.power(m2_ar, 1.5) * np.sqrt(self.header.nsamples)
-        kurt_ar = m4_ar / np.power(m2_ar, 2.0) * self.header.nsamples - 3.0
-
-        stdev_ar[np.isnan(stdev_ar)] = 0
-        skew_ar[np.isnan(skew_ar)] = 0
-        kurt_ar[np.isnan(kurt_ar)] = -3.0
-
-        self.chan_means = means_ar.astype("float32")
-        self.chan_vars = var_ar.astype("float32")
-        self.chan_stdevs = stdev_ar.astype("float32")
-        self.chan_skews = skew_ar.astype("float32")
-        self.chan_kurts = kurt_ar.astype("float32")
-        self.chan_maxima = maxima_ar
-        self.chan_minima = minima_ar
 
     def remove_bandpass(
         self,

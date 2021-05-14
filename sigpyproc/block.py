@@ -2,10 +2,10 @@ from __future__ import annotations
 import numpy as np
 from numpy import typing as npt
 
-from sigpyproc.Header import Header
-from sigpyproc.TimeSeries import TimeSeries
+from sigpyproc.header import Header
+from sigpyproc.timeseries import TimeSeries
 from sigpyproc.Utils import roll_array
-from sigpyproc import libSigPyProc as lib
+from sigpyproc import libcpp  # type: ignore
 
 
 class FilterbankBlock(np.ndarray):
@@ -73,7 +73,7 @@ class FilterbankBlock(np.ndarray):
             dtype="float32",
         )
         ar = self.transpose().ravel().copy()
-        lib.downsample(ar, new_ar, tfactor, ffactor, self.shape[0], newnsamps)
+        libcpp.downsample(ar, new_ar, tfactor, ffactor, self.shape[0], newnsamps)
         new_ar = new_ar.reshape(
             newnsamps // tfactor, self.shape[0] // ffactor
         ).transpose()
@@ -174,13 +174,13 @@ class FilterbankBlock(np.ndarray):
             if self.shape[1] < delays[-1]:
                 raise ValueError(
                     f"Insufficient time samples to dedisperse to {dm} (requires "
-                    f"at least {delays[-1]} samples, given {self.shape[1]})."
+                    + f"at least {delays[-1]} samples, given {self.shape[1]})."
                 )
             new_ar = FilterbankBlock(
                 np.zeros(
                     (self.header.nchans, self.shape[1] - delays[-1]), dtype=self.dtype
                 ),
-                self.header,
+                header=self.header,
             )
             end_samples = delays + new_ar.shape[1]
 

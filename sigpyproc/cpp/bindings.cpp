@@ -198,11 +198,11 @@ void foldfil(py::array_t<T> inarray, py::array_t<float> foldarray,
 }
 
 template <class T>
-void get_stats(py::array_t<T> inarray, py::array_t<float> M1,
-               py::array_t<float> M2, py::array_t<float> M3,
-               py::array_t<float> M4, py::array_t<float> maxima,
-               py::array_t<float> minima, py::array_t<int64_t> count,
-               int nchans, int nsamps, int startflag) {
+void compute_moments(py::array_t<T> inarray, py::array_t<float> M1,
+                     py::array_t<float> M2, py::array_t<float> M3,
+                     py::array_t<float> M4, py::array_t<float> maxima,
+                     py::array_t<float> minima, py::array_t<int64_t> count,
+                     int nchans, int nsamps, int startflag) {
 
     py::buffer_info inbuf = inarray.request(), M1buf = M1.request(),
                     M2buf = M2.request(), M3buf = M3.request(),
@@ -218,8 +218,30 @@ void get_stats(py::array_t<T> inarray, py::array_t<float> M1,
     float* min_arr     = (float*)minbuf.ptr;
     int64_t* count_arr = (int64_t*)countbuf.ptr;
 
-    sigpyproc::get_stats(indata, M1_arr, M2_arr, M3_arr, M4_arr, max_arr,
-                         min_arr, count_arr, nchans, nsamps, startflag);
+    sigpyproc::compute_moments(indata, M1_arr, M2_arr, M3_arr, M4_arr, max_arr,
+                               min_arr, count_arr, nchans, nsamps, startflag);
+}
+
+template <class T>
+void compute_moments_simple(py::array_t<T> inarray, py::array_t<float> M1,
+                            py::array_t<float> M2, py::array_t<float> maxima,
+                            py::array_t<float> minima,
+                            py::array_t<int64_t> count, int nchans, int nsamps,
+                            int startflag) {
+
+    py::buffer_info inbuf = inarray.request(), M1buf = M1.request(),
+                    M2buf = M2.request(), maxbuf = maxima.request(),
+                    minbuf = minima.request(), countbuf = count.request();
+
+    T* indata          = (T*)inbuf.ptr;
+    float* M1_arr      = (float*)M1buf.ptr;
+    float* M2_arr      = (float*)M2buf.ptr;
+    float* max_arr     = (float*)maxbuf.ptr;
+    float* min_arr     = (float*)minbuf.ptr;
+    int64_t* count_arr = (int64_t*)countbuf.ptr;
+
+    sigpyproc::compute_moments_simple(indata, M1_arr, M2_arr, max_arr, min_arr,
+                                      count_arr, nchans, nsamps, startflag);
 }
 
 template <class T>
@@ -478,8 +500,10 @@ PYBIND11_MODULE(libcpp, m) {
     m.def("invert_freq", &invert_freq<uint8_t>);
     m.def("foldfil", &foldfil<float>);
     m.def("foldfil", &foldfil<uint8_t>);
-    m.def("get_stats", &get_stats<float>);
-    m.def("get_stats", &get_stats<uint8_t>);
+    m.def("compute_moments", &compute_moments<float>);
+    m.def("compute_moments", &compute_moments<uint8_t>);
+    m.def("compute_moments_simple", &compute_moments_simple<float>);
+    m.def("compute_moments_simple", &compute_moments_simple<uint8_t>);
     m.def("remove_bandpass", &remove_bandpass<float>);
     m.def("remove_bandpass", &remove_bandpass<uint8_t>);
     m.def("downsample", &downsample<float>);

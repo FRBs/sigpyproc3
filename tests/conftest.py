@@ -149,21 +149,3 @@ def filfile_8bit_1_header():
     header["nifs"] = 1
     header["nsamples"] = 2048
     return header
-
-
-@pytest.fixture(scope="class", autouse=True)
-def gaus_data():
-    return [5, 10, 25, 50, 25, 10, 5]
-
-
-@pytest.fixture(scope="class", autouse=True)
-def gaus_data_snr(gaus_data):  # noqa: WPS442
-    return np.array(gaus_data) / np.sqrt(len(gaus_data))
-
-
-@pytest.fixture(scope="class", autouse=True)
-def profile_data(gaus_data):  # noqa: WPS442
-    np.random.seed(5)
-    data = np.random.normal(0, 1, 1024)
-    data[497:504] = gaus_data  # noqa: WPS362
-    return data

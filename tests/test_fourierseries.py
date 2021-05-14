@@ -1,8 +1,8 @@
 import numpy as np
 from pathlib import Path
 
-from sigpyproc.Header import Header
-from sigpyproc.FourierSeries import FourierSeries
+from sigpyproc.header import Header
+from sigpyproc.fourierseries import FourierSeries
 
 
 class TestFourierSeries(object):

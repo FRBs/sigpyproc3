@@ -50,15 +50,13 @@ class Header(object):
     telescope: str = "Fake"
     backend: str = "Fake"
     source: str = "Fake"
+    frame: str = "topocentric"
     ibeam: int = 0
     nbeams: int = 0
     dm: float = 0
     period: float = 0
     accel: float = 0
     signed: bool = False
-    barycentric: bool = False
-    pulsarcentric: bool = False
-
     rawdatafile: Optional[str] = None
 
     hdrlens: List[int] = attr.Factory(list)
@@ -157,24 +155,6 @@ class Header(object):
         """Observation date and time (`str`, read-only)."""
         return get_time_after_nsamps(self.tstart, self.tsamp).iso
 
-    def to_dict(self, with_properties=True) -> Dict[str, Any]:
-        """Get a dict of all attributes including property attributes.
-
-        Returns
-        -------
-        dict
-            attributes
-        """
-        attributes = attr.asdict(self)
-        if with_properties:
-            prop = {
-                key: getattr(self, key)
-                for key, value in vars(type(self)).items()  # noqa: WPS421
-                if isinstance(value, property)
-            }
-            attributes.update(prop)
-        return attributes
-
     def mjd_after_nsamps(self, nsamps: int) -> float:
         """Find the Modified Julian Date after nsamps have elapsed.
 
@@ -189,6 +169,28 @@ class Header(object):
             Modified Julian Date
         """
         return get_time_after_nsamps(self.tstart, self.tsamp, nsamps).mjd
+
+    def get_dmdelays(self, dm: float, in_samples: bool = True) -> np.ndarray:
+        """For a given dispersion measure get the dispersive ISM delay for middle of each frequency channel.
+
+        Parameters
+        ----------
+        dm : float
+            dispersion measure to calculate delays for
+        in_samples : bool, optional
+            flag to return delays as numbers of samples, by default True
+
+        Returns
+        -------
+        :py:obj:`numpy.ndarray`
+            delays for middle of each channel (highest frequency first)
+        """
+        delays = (
+            dm * params.DM_CONSTANT_LK * ((self.chan_freqs ** -2) - (self.fch1 ** -2))
+        )
+        if in_samples:
+            return (delays / self.tsamp).round().astype("int32")
+        return delays
 
     def new_header(self, update_dict: Optional[Dict[str, Any]] = None) -> Header:
         """Get a new instance of :class:`~sigpyproc.Header.Header`.
@@ -230,29 +232,25 @@ class Header(object):
             {"dm": dm, "nchans": 1, "data_type": "time series", "nbits": 32}
         )
 
-    def get_dmdelays(self, dm: float, in_samples: bool = True) -> np.ndarray:
-        """For a given dispersion measure get the dispersive ISM delay for middle of each frequency channel.
-
-        Parameters
-        ----------
-        dm : float
-            dispersion measure to calculate delays for
-        in_samples : bool, optional
-            flag to return delays as numbers of samples, by default True
+    def to_dict(self, with_properties=True) -> Dict[str, Any]:
+        """Get a dict of all attributes including property attributes.
 
         Returns
         -------
-        :py:obj:`numpy.ndarray`
-            delays for middle of each channel (highest frequency first)
+        dict
+            attributes
         """
-        delays = (
-            dm * params.DM_CONSTANT_LK * ((self.chan_freqs ** -2) - (self.fch1 ** -2))
-        )
-        if in_samples:
-            return (delays / self.tsamp).round().astype("int32")
-        return delays
+        attributes = attr.asdict(self)
+        if with_properties:
+            prop = {
+                key: getattr(self, key)
+                for key, value in vars(type(self)).items()  # noqa: WPS421
+                if isinstance(value, property)
+            }
+            attributes.update(prop)
+        return attributes
 
-    def spp_header(self, as_dict=False) -> Union[Dict, bytes]:
+    def to_sigproc(self, as_dict=False) -> Union[Dict, bytes]:
         """Get sigproc format header binary header.
 
         Returns
@@ -260,11 +258,26 @@ class Header(object):
         str
             header in binary format
         """
-        header = attr.asdict(self)
+        header = self.to_dict()
+        sig_header = {
+            key: value for key, value in header.items() if key in sigproc.header_keys
+        }
+        hdr_update = {
+            "data_type": params.data_types.inverse[sig_header["data_type"]],
+            "pulsarcentric": 1 if self.frame == "pulsarcentric" else 0,
+            "barycentric": 1 if self.frame == "barycentric" else 0,
+            "source_name": self.source,
+            "refdm": self.dm,
+            "src_dej": float(self.dec.replace(":", "")),
+            "src_raj": float(self.ra.replace(":", "")),
+            "za_start": self.zenith.deg,
+            "az_start": self.azimuth.deg,
+        }
+        sig_header.update(hdr_update)
         if as_dict:
-            return header
+            return sig_header
 
-        return sigproc.encode_header(header)
+        return sigproc.encode_header(sig_header)
 
     def prep_outfile(
         self,
@@ -295,20 +308,20 @@ class Header(object):
         """
         if nbits is None:
             nbits = self.nbits
-        new = self.new_header(update_dict)
-        new.nbits = nbits
+        new_hdr = self.new_header(update_dict)
+        new_hdr.nbits = nbits
         out_file = FileWriter(
             filename,
             mode="w+",
             nbits=nbits,
-            tsamp=new.tsamp,
-            nchans=new.nchans,
+            tsamp=new_hdr.tsamp,
+            nchans=new_hdr.nchans,
             quantize=quantize,
             interval_seconds=interval_seconds,
             constant_offset_scale=constant_offset_scale,
             **kwargs,
         )
-        out_file.write(new.spp_header())
+        out_file.write(new_hdr.to_sigproc())
         return out_file
 
     def make_inf(self, outfile=None):
@@ -403,6 +416,8 @@ class Header(object):
 
         """
         header = sigproc.parse_header_multi(filenames, check_contiguity=check_contiguity)
+        frame = "pulsarcentric" if header.get("pulsarcentric") else "topocentric"
+        frame = "barycentric" if header.get("barycentric") else "topocentric"
         hdr_update = {
             "data_type": params.data_types[header["data_type"]],
             "telescope": sigproc.telescope_ids.inverse[header["data_type"]],
@@ -412,6 +427,7 @@ class Header(object):
             "coord": sigproc.parse_radec(header["src_raj"], header["src_dej"]),
             "azimuth": Angle(header["az_start"] * units.deg),
             "zenith": Angle(header["za_start"] * units.deg),
+            "frame": frame,
         }
         header.update(hdr_update)
         header_check = {
