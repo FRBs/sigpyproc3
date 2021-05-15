@@ -13,16 +13,16 @@ class FilterbankBlock(np.ndarray):
 
     Parameters
     ----------
-    input_array : npt.ArrayLike
+    input_array : :py:obj:`~numpy.typing.ArrayLike`
         2 dimensional array of shape (nchans, nsamples)
-    header : Header
+    header : :class:`~sigpyproc.header.Header`
         observational metadata
     dm : float, optional
         DM of the input_array, by default 0
 
     Returns
     -------
-    :py:obj:`numpy.ndarray`
+    :py:obj:`~numpy.ndarray`
         2 dimensional array of shape (nchans, nsamples) with header metadata
 
     Notes
@@ -57,7 +57,7 @@ class FilterbankBlock(np.ndarray):
 
         Returns
         -------
-        :class:`~sigpyproc.Filterbank.FilterbankBlock`
+        FilterbankBlock
             2 dimensional array of downsampled data
 
         Raises
@@ -117,7 +117,7 @@ class FilterbankBlock(np.ndarray):
 
         Returns
         -------
-        :class:`~sigpyproc.Filterbank.FilterbankBlock`
+        FilterbankBlock
             normalised version of the data
         """
         return self / self.mean(axis=1).reshape(self.shape[0], 1)
@@ -127,7 +127,7 @@ class FilterbankBlock(np.ndarray):
 
         Returns
         -------
-        TimeSeries
+        :class:`~sigpyproc.timeseries.TimeSeries`
             Sum of all channels as timeseries
         """
         ts = self.sum(axis=0)
@@ -138,7 +138,7 @@ class FilterbankBlock(np.ndarray):
 
         Returns
         -------
-        ArrayLike
+        :py:obj:`~numpy.typing.ArrayLike`
             the bandpass of the data
         """
         return self.sum(axis=1)
@@ -156,7 +156,7 @@ class FilterbankBlock(np.ndarray):
 
         Returns
         -------
-        :class:`~sigpyproc.Filterbank.FilterbankBlock`
+        FilterbankBlock
             a dedispersed version of the block
 
         Raises

@@ -22,14 +22,14 @@ class PowerSpectrum(np.ndarray):
 
     Parameters
     ----------
-    input_array : npt.ArrayLike
+    input_array : :py:obj:`~numpy.typing.ArrayLike`
         1 dimensional array of shape (nsamples)
-    header : Header
+    header : :class:`~sigpyproc.header.Header`
         observational metadata
 
     Returns
     -------
-    :py:obj:`numpy.ndarray`
+    :py:obj:`~numpy.ndarray`
         1 dimensional power spectra with header
 
     Notes
@@ -118,7 +118,7 @@ class PowerSpectrum(np.ndarray):
 
         Returns
         -------
-        List[PowerSpectrum]
+        List[:class:`~sigpyproc.fourierseries.PowerSpectrum`]
             A list of folded spectra where the i :sup:`th` element
             is the spectrum folded i times.
         """
@@ -153,14 +153,14 @@ class FourierSeries(np.ndarray):
 
     Parameters
     ----------
-    input_array : npt.ArrayLike
+    input_array : :py:obj:`~numpy.typing.ArrayLike`
         1 dimensional array of shape (nsamples)
-    header : Header
+    header : :class:`~sigpyproc.header.Header`
         observational metadata
 
     Returns
     -------
-    :py:obj:`numpy.ndarray`
+    :py:obj:`~numpy.ndarray`
         1 dimensional fourier series with header
     """
 
@@ -191,7 +191,7 @@ class FourierSeries(np.ndarray):
 
         Returns
         -------
-        timeseries.TimeSeries
+        :class:`~sigpyproc.timeseries.TimeSeries`
             a time series
         """
         fftsize = self.size - 2
@@ -204,7 +204,7 @@ class FourierSeries(np.ndarray):
 
         Returns
         -------
-        FourierSeries
+        :class:`~sigpyproc.fourierseries.FourierSeries`
             conjugated Fourier series.
 
         Notes
@@ -225,7 +225,7 @@ class FourierSeries(np.ndarray):
 
         Returns
         -------
-        :class:`~sigpyproc.FourierSeries.PowerSpectrum`
+        :class:`~sigpyproc.fourierseries.PowerSpectrum`
             a power spectrum
         """
         specsize = self.size // 2
@@ -248,7 +248,7 @@ class FourierSeries(np.ndarray):
 
         Returns
         -------
-        :class:`~sigpyproc.FourierSeries.FourierSeries`
+        :class:`~sigpyproc.fourierseries.FourierSeries`
             whitened fourier series
         """
         buf_c1 = np.empty(2 * endwidth, dtype="float32")
@@ -279,7 +279,7 @@ class FourierSeries(np.ndarray):
 
         Returns
         -------
-        Profile
+        :class:`~sigpyproc.foldedcube.Profile`
             a pulse profile
         """
         bin_ = freq * self.header.tobs
@@ -340,7 +340,7 @@ class FourierSeries(np.ndarray):
 
         Returns
         -------
-        :class:`~sigpyproc.FourierSeries.FourierSeries`
+        :class:`~sigpyproc.fourierseries.FourierSeries`
             an array containing the whole file contents
 
         Raises
@@ -373,7 +373,7 @@ class FourierSeries(np.ndarray):
 
         Returns
         -------
-        :class:`~sigpyproc.FourierSeries.FourierSeries`
+        :class:`~sigpyproc.fourierseries.FourierSeries`
             an array containing the whole file contents
 
         Notes

@@ -16,7 +16,7 @@ class FilReader(Filterbank):
 
     Returns
     -------
-    :class:`~sigpyproc.Filterbank.Filterbank`
+    :class:`~sigpyproc.base.Filterbank`
         container of filterbank data with observational metadata
 
     Notes
@@ -59,12 +59,12 @@ class FilReader(Filterbank):
 
     @property
     def header(self) -> Header:
-        """Header metadata of input file (`str`, read-only)."""
+        """Header metadata of input file (:class:`~sigpyproc.header.Header`, read-only)."""
         return self._header
 
     @property
     def bitsinfo(self) -> BitsInfo:
-        """Bits info of input file data (`BitsInfo`, read-only)."""
+        """Bits info of input file data (:class:`~sigpyproc.io.bits.BitsInfo`, read-only)."""
         return self._file.bitsinfo
 
     @property
@@ -84,7 +84,7 @@ class FilReader(Filterbank):
 
         Returns
         -------
-        :class:`~sigpyproc.Filterbank.FilterbankBlock`
+        :class:`~sigpyproc.block.FilterbankBlock`
             2-D array of filterbank data
         """
         self._file.seek(start * self.sampsize)
@@ -120,7 +120,7 @@ class FilReader(Filterbank):
 
         Returns
         -------
-        :class:`~sigpyproc.Filterbank.FilterbankBlock`
+        :class:`~sigpyproc.block.FilterbankBlock`
             2-D array of filterbank data
         """
         data = np.zeros((self.header.nchans, nsamps), dtype=self._file.bitsinfo.dtype)
@@ -208,7 +208,7 @@ class FilReader(Filterbank):
 
         Yields
         -------
-        int, int, :py:obj:`numpy.ndarray`
+        int, int, :py:obj:`~numpy.ndarray`
             An generator that can read through the file.
 
         Raises

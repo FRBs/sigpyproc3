@@ -21,16 +21,64 @@ class Header(object):
 
     Parameters
     ----------
-    rawdatafile : str, optional
-        [description], by default 1
-    data_type : str, optional
-        [description], by default 'abc'
-    fch1 : float
-        central frequency of the first channel in MHz
-    foff : float
-        channel width in MHz
+    filename: str
+        filename
+    data_type: str
+        data type
+    nchans: int
+        Number of channels
+    foff: float
+        Channel width in MHz
+    fch1: float
+        Central frequency of the first channel in MHz
+    nbits: int
+        Number of bits of sample
+    tsamp: float
+        Sampling time
+    tstart: float
+        Start MJD
+    nsamples: int
+        Number of samples
+    nifs: int
+        NUmber of polarizations
     coord: SkyCoord
-        Sky coordinate.
+        Sky coordinate
+    azimuth: Angle
+        Telescope Azimuth
+    zenith: Angle
+        Telescope Zenith angle
+    telescope: str
+        Telescope name
+    backend: str
+        Backend name
+    source: str
+        Source name
+    frame: str
+        Frame (Topocentric)
+    ibeam: int
+        Beam no
+    nbeams: int
+        Total beams
+    dm: float
+        Reference DM
+    period: float
+        Period
+    accel: float
+        Acceleration
+    signed: bool
+        if the data is signed
+    rawdatafile: Optional[str]
+        Original file name
+    hdrlens: List[int]
+        List of header length of files
+    datalens: List[int]
+        List of data length of files
+    filenames: List[str]
+        List of filenames
+    nsamples_files: List[int]
+        List of samples in each file
+    tstart_files: List[float]
+        List of start MJD in each file
     """
 
     filename: str
@@ -44,7 +92,7 @@ class Header(object):
     nsamples: int
 
     nifs: int = 1
-    coord: SkyCoord = SkyCoord(0, 0, unit='deg')
+    coord: SkyCoord = SkyCoord(0, 0, unit="deg")
     azimuth: Angle = Angle("0d")
     zenith: Angle = Angle("0d")
     telescope: str = "Fake"
@@ -107,7 +155,7 @@ class Header(object):
 
     @property
     def chan_freqs(self) -> np.ndarray:
-        """Frequency (center) of each channel(`np.ndarray`, read-only)."""
+        """Frequency (center) of each channel(:py:obj:`~numpy.ndarray`, read-only)."""
         return np.arange(self.nchans, dtype="float128") * self.foff + self.fch1
 
     @property
@@ -182,7 +230,7 @@ class Header(object):
 
         Returns
         -------
-        :py:obj:`numpy.ndarray`
+        :py:obj:`~numpy.ndarray`
             delays for middle of each channel (highest frequency first)
         """
         delays = (

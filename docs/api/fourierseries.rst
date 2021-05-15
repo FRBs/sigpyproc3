@@ -1,7 +1,7 @@
-sigpyproc.FourierSeries
+sigpyproc.fourierseries
 =======================
 
-.. automodule:: sigpyproc.FourierSeries
+.. automodule:: sigpyproc.fourierseries
    :members:
    :undoc-members:
    :show-inheritance:

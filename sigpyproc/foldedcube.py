@@ -13,12 +13,12 @@ class Profile(np.ndarray):
 
     Parameters
     ----------
-    input_array : npt.ArrayLike
+    input_array : :py:obj:`~numpy.typing.ArrayLike`
         1-D array of a pulse profile
 
     Returns
     -------
-    :py:obj:`numpy.ndarray`
+    :py:obj:`~numpy.ndarray`
         Pulse profile
     """
 
@@ -72,16 +72,16 @@ class Profile(np.ndarray):
 
 
 class FoldSlice(np.ndarray):
-    """An array class to handle a 2-D slice of :class:`~sigpyproc.FoldedData.FoldedData`.
+    """An array class to handle a 2-D slice of :class:`~sigpyproc.foldedcube.FoldedData`.
 
     Parameters
     ----------
-    input_array : npt.ArrayLike
+    input_array : :py:obj:`~numpy.typing.ArrayLike`
         2-D array with phase in x axis.
 
     Returns
     -------
-    :py:obj:`numpy.ndarray`
+    :py:obj:`~numpy.ndarray`
         2-D array array
 
     """
@@ -99,7 +99,7 @@ class FoldSlice(np.ndarray):
 
         Returns
         -------
-        :class:`~sigpyproc.FoldedData.FoldSlice`
+        :class:`~sigpyproc.foldedcube.FoldSlice`
             normalised version of slice
         """
         return self / self.mean(axis=1).reshape(self.shape[0], 1)
@@ -109,7 +109,7 @@ class FoldSlice(np.ndarray):
 
         Returns
         -------
-        :class:`~sigpyproc.FoldedData.Profile`
+        :class:`~sigpyproc.foldedcube.Profile`
             a pulse profile
         """
         return self.sum(axis=0).view(Profile)
@@ -120,9 +120,9 @@ class FoldedData(np.ndarray):
 
     Parameters
     ----------
-    input_array : npt.ArrayLike
+    input_array : :py:obj:`~numpy.typing.ArrayLike`
         3-D array of folded data
-    header : Header
+    header : :class:`~sigpyproc.header.Header`
         observational metadata
     period : float
         period that data was folded with
@@ -133,7 +133,7 @@ class FoldedData(np.ndarray):
 
     Returns
     -------
-    :py:obj:`numpy.ndarray`
+    :py:obj:`~numpy.ndarray`
         3-D array of folded data with header metadata
 
     Notes
@@ -192,7 +192,7 @@ class FoldedData(np.ndarray):
 
         Returns
         -------
-        :class:`~sigpyproc.FoldedData.FoldSlice`
+        :class:`~sigpyproc.foldedcube.FoldSlice`
             a 2-D array containing the subintegration
         """
         return self[nint].view(FoldSlice)
@@ -207,7 +207,7 @@ class FoldedData(np.ndarray):
 
         Returns
         -------
-        :class:`~sigpyproc.FoldedData.FoldSlice`
+        :class:`~sigpyproc.foldedcube.FoldSlice`
             a 2-D array containing the subband
         """
         return self[:, nint].view(FoldSlice)
@@ -217,7 +217,7 @@ class FoldedData(np.ndarray):
 
         Returns
         -------
-        :class:`~sigpyproc.FoldedData.Profile`
+        :class:`~sigpyproc.foldedcube.Profile`
             a 1-D array containing the power as a function of phase (pulse profile)
         """
         return self.sum(axis=0).sum(axis=0).view(Profile)
@@ -227,7 +227,7 @@ class FoldedData(np.ndarray):
 
         Returns
         -------
-        :class:`~sigpyproc.FoldedData.FoldSlice`
+        :class:`~sigpyproc.foldedcube.FoldSlice`
             a 2-D array containing the time vs. phase plane
         """
         return self.sum(axis=1).view(FoldSlice)
@@ -237,7 +237,7 @@ class FoldedData(np.ndarray):
 
         Returns
         -------
-        :class:`~sigpyproc.FoldedData.FoldSlice`
+        :class:`~sigpyproc.foldedcube.FoldSlice`
             a 2-D array containing the frequency vs. phase plane
         """
         return self.sum(axis=0).view(FoldSlice)

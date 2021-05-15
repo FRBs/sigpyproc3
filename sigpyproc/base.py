@@ -17,19 +17,19 @@ class Filterbank(ABC):
 
     Attributes
     ----------
-    chan_means : np.ndarray
+    chan_means : :py:obj:`~numpy.ndarray`
         the mean value of each channel
-    chan_vars : np.ndarray
+    chan_vars : :py:obj:`~numpy.ndarray`
         the variance of each channel
-    chan_stdevs : np.ndarray
+    chan_stdevs : :py:obj:`~numpy.ndarray`
         the standard deviation of each channel
-    chan_skews : np.ndarray
+    chan_skews : :py:obj:`~numpy.ndarray`
         the skewness of each channel
-    chan_kurts : np.ndarray
+    chan_kurts : :py:obj:`~numpy.ndarray`
         the kurtosis of each channel
-    chan_max : np.ndarray
+    chan_max : :py:obj:`~numpy.ndarray`
         the maximum value of each channel
-    chan_min : np.ndarray
+    chan_min : :py:obj:`~numpy.ndarray`
         the minimum value of each channel
 
     Notes
@@ -186,7 +186,7 @@ class Filterbank(ABC):
 
         Returns
         -------
-        :class:`~sigpyproc.TimeSeries.TimeSeries`
+        :class:`~sigpyproc.timeseries.TimeSeries`
             A zero-DM time series
         """
         if nsamps is None:
@@ -213,7 +213,7 @@ class Filterbank(ABC):
 
         Returns
         -------
-        :class:`~sigpyproc.TimeSeries.TimeSeries`
+        :class:`~sigpyproc.timeseries.TimeSeries`
             the bandpass of the data
         """
         bpass_ar = np.zeros(self.header.nchans, dtype="float64")
@@ -236,7 +236,7 @@ class Filterbank(ABC):
 
         Returns
         -------
-        :class:`~sigpyproc.TimeSeries.TimeSeries`
+        :class:`~sigpyproc.timeseries.TimeSeries`
             a dedispersed time series
 
         Notes
@@ -273,7 +273,7 @@ class Filterbank(ABC):
 
         Returns
         -------
-        :class:`~sigpyproc.TimeSeries.TimeSeries`
+        :class:`~sigpyproc.timeseries.TimeSeries`
             selected channel as a time series
 
         Raises
@@ -320,7 +320,7 @@ class Filterbank(ABC):
 
         Returns
         -------
-        :class:`~sigpyproc.FoldedData.FoldedData`
+        :class:`~sigpyproc.foldedcube.FoldedData`
             3 dimensional data cube
 
         Raises
@@ -526,7 +526,7 @@ class Filterbank(ABC):
 
         Parameters
         ----------
-        chanmask : list
+        chanmask : :py:obj:`~numpy.typing.ArrayLike`
             binary channel mask (0 for bad channel, 1 for good)
         outfilename : str, optional
             name of the output filterbank file, by default ``basename_masked.fil``

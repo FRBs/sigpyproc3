@@ -1,7 +1,7 @@
-sigpyproc.Readers
+sigpyproc.readers
 =================
 
-.. automodule:: sigpyproc.Readers
+.. automodule:: sigpyproc.readers
    :members:
    :undoc-members:
    :show-inheritance:

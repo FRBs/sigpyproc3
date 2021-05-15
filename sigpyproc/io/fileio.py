@@ -72,7 +72,7 @@ class FileReader(_FileBase):
 
         Returns
         -------
-        np.ndarray
+        :py:obj:`~numpy.ndarray`
             an 1-D array containing the read data
 
         Raises
@@ -206,7 +206,7 @@ class FileWriter(_FileBase):
 
         Parameters
         ----------
-        ar : :py:obj:`numpy.ndarray`
+        ar : :py:obj:`~numpy.ndarray`
             a 1-D numpy array
 
         Notes

@@ -1,7 +1,7 @@
-sigpyproc.Header
+sigpyproc.params
 ================
 
-.. automodule:: sigpyproc.Header
+.. automodule:: sigpyproc.params
    :members:
    :undoc-members:
    :show-inheritance:

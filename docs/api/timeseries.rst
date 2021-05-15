@@ -1,7 +1,7 @@
-sigpyproc.TimeSeries
+sigpyproc.timeseries
 ====================
 
-.. automodule:: sigpyproc.TimeSeries
+.. automodule:: sigpyproc.timeseries
    :members:
    :undoc-members:
    :show-inheritance:

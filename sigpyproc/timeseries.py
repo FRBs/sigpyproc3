@@ -21,14 +21,14 @@ class TimeSeries(np.ndarray):
 
     Parameters
     ----------
-    input_array : npt.ArrayLike
+    input_array : :py:obj:`~numpy.typing.ArrayLike`
         1 dimensional array of shape (nsamples)
-    header : Header
+    header : :class:`~sigpyproc.header.Header`
         observational metadata
 
     Returns
     -------
-    :py:obj:`numpy.ndarray`
+    :py:obj:`~numpy.ndarray`
         1 dimensional time series with header
 
     Notes
@@ -63,7 +63,7 @@ class TimeSeries(np.ndarray):
 
         Returns
         -------
-        :class:`~sigpyproc.FoldedData.FoldedData`
+        :class:`~sigpyproc.foldedcube.FoldedData`
             data cube containing the folded data
 
         Raises
@@ -97,7 +97,7 @@ class TimeSeries(np.ndarray):
 
         Returns
         -------
-        :class:`~sigpyproc.FourierSeries.FourierSeries`
+        :class:`~sigpyproc.fourierseries.FourierSeries`
             output of One-Dimensional DFTs of Real Data
         """
         if self.size % 2 == 0:
@@ -117,7 +117,7 @@ class TimeSeries(np.ndarray):
 
         Returns
         -------
-        :class:`~sigpyproc.TimeSeries.TimeSeries`
+        :class:`~sigpyproc.timeseries.TimeSeries`
             filtered time series
 
         Raises
@@ -145,7 +145,7 @@ class TimeSeries(np.ndarray):
 
         Returns
         -------
-        :class:`~sigpyproc.TimeSeries.TimeSeries`
+        :class:`~sigpyproc.timeseries.TimeSeries`
             filtered time series
 
         Notes
@@ -165,7 +165,7 @@ class TimeSeries(np.ndarray):
 
         Returns
         -------
-        :class:`~sigpyproc.TimeSeries.TimeSeries`
+        :class:`~sigpyproc.timeseries.TimeSeries`
             filtered time series
 
         Notes
@@ -186,7 +186,7 @@ class TimeSeries(np.ndarray):
 
         Returns
         -------
-        :class:`~sigpyproc.TimeSeries.TimeSeries`
+        :class:`~sigpyproc.timeseries.TimeSeries`
             downsampled time series
 
         Notes
@@ -211,7 +211,7 @@ class TimeSeries(np.ndarray):
 
         Returns
         -------
-        :class:`~sigpyproc.TimeSeries.TimeSeries`
+        :class:`~sigpyproc.timeseries.TimeSeries`
             padded time series
         """
         new_ar = np.hstack((self, self.mean() * np.ones(npad)))
@@ -229,7 +229,7 @@ class TimeSeries(np.ndarray):
 
         Returns
         -------
-        TimeSeries
+        :class:`~sigpyproc.timeseries.TimeSeries`
             resampled time series
         """
         if accel > 0:
@@ -247,12 +247,12 @@ class TimeSeries(np.ndarray):
 
         Parameters
         ----------
-        other : Union[TimeSeries, npt.ArrayLike]
+        other : TimeSeries or :py:obj:`~numpy.typing.ArrayLike`
             array to correlate with
 
         Returns
         -------
-        TimeSeries
+        :class:`~sigpyproc.timeseries.TimeSeries`
             time series containing the correlation
 
         Raises
@@ -323,7 +323,7 @@ class TimeSeries(np.ndarray):
 
         Returns
         -------
-        :class:`~sigpyproc.TimeSeries.TimeSeries`
+        :class:`~sigpyproc.timeseries.TimeSeries`
             a new TimeSeries object
 
         Raises
@@ -357,7 +357,7 @@ class TimeSeries(np.ndarray):
 
         Returns
         -------
-        :class:`~sigpyproc.TimeSeries.TimeSeries`
+        :class:`~sigpyproc.timeseries.TimeSeries`
             a new TimeSeries object
         """
         header = Header.from_sigproc(timfile)

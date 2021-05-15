@@ -22,7 +22,7 @@ def roll_array(arr: npt.ArrayLike, shift: int, axis: int) -> np.ndarray:
 
     Parameters
     ----------
-    arr : npt.ArrayLike
+    arr : :py:obj:`~numpy.typing.ArrayLike`
         input array to roll
     shift : int
         number of bins to shift by
@@ -31,7 +31,7 @@ def roll_array(arr: npt.ArrayLike, shift: int, axis: int) -> np.ndarray:
 
     Returns
     -------
-    np.ndarray
+    :py:obj:`~numpy.ndarray`
         shifted numpy array
     """
     arr = np.asanyarray(arr)

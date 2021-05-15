@@ -1,7 +1,7 @@
-sigpyproc.Utils
+sigpyproc.utils
 ===============
 
-.. automodule:: sigpyproc.Utils
+.. automodule:: sigpyproc.utils
    :members:
    :undoc-members:
    :show-inheritance:

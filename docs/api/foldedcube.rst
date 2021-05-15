@@ -1,7 +1,7 @@
-sigpyproc.FoldedData
+sigpyproc.foldedcube
 ====================
 
-.. automodule:: sigpyproc.FoldedData
+.. automodule:: sigpyproc.foldedcube
    :members:
    :undoc-members:
    :show-inheritance:
