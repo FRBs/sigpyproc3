@@ -73,3 +73,6 @@ dmypy.json
 .mr.developer.cfg
 .project
 .pydevproject
+
+# Editor
+.vscode/

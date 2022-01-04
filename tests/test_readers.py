@@ -1,17 +1,16 @@
 import pytest
-from sigpyproc.Readers import FilReader
+from sigpyproc.readers import FilReader
 
 
-class TestReaders:
-    def test_filterbank_single(self, filfile):
-        myFil  = FilReader(filfile)
-        header = myFil.header
-        assert header.nchans == 64
+class TestReaders(object):
+    def test_filterbank_single(self, filfile_4bit):
+        fil = FilReader(filfile_4bit)
+        assert fil.header.nchans == 832
 
     def test_filterbank_empty(self):
         with pytest.raises(TypeError):
             FilReader()
 
-    def test_filterbank_otherfile(tmpfile):
-        with pytest.raises(TypeError):
-            FilReader(tmpfile)
+    def test_filterbank_otherfile(self, inffile):
+        with pytest.raises(OSError):
+            FilReader(inffile)

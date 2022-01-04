@@ -1,5 +1,8 @@
-from sigpyproc import libSigPyProc
-from sigpyproc.Readers import FilReader
+import sys
 
-__all__ = ["libSigPyProc", "FilReader"]
-__version__ = "0.5.6"
+if sys.version_info >= (3, 8):
+    from importlib import metadata as importlib_metadata  # noqa: WPS433
+else:
+    import importlib_metadata  # noqa: WPS440, WPS433
+
+__version__ = importlib_metadata.version(__name__)  # noqa: WPS410

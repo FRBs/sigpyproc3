@@ -1,49 +1,54 @@
+import pytest
 import numpy as np
-from sigpyproc.Header import Header
+from sigpyproc.header import Header
 
 
 class TestHeader(object):
-    def test_getDMdelays(self, filfile):
-        header = Header.parseSigprocHeader(filfile)
-        delays_time = header.getDMdelays(dm=100, in_samples=False)
-        delays_samp = header.getDMdelays(dm=100, in_samples=True)
-        np.testing.assert_equal(delays_samp.mean(), 27.109375)
-        np.testing.assert_allclose(delays_time.mean(), 0.00867, atol=0.01)
+    @pytest.mark.parametrize(
+        "key, newval", [("nchans", 2000), ("fch1", 4000.5), ("source", "new_source")]
+    )
+    def test_new_header_pass(self, filfile_4bit, key, newval):
+        header = Header.from_sigproc(filfile_4bit)
+        newhdr = header.new_header(update_dict={key: newval})
+        assert getattr(newhdr, key) == newval
 
-    def test_prepOutfile(self, filfile, tmpfile):
-        myheader = Header.parseSigprocHeader(filfile)
-        outfile = myheader.prepOutfile(tmpfile)
-        out_header = Header.parseSigprocHeader(outfile.name)
-        np.testing.assert_equal(out_header.SPPHeader(), myheader.SPPHeader())
+    def test_new_header_fail(self, filfile_4bit):
+        header = Header.from_sigproc(filfile_4bit)
+        newhdr = header.new_header(update_dict={"random_key": 0})
+        with pytest.raises(AttributeError):
+            assert newhdr.random_key == 0
 
-    """
-    def test_makeInf(self, inffile, tmpfile):
-        myheader = Header.parseInfHeader(inffile)
-        myheader.makeInf(outfile=tmpfile)
-        with open(inffile, 'r') as file_inf:
-            infdata = file_inf.read()
-        with open(tmpfile, 'r') as file_tmp:
-            tmpdata = file_tmp.read()
-        np.testing.assert_string_equal(tmpdata, infdata)
-    """
-    def test_parseInfHeader(self, inffile):
-        header = Header.parseInfHeader(inffile)
-        assert header.nbits == 32
-        assert header.source_name == "Mystery_PSR"
-        assert header.telescope_id == 6
-        assert header.machine_id == 9
-        assert header.src_raj == 164338.1
-        assert header.src_dej == -122458.7
-        assert header.nsamples == 66250
-        assert header.nchans == 1
+    def test_dedispersed_header(self, filfile_4bit):
+        header = Header.from_sigproc(filfile_4bit)
+        newhdr = header.dedispersed_header(dm=10)
+        assert newhdr.dm == 10
+        assert newhdr.nchans == 1
 
-    def test_parseSigprocHeader(self, timfile):
-        header = Header.parseSigprocHeader(timfile)
-        assert header.nbits == 32
-        assert header.source_name == "Mystery_PSR"
-        assert header.telescope_id == 6
-        assert header.machine_id == 4
-        assert header.ra == "16:43:38.1000"
-        assert header.dec == "-12:24:58.7000"
-        assert header.nsamples == 66250
-        assert header.nchans == 1
+    def test_to_sigproc(self, filfile_4bit):
+        header = Header.from_sigproc(filfile_4bit)
+        spphdr = header.to_sigproc()
+        assert len(spphdr) >= header.hdrlens[0]
+        assert isinstance(spphdr, bytes)
+
+    @pytest.mark.parametrize("dm, maxdelay", [(0, 0), (100, 0.8), (5000, 40.4)])
+    def test_get_dmdelays(self, filfile_4bit, dm, maxdelay):
+        header = Header.from_sigproc(filfile_4bit)
+        delays_time = header.get_dmdelays(dm=dm, in_samples=False)
+        np.testing.assert_allclose(delays_time.max(), maxdelay, atol=0.1)
+
+    def test_prep_outfile(self, filfile_4bit, tmpfile):
+        header = Header.from_sigproc(filfile_4bit)
+        with header.prep_outfile(tmpfile) as outfile:
+            outfilename = outfile.name
+        out_header = Header.from_sigproc(outfilename)
+        np.testing.assert_equal(out_header.to_sigproc(), header.to_sigproc())
+
+    def test_from_inffile(self, inffile, inf_header):
+        infheader = Header.from_inffile(inffile)
+        for key, expected_value in inf_header.items():
+            assert getattr(infheader, key) == expected_value
+
+    def test_make_inf(self, inffile, inf_header, tmpfile):
+        infheader = Header.from_inffile(inffile)
+        infheader.make_inf(outfile=tmpfile)
+        self.test_from_inffile(tmpfile, inf_header)
