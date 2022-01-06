@@ -5,7 +5,7 @@ from numpy import typing as npt
 from sigpyproc.header import Header
 from sigpyproc.timeseries import TimeSeries
 from sigpyproc.utils import roll_array
-from sigpyproc import kernels
+from sigpyproc.core import kernels
 
 
 class FilterbankBlock(np.ndarray):

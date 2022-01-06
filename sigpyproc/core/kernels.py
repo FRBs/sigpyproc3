@@ -1,7 +1,7 @@
 import numpy as np
 from numba import njit, prange, generated_jit, types
 from numba.experimental import jitclass
-from astropy import constants
+from scipy import constants
 
 
 @njit("u1[:](u1[:])", cache=True, parallel=True)
@@ -251,14 +251,14 @@ def fold(
     tobs = total_nsamps * tsamp
     for isamp in range(nsamps - maxdelay):
         tj = (isamp + index) * tsamp
-        phase = nbins * tj * (1 + accel * (tj - tobs) / (2 * constants.c.value)) / period + 0.5
+        phase = nbins * tj * (1 + accel * (tj - tobs) / (2 * constants.c)) / period + 0.5
         phasebin = abs(int(phase)) % nbins
         subint = (isamp + index) // factor1
         pos1 = (subint * nbins * nsubs) + phasebin
 
         for ichan in range(nchans):
             sub_band = ichan // factor2
-            pos2 = pos1 + (sub_band * nbins)
+            pos2 = int(pos1 + (sub_band * nbins))
             val = inarray[nchans * (isamp + delays[ichan]) + ichan]
             fold_ar[pos2] += val
             count_ar[pos2] += 1
@@ -269,7 +269,7 @@ def resample_tim(array, accel, tsamp):
     nsamps = len(array) - 1 if accel > 0 else len(array)
     resampled = np.zeros(nsamps, dtype=array.dtype)
 
-    partial_calc = (accel * tsamp) / (2 * constants.c.value)
+    partial_calc = (accel * tsamp) / (2 * constants.c)
     tot_drift = partial_calc * (nsamps // 2) ** 2
     last_bin = 0
     for ii in range(nsamps):
@@ -319,7 +319,7 @@ def form_spec(fft, specsize, interpolated=False):
             il = ii
     else:
         for ispec in range(specsize):
-            spec_arr = np.sqrt(fft[2 * ispec] ** 2 + fft[2 * ispec + 1] ** 2)
+            spec_arr[ispec] = np.sqrt(fft[2 * ispec] ** 2 + fft[2 * ispec + 1] ** 2)
     return spec_arr
 
 

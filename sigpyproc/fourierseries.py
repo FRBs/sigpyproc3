@@ -14,7 +14,7 @@ except ModuleNotFoundError:
 from sigpyproc import timeseries
 from sigpyproc.header import Header
 from sigpyproc.foldedcube import Profile
-from sigpyproc import libcpp  # type: ignore
+from sigpyproc.core import kernels
 
 
 class PowerSpectrum(np.ndarray):
@@ -141,7 +141,7 @@ class PowerSpectrum(np.ndarray):
                 [(kk * nfoldi + nharm // 2) / nharm for kk in range(1, nharm, 2)]
             ).astype("int32")
 
-            libcpp.sum_harms(self, sum_ar, harm_ar, facts_ar, nharm, self.size, nfoldi)
+            kernels.sum_harms(self, sum_ar, harm_ar, facts_ar, nharm, self.size, nfoldi)
 
             new_header = self.header.newHeader({"tsamp": self.header.tsamp * nharm})
             folds.append(PowerSpectrum(sum_ar, new_header))
@@ -179,7 +179,7 @@ class FourierSeries(np.ndarray):
         if isinstance(other, FourierSeries):
             if other.size != self.size:
                 raise ValueError("Instances must be the same size")
-            out_ar = libcpp.multiply_fs(self, other, self.size)
+            out_ar = kernels.multiply_fs(self, other, self.size)
             return FourierSeries(out_ar, self.header.new_header())
         return super().__mul__(other)
 
@@ -212,7 +212,7 @@ class FourierSeries(np.ndarray):
         Function assumes that the Fourier series is the non-conjugated
         product of a real to complex FFT.
         """
-        out_ar = libcpp.conjugate(self, self.size)
+        out_ar = kernels.conjugate(self, self.size)
         return FourierSeries(out_ar, self.header.new_header())
 
     def form_spec(self, interpolated: bool = True) -> PowerSpectrum:
@@ -229,7 +229,7 @@ class FourierSeries(np.ndarray):
             a power spectrum
         """
         specsize = self.size // 2
-        spec_ar = libcpp.form_spec(self, specsize, interpolated=interpolated)
+        spec_ar = kernels.form_spec(self, specsize, interpolated=interpolated)
         return PowerSpectrum(spec_ar, self.header.new_header())
 
     def rednoise(
@@ -254,7 +254,7 @@ class FourierSeries(np.ndarray):
         buf_c1 = np.empty(2 * endwidth, dtype="float32")
         buf_c2 = np.empty(2 * endwidth, dtype="float32")
         buf_f1 = np.empty(endwidth, dtype="float32")
-        out_ar = libcpp.rednoise(
+        out_ar = kernels.rednoise(
             self,
             buf_c1,
             buf_c2,
