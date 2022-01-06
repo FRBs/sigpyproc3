@@ -3,7 +3,73 @@ import numpy as np
 
 from typing import Optional, ClassVar, Dict, Any
 
+from sigpyproc.core import kernels
+
 nbits_to_dtype = {1: "<u1", 2: "<u1", 4: "<u1", 8: "<u1", 16: "<u2", 32: "<f4"}
+
+
+def unpack(array, nbits):
+    """Unpack 1, 2 and 4 bit array. Only unpacks in big endian bit ordering.
+
+    Parameters
+    ----------
+    array : ndarray
+        Array to unpack.
+    nbits : int
+        Number of bits to unpack.
+
+    Returns
+    -------
+    ndarray
+        Unpacked array.
+
+    Raises
+    ------
+    ValueError
+        if nbits is not 1, 2, or 4
+    """
+    assert array.dtype == np.uint8, "Array must be uint8"
+    if nbits == 1:
+        unpacked = np.unpackbits(array, bitorder="big")
+    elif nbits == 2:
+        unpacked = kernels.unpack2_8(array)
+    elif nbits == 4:
+        unpacked = kernels.unpack4_8(array)
+    else:
+        raise ValueError("nbits must be 1, 2, or 4")
+    return unpacked
+
+
+def pack(array, nbits):
+    """Pack 1, 2 and 4 bit array. Only packs in big endian bit ordering.
+
+    Parameters
+    ----------
+    array : ndarray
+        Array to pack.
+    nbits : int
+        Number of bits to pack.
+
+    Returns
+    -------
+    ndarray
+        Packed array.
+
+    Raises
+    ------
+    ValueError
+        if nbits is not 1, 2, or 4
+    """
+    assert array.dtype == np.uint8, "Array must be uint8"
+    if nbits == 1:
+        packed = np.packbits(array, bitorder="big")
+    elif nbits == 2:
+        packed = kernels.pack2_8(array)
+    elif nbits == 4:
+        packed = kernels.pack4_8(array)
+    else:
+        raise ValueError("nbits must be 1, 2, or 4")
+    return packed
 
 
 @attr.s(auto_attribs=True)

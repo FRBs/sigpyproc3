@@ -1,5 +1,6 @@
 import numpy as np
 from numba import njit, prange, generated_jit, types
+from numba.experimental import jitclass
 from scipy import constants
 
 
@@ -332,3 +333,126 @@ def sum_harms(spec_arr, sum_arr, harm_arr, fact_arr, nharms, nsamps, nfold):
                 ]
         for kk in range(nharms // 2):
             fact_arr[kk] += 2 * kk + 1
+
+
+MomentsBagSpec = [
+    ("m1", types.f4[:]),
+    ("m2", types.f4[:]),
+    ("m3", types.f4[:]),
+    ("m4", types.f4[:]),
+    ("min", types.f4[:]),
+    ("max", types.f4[:]),
+    ("count", types.i4[:]),
+]
+
+
+@jitclass(MomentsBagSpec)
+class MomentsBag(object):
+    def __init__(self, nchans):
+        self.m1 = np.zeros(nchans, dtype=np.float32)
+        self.m2 = np.zeros(nchans, dtype=np.float32)
+        self.m3 = np.zeros(nchans, dtype=np.float32)
+        self.m4 = np.zeros(nchans, dtype=np.float32)
+        self.min = np.zeros(nchans, dtype=np.float32)
+        self.max = np.zeros(nchans, dtype=np.float32)
+        self.count = np.zeros(nchans, dtype=np.int32)
+
+
+@njit(cache=True, parallel=True, locals={"val": types.f8})
+def compute_online_moments_basic(array, bag, nsamps, startflag):
+    if startflag == 0:
+        for ii in range(bag.nchans):
+            bag.max[ii] = array[ii]
+            bag.min[ii] = array[ii]
+
+    for ichan in prange(bag.nchans):
+        for isamp in range(nsamps):
+            val = array[isamp * bag.nchans + ichan]
+            bag.count[ichan] += 1
+            nn = bag.count[ichan]
+
+            delta = val - bag.m1[ichan]
+            delta_n = delta / nn
+            bag.m1[ichan] += delta_n
+            bag.m2[ichan] += delta * delta_n * (nn - 1)
+
+            bag.max[ichan] = max(bag.max[ichan], val)
+            bag.min[ichan] = min(bag.min[ichan], val)
+
+
+@njit(cache=True, parallel=True, locals={"val": types.f8})
+def compute_online_moments(array, bag, nsamps, startflag):
+    """Computing central moments in one pass through the data."""
+    if startflag == 0:
+        for ii in range(bag.nchans):
+            bag.max[ii] = array[ii]
+            bag.min[ii] = array[ii]
+
+    for ichan in prange(bag.nchans):
+        for isamp in range(nsamps):
+            val = array[isamp * bag.nchans + ichan]
+            bag.count[ichan] += 1
+            nn = bag.count[ichan]
+
+            delta = val - bag.m1[ichan]
+            delta_n = delta / nn
+            delta_n2 = delta_n * delta_n
+            term1 = delta * delta_n * (nn - 1)
+            bag.m1[ichan] += delta_n
+            bag.m4[ichan] += (
+                term1 * delta_n2 * (nn * nn - 3 * nn + 3)
+                + 6 * delta_n2 * bag.m2[ichan]
+                - 4 * delta_n * bag.m3[ichan]
+            )
+            bag.m3[ichan] += term1 * delta_n * (nn - 2) - 3 * delta_n * bag.m2[ichan]
+            bag.m2[ichan] += term1
+
+            bag.max[ichan] = max(bag.max[ichan], val)
+            bag.min[ichan] = min(bag.min[ichan], val)
+
+
+@njit(cache=True, parallel=False, locals={"val": types.f8})
+def add_online_moments(bag_a, bag_b, bag_c):
+    bag_c.count = bag_a.count + bag_b.count
+    delta = bag_b.m1 - bag_a.m1
+    delta2 = delta * delta
+    delta3 = delta * delta2
+    delta4 = delta2 * delta2
+
+    bag_c.m1 = (bag_a.count * bag_a.m1 + bag_b.count * bag_b.m1) / bag_c.count
+    bag_c.m2 = bag_a.m2 + bag_b.m2 + delta2 * bag_a.count * bag_b.count / bag_c.count
+
+    bag_c.m3 = (
+        bag_a.m3
+        + bag_b.m3
+        + delta3
+        * bag_a.count
+        * bag_b.count
+        * (bag_a.count - bag_b.count)
+        / (bag_c.count ** 2)
+    )
+    bag_c.m3 += (
+        3 * delta * (bag_a.count * bag_b.m2 - bag_b.count * bag_a.m2) / bag_c.count
+    )
+
+    bag_c.m4 = (
+        bag_a.m4
+        + bag_b.m4
+        + delta4
+        * bag_a.count
+        * bag_b.count
+        * (bag_a.count ** 2 - bag_a.count * bag_b.count + bag_b.count ** 2)
+        / (bag_c.count ** 3)
+    )
+    bag_c.m4 += (
+        6
+        * delta2
+        * (bag_a.count * bag_a.count * bag_b.m2 + bag_b.count * bag_b.count * bag_a.m2)
+        / (bag_c.count ** 2)
+    )
+    bag_c.m4 += (
+        4 * delta * (bag_a.count * bag_b.m3 - bag_b.count * bag_a.m3) / bag_c.count
+    )
+
+    bag_c.max = np.maximum(bag_a.max, bag_b.max)
+    bag_c.min = np.minimum(bag_c.min, bag_c.min)

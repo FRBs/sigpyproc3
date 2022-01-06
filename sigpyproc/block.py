@@ -5,7 +5,7 @@ from numpy import typing as npt
 from sigpyproc.header import Header
 from sigpyproc.timeseries import TimeSeries
 from sigpyproc.utils import roll_array
-from sigpyproc import libcpp  # type: ignore
+from sigpyproc import kernels
 
 
 class FilterbankBlock(np.ndarray):
@@ -67,15 +67,10 @@ class FilterbankBlock(np.ndarray):
         """
         if self.shape[0] % ffactor != 0:
             raise ValueError("Bad frequency factor given")
-        newnsamps = self.shape[1] - self.shape[1] % tfactor
-        new_ar = np.empty(
-            newnsamps * self.shape[0] // ffactor // tfactor,
-            dtype="float32",
-        )
         ar = self.transpose().ravel().copy()
-        libcpp.downsample(ar, new_ar, tfactor, ffactor, self.shape[0], newnsamps)
+        new_ar = kernels.downsample_2d(ar, tfactor, ffactor, self.shape[0], self.shape[1])
         new_ar = new_ar.reshape(
-            newnsamps // tfactor, self.shape[0] // ffactor
+            self.shape[1] // tfactor, self.shape[0] // ffactor
         ).transpose()
         new_header = self.header.new_header(
             {
