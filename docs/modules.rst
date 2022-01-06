@@ -14,4 +14,4 @@ API Reference
    api/base
    api/utils
    api/params
-   api/libcpp
+   api/core
