@@ -69,7 +69,7 @@ class ChannelStats(object):
         The algorithm is numerically stable and accurate:
         https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Online_algorithm
         https://www.johndcook.com/blog/skewness_kurtosis/
-        https://prod-ng.sandia.gov/techlib-noauth/access-control.cgi/2008/086212.pdf
+        https://doi.org/10.2172/1028931
         """
         self._nchans = nchans
         self._nsamps = nsamps

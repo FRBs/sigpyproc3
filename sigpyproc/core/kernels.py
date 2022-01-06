@@ -1,7 +1,7 @@
 import numpy as np
 from numba import njit, prange, generated_jit, types
 from numba.experimental import jitclass
-from scipy import constants
+from astropy import constants
 
 
 @njit("u1[:](u1[:])", cache=True, parallel=True)
@@ -251,7 +251,7 @@ def fold(
     tobs = total_nsamps * tsamp
     for isamp in range(nsamps - maxdelay):
         tj = (isamp + index) * tsamp
-        phase = nbins * tj * (1 + accel * (tj - tobs) / (2 * constants.c)) / period + 0.5
+        phase = nbins * tj * (1 + accel * (tj - tobs) / (2 * constants.c.value)) / period + 0.5
         phasebin = abs(int(phase)) % nbins
         subint = (isamp + index) // factor1
         pos1 = (subint * nbins * nsubs) + phasebin
@@ -269,7 +269,7 @@ def resample_tim(array, accel, tsamp):
     nsamps = len(array) - 1 if accel > 0 else len(array)
     resampled = np.zeros(nsamps, dtype=array.dtype)
 
-    partial_calc = (accel * tsamp) / (2 * constants.c)
+    partial_calc = (accel * tsamp) / (2 * constants.c.value)
     tot_drift = partial_calc * (nsamps // 2) ** 2
     last_bin = 0
     for ii in range(nsamps):
