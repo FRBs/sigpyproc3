@@ -9,28 +9,11 @@ from abc import ABC, abstractmethod
 from sigpyproc.foldedcube import FoldedData
 from sigpyproc.timeseries import TimeSeries
 from sigpyproc.header import Header
-from sigpyproc import libcpp  # type: ignore
+from sigpyproc.core import stats, kernels
 
 
 class Filterbank(ABC):
-    """Class exporting methods for the manipulation of frequency-major order pulsar data.
-
-    Attributes
-    ----------
-    chan_means : :py:obj:`~numpy.ndarray`
-        the mean value of each channel
-    chan_vars : :py:obj:`~numpy.ndarray`
-        the variance of each channel
-    chan_stdevs : :py:obj:`~numpy.ndarray`
-        the standard deviation of each channel
-    chan_skews : :py:obj:`~numpy.ndarray`
-        the skewness of each channel
-    chan_kurts : :py:obj:`~numpy.ndarray`
-        the kurtosis of each channel
-    chan_max : :py:obj:`~numpy.ndarray`
-        the maximum value of each channel
-    chan_min : :py:obj:`~numpy.ndarray`
-        the minimum value of each channel
+    """Base class exporting methods for the manipulation of frequency-major order pulsar data.
 
     Notes
     -----
@@ -39,13 +22,7 @@ class Filterbank(ABC):
     """
 
     def __init__(self) -> None:
-        self.chan_means: Optional[np.ndarray] = None
-        self.chan_vars: Optional[np.ndarray] = None
-        self.chan_stdevs: Optional[np.ndarray] = None
-        self.chan_skews: Optional[np.ndarray] = None
-        self.chan_kurts: Optional[np.ndarray] = None
-        self.chan_maxima: Optional[np.ndarray] = None
-        self.chan_minima: Optional[np.ndarray] = None
+        self.chan_stats = None
 
     @property
     @abstractmethod
@@ -58,28 +35,6 @@ class Filterbank(ABC):
     ) -> Generator[Tuple[int, int, np.ndarray], None, None]:
         raise NotImplementedError()
 
-    @property
-    def omp_max_threads(self) -> int:
-        """Maximum number of omp threads (`int`)."""
-        return libcpp.omp_get_max_threads()
-
-    @property
-    def omp_threads(self) -> int:
-        """Number of omp threads (`int`)."""
-        return libcpp.omp_get_num_threads()
-
-    def set_omp_threads(self, nthreads: Optional[int] = None) -> None:
-        """Set the number of threads available to OpenMP.
-
-        Parameters
-        ----------
-        nthreads : int, optional
-            number of threads to use, by default 4
-        """
-        if nthreads is None:
-            nthreads = 4
-        libcpp.omp_set_num_threads(nthreads)
-
     def compute_stats(self, gulp: int = 512, **kwargs) -> None:
         """Compute channelwise statistics of data (upto kurtosis).
 
@@ -89,49 +44,12 @@ class Filterbank(ABC):
             number of samples in each read, by default 512
 
         """
-        maxima_ar = np.zeros(self.header.nchans, dtype="float32")
-        minima_ar = np.zeros(self.header.nchans, dtype="float32")
-        count_ar = np.zeros(self.header.nchans, dtype="int64")
-        m1_ar = np.zeros(self.header.nchans, dtype="float32")
-        m2_ar = np.zeros(self.header.nchans, dtype="float32")
-        m3_ar = np.zeros(self.header.nchans, dtype="float32")
-        m4_ar = np.zeros(self.header.nchans, dtype="float32")
+        bag = stats.ChannelStats(self.header.nchans, self.header.nsamples)
         for nsamps, ii, data in self.read_plan(gulp, **kwargs):
-            libcpp.compute_moments(
-                data,
-                m1_ar,
-                m2_ar,
-                m3_ar,
-                m4_ar,
-                maxima_ar,
-                minima_ar,
-                count_ar,
-                self.header.nchans,
-                nsamps,
-                ii,
-            )
+            bag.push_data(data, nsamps, ii, mode="full")
+        self.chan_stats = bag
 
-        means_ar = m1_ar
-        var_ar = m2_ar / self.header.nsamples
-        stdev_ar = np.sqrt(var_ar)
-
-        m2_ar[m2_ar == 0] = np.nan
-        skew_ar = m3_ar / np.power(m2_ar, 1.5) * np.sqrt(self.header.nsamples)
-        kurt_ar = m4_ar / np.power(m2_ar, 2.0) * self.header.nsamples - 3.0
-
-        stdev_ar[np.isnan(stdev_ar)] = 0
-        skew_ar[np.isnan(skew_ar)] = 0
-        kurt_ar[np.isnan(kurt_ar)] = -3.0
-
-        self.chan_means = means_ar.astype("float32")
-        self.chan_vars = var_ar.astype("float32")
-        self.chan_stdevs = stdev_ar.astype("float32")
-        self.chan_skews = skew_ar.astype("float32")
-        self.chan_kurts = kurt_ar.astype("float32")
-        self.chan_maxima = maxima_ar
-        self.chan_minima = minima_ar
-
-    def compute_stats_simple(self, gulp: int = 512, **kwargs) -> None:
+    def compute_stats_basic(self, gulp: int = 512, **kwargs) -> None:
         """Compute channelwise statistics of data (mean and rms).
 
         Parameters
@@ -140,35 +58,10 @@ class Filterbank(ABC):
             number of samples in each read, by default 512
 
         """
-        maxima_ar = np.zeros(self.header.nchans, dtype="float32")
-        minima_ar = np.zeros(self.header.nchans, dtype="float32")
-        count_ar = np.zeros(self.header.nchans, dtype="int64")
-        m1_ar = np.zeros(self.header.nchans, dtype="float32")
-        m2_ar = np.zeros(self.header.nchans, dtype="float32")
+        bag = stats.ChannelStats(self.header.nchans, self.header.nsamples)
         for nsamps, ii, data in self.read_plan(gulp, **kwargs):
-            libcpp.compute_moments_simple(
-                data,
-                m1_ar,
-                m2_ar,
-                maxima_ar,
-                minima_ar,
-                count_ar,
-                self.header.nchans,
-                nsamps,
-                ii,
-            )
-
-        means_ar = m1_ar
-        var_ar = m2_ar / self.header.nsamples
-        stdev_ar = np.sqrt(var_ar)
-        m2_ar[m2_ar == 0] = np.nan
-        stdev_ar[np.isnan(stdev_ar)] = 0
-
-        self.chan_means = means_ar.astype("float32")
-        self.chan_vars = var_ar.astype("float32")
-        self.chan_stdevs = stdev_ar.astype("float32")
-        self.chan_maxima = maxima_ar
-        self.chan_minima = minima_ar
+            bag.push_data(data, nsamps, ii, mode="basic")
+        self.chan_stats = bag
 
     def collapse(
         self, gulp: int = 512, start: int = 0, nsamps: int = None, **kwargs
@@ -189,19 +82,16 @@ class Filterbank(ABC):
         :class:`~sigpyproc.timeseries.TimeSeries`
             A zero-DM time series
         """
-        if nsamps is None:
-            size = self.header.nsamples - start
-        else:
-            size = nsamps
-        timar = np.zeros(size, dtype="float32")
+        tim_len = (self.header.nsamples - start) if nsamps is None else nsamps
+        tim_ar = np.zeros(tim_len, dtype=np.float32)
         for nsamp, ii, data in self.read_plan(
             gulp,
             start=start,
             nsamps=nsamps,
             **kwargs,
         ):
-            libcpp.get_tim(data, timar, self.header.nchans, nsamp, ii * gulp)
-        return TimeSeries(timar, self.header.new_header({"nchans": 1, "dm": 0}))
+            kernels.extract_tim(data, tim_ar, self.header.nchans, nsamp, ii * gulp)
+        return TimeSeries(tim_ar, self.header.new_header({"nchans": 1, "dm": 0}))
 
     def bandpass(self, gulp: int = 512, **kwargs) -> TimeSeries:
         """Average across each time sample for all frequencies.
@@ -216,10 +106,10 @@ class Filterbank(ABC):
         :class:`~sigpyproc.timeseries.TimeSeries`
             the bandpass of the data
         """
-        bpass_ar = np.zeros(self.header.nchans, dtype="float64")
+        bpass_ar = np.zeros(self.header.nchans, dtype=np.float32)
         num_samples = 0
         for nsamps, _ii, data in self.read_plan(gulp, **kwargs):
-            libcpp.get_bpass(data, bpass_ar, self.header.nchans, nsamps)
+            kernels.extract_bpass(data, bpass_ar, self.header.nchans, nsamps)
             num_samples += nsamps
         bpass_ar /= num_samples
         return TimeSeries(bpass_ar, self.header.new_header({"nchans": 1}))
@@ -248,9 +138,9 @@ class Filterbank(ABC):
         max_delay = int(chan_delays.max())
         gulp = max(2 * max_delay, gulp)
         tim_len = self.header.nsamples - max_delay
-        tim_ar = np.zeros(tim_len, dtype="float32")
+        tim_ar = np.zeros(tim_len, dtype=np.float32)
         for nsamps, ii, data in self.read_plan(gulp, skipback=max_delay, **kwargs):
-            libcpp.dedisperse(
+            kernels.dedisperse(
                 data,
                 tim_ar,
                 chan_delays,
@@ -285,7 +175,7 @@ class Filterbank(ABC):
             raise ValueError("Selected channel out of range.")
         tim_ar = np.empty(self.header.nsamples, dtype="float32")
         for nsamps, ii, data in self.read_plan(gulp, **kwargs):
-            libcpp.get_chan(data, tim_ar, chan, self.header.nchans, nsamps, ii * gulp)
+            kernels.extract_channel(data, tim_ar, chan, self.header.nchans, nsamps, ii * gulp)
         return TimeSeries(tim_ar, self.header.new_header({"dm": 0, "nchans": 1}))
 
     def fold(
@@ -346,7 +236,7 @@ class Filterbank(ABC):
         fold_ar = np.zeros(nbins * nints * nbands, dtype="float32")
         count_ar = np.zeros(nbins * nints * nbands, dtype="int32")
         for nsamps, ii, data in self.read_plan(gulp, skipback=max_delay, **kwargs):
-            libcpp.foldfil(
+            kernels.fold(
                 data,
                 fold_ar,
                 count_ar,
@@ -419,7 +309,7 @@ class Filterbank(ABC):
             nsamps=nsamps,
             **kwargs,
         ):
-            libcpp.invert_freq(data, out_ar, self.header.nchans, nsamp)
+            kernels.invert_freq(data, out_ar, self.header.nchans, nsamp)
             out_file.cwrite(out_ar[: nsamp * self.header.nchans])
         out_file.close()
         return out_file.name
@@ -468,7 +358,7 @@ class Filterbank(ABC):
         )
 
         for nsamps, _ii, data in self.read_plan(gulp, skipback=max_delay, **kwargs):
-            libcpp.subband(
+            kernels.subband(
                 data,
                 out_ar,
                 chan_delays,
@@ -545,7 +435,7 @@ class Filterbank(ABC):
         mask = np.array(chanmask).astype("ubyte")
         out_file = self.header.prep_outfile(outfilename, back_compatible=back_compatible)
         for nsamps, _ii, data in self.read_plan(gulp, **kwargs):
-            libcpp.mask_channels(data, mask, self.header.nchans, nsamps)
+            kernels.mask_channels(data, mask, self.header.nchans, nsamps)
             out_file.cwrite(data)
         return out_file.name
 
@@ -606,7 +496,7 @@ class Filterbank(ABC):
             dtype=self.header.dtype,
         )
         for nsamps, _ii, data in self.read_plan(gulp, **kwargs):
-            libcpp.downsample(
+            kernels.downsample_2d(
                 data, write_ar, tfactor, ffactor, self.header.nchans, nsamps
             )
             out_file.cwrite(write_ar[: nsamps * self.header.nchans // ffactor // tfactor])
@@ -690,7 +580,7 @@ class Filterbank(ABC):
             for ii in range(self.header.nchans)
         ]
         for nsamps, _ii, data in self.read_plan(gulp, **kwargs):
-            libcpp.splitToChans(data, tim_ar, self.header.nchans, nsamps, gulp)
+            kernels.split_to_channels(data, tim_ar, self.header.nchans, nsamps, gulp)
             for ifile, out_file in enumerate(out_files):
                 out_file.cwrite(tim_ar[ifile][:nsamps])
 
@@ -803,7 +693,7 @@ class Filterbank(ABC):
             filename, nbits=self.header.nbits, back_compatible=back_compatible
         )
         for nsamps, _ii, data in self.read_plan(gulp, **kwargs):
-            libcpp.remove_bandpass(
+            kernels.remove_bandpass(
                 data,
                 out_ar,
                 self.chan_means,
@@ -855,7 +745,7 @@ class Filterbank(ABC):
             filename, nbits=self.header.nbits, back_compatible=back_compatible
         )
         for nsamps, _ii, data in self.read_plan(gulp, **kwargs):
-            libcpp.remove_zerodm(data, out_ar, bpass, chanwts, self.header.nchans, nsamps)
+            kernels.remove_zerodm(data, out_ar, bpass, chanwts, self.header.nchans, nsamps)
             out_file.cwrite(out_ar[: nsamps * self.header.nchans])
         out_file.close()
         return out_file.name

@@ -5,8 +5,7 @@ import numpy as np
 
 from typing import List
 
-from sigpyproc import libcpp  # type: ignore
-from sigpyproc.io.bits import BitsInfo
+from sigpyproc.io.bits import BitsInfo, unpack, pack
 from sigpyproc.utils import get_logger
 
 
@@ -99,7 +98,7 @@ class FileReader(_FileBase):
 
         data_ar = np.concatenate(np.asarray(data))
         if self.bitsinfo.unpack:
-            return libcpp.unpack(data_ar, self.nbits)
+            return unpack(data_ar, self.nbits)
         return data_ar
 
     def seek(self, offset: int, whence: int = 0) -> None:
@@ -234,7 +233,7 @@ class FileWriter(_FileBase):
         # is, say 2-bit, then the output will be garbage, hence the casting above is
         # necessary.
         if self.bitsinfo.unpack:
-            packed = libcpp.pack(ar, self.nbits)
+            packed = pack(ar, self.nbits)
             packed.tofile(self.file_obj)
         else:
             ar.tofile(self.file_obj)

@@ -6,14 +6,14 @@ from typing import Optional, Tuple, Union
 from numpy import typing as npt
 
 try:
-    from pyfftw.interfaces import numpy_fft
+    from pyfftw.interfaces import numpy_fft  # noqa: WPS433
 except ModuleNotFoundError:
-    from numpy import fft as numpy_fft
+    from numpy import fft as numpy_fft  # noqa: WPS433
 
 from sigpyproc import foldedcube
 from sigpyproc import fourierseries
 from sigpyproc.header import Header
-from sigpyproc import libcpp  # type: ignore
+from sigpyproc.core import stats, kernels
 
 
 class TimeSeries(np.ndarray):
@@ -73,21 +73,26 @@ class TimeSeries(np.ndarray):
         """
         if self.size // (nbins * nints) < 10:
             raise ValueError("nbins x nints is too large for length of data")
-        fold_ar = np.zeros(nbins * nints, dtype="float64")
-        count_ar = np.zeros(nbins * nints, dtype="int32")
-        libcpp.fold_tim(
+        fold_ar = np.zeros(nbins * nints, dtype=np.float64)
+        count_ar = np.zeros(nbins * nints, dtype=np.int32)
+        kernels.fold(
             self,
             fold_ar,
             count_ar,
+            np.array([0]),
+            0,
             self.header.tsamp,
             period,
             accel,
             self.size,
+            self.size,
+            1,
             nbins,
             nints,
+            1,
+            0,
         )
         fold_ar /= count_ar
-        fold_ar = fold_ar.reshape(nints, 1, nbins)
         return foldedcube.FoldedData(
             fold_ar, self.header.new_header(), period, self.header.refdm, accel
         )
@@ -132,7 +137,7 @@ class TimeSeries(np.ndarray):
         """
         if window < 1:
             raise ValueError("incorrect window size")
-        tim_ar = libcpp.running_mean(self, window, self.size)
+        tim_ar = stats.running_mean(self, window)
         return tim_ar.view(TimeSeries)
 
     def running_median(self, window: int = 10001) -> TimeSeries:
@@ -152,7 +157,7 @@ class TimeSeries(np.ndarray):
         -----
         Window edges will be dealt with only at the start of the time series.
         """
-        tim_ar = libcpp.running_median(self, window, self.size)
+        tim_ar = stats.running_median(self, window)
         return tim_ar.view(TimeSeries)
 
     def apply_boxcar(self, width: int) -> TimeSeries:
@@ -173,7 +178,8 @@ class TimeSeries(np.ndarray):
         Time series returned is of size nsamples-width with width/2
         removed from either end.
         """
-        tim_ar = libcpp.run_boxcar(self, width, self.size)
+        # TODO Not implemented
+        tim_ar = stats.run_boxcar(self, width)
         return tim_ar.view(TimeSeries)
 
     def downsample(self, factor: int) -> TimeSeries:
@@ -195,8 +201,7 @@ class TimeSeries(np.ndarray):
         """
         if factor == 1:
             return self
-        newlen = self.size // factor
-        tim_ar = libcpp.downsample_tim(self, factor, newlen)
+        tim_ar = kernels.downsample_1d(self, factor)
         return TimeSeries(
             tim_ar, self.header.new_header({"tsamp": self.header.tsamp * factor})
         )
@@ -232,13 +237,7 @@ class TimeSeries(np.ndarray):
         :class:`~sigpyproc.timeseries.TimeSeries`
             resampled time series
         """
-        if accel > 0:
-            new_size = self.size - 1
-        else:
-            new_size = self.size
-        out_ar = np.zeros(new_size, dtype="float32")
-        libcpp.resample(self, out_ar, new_size, accel, self.header.tsamp)
-
+        out_ar = kernels.resample_tim(self, accel, self.header.tsamp)
         new_header = self.header.new_header({"nsamples": out_ar.size, "accel": accel})
         return TimeSeries(out_ar, new_header)
 
