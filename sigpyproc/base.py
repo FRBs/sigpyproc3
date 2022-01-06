@@ -236,7 +236,7 @@ class Filterbank(ABC):
         fold_ar = np.zeros(nbins * nints * nbands, dtype="float32")
         count_ar = np.zeros(nbins * nints * nbands, dtype="int32")
         for nsamps, ii, data in self.read_plan(gulp, skipback=max_delay, **kwargs):
-            libcpp.foldfil(
+            kernels.fold(
                 data,
                 fold_ar,
                 count_ar,
@@ -309,7 +309,7 @@ class Filterbank(ABC):
             nsamps=nsamps,
             **kwargs,
         ):
-            libcpp.invert_freq(data, out_ar, self.header.nchans, nsamp)
+            kernels.invert_freq(data, out_ar, self.header.nchans, nsamp)
             out_file.cwrite(out_ar[: nsamp * self.header.nchans])
         out_file.close()
         return out_file.name
@@ -358,7 +358,7 @@ class Filterbank(ABC):
         )
 
         for nsamps, _ii, data in self.read_plan(gulp, skipback=max_delay, **kwargs):
-            libcpp.subband(
+            kernels.subband(
                 data,
                 out_ar,
                 chan_delays,
@@ -435,7 +435,7 @@ class Filterbank(ABC):
         mask = np.array(chanmask).astype("ubyte")
         out_file = self.header.prep_outfile(outfilename, back_compatible=back_compatible)
         for nsamps, _ii, data in self.read_plan(gulp, **kwargs):
-            libcpp.mask_channels(data, mask, self.header.nchans, nsamps)
+            kernels.mask_channels(data, mask, self.header.nchans, nsamps)
             out_file.cwrite(data)
         return out_file.name
 
@@ -496,7 +496,7 @@ class Filterbank(ABC):
             dtype=self.header.dtype,
         )
         for nsamps, _ii, data in self.read_plan(gulp, **kwargs):
-            libcpp.downsample(
+            kernels.downsample_2d(
                 data, write_ar, tfactor, ffactor, self.header.nchans, nsamps
             )
             out_file.cwrite(write_ar[: nsamps * self.header.nchans // ffactor // tfactor])
@@ -580,7 +580,7 @@ class Filterbank(ABC):
             for ii in range(self.header.nchans)
         ]
         for nsamps, _ii, data in self.read_plan(gulp, **kwargs):
-            libcpp.splitToChans(data, tim_ar, self.header.nchans, nsamps, gulp)
+            kernels.split_to_channels(data, tim_ar, self.header.nchans, nsamps, gulp)
             for ifile, out_file in enumerate(out_files):
                 out_file.cwrite(tim_ar[ifile][:nsamps])
 
@@ -693,7 +693,7 @@ class Filterbank(ABC):
             filename, nbits=self.header.nbits, back_compatible=back_compatible
         )
         for nsamps, _ii, data in self.read_plan(gulp, **kwargs):
-            libcpp.remove_bandpass(
+            kernels.remove_bandpass(
                 data,
                 out_ar,
                 self.chan_means,
@@ -745,7 +745,7 @@ class Filterbank(ABC):
             filename, nbits=self.header.nbits, back_compatible=back_compatible
         )
         for nsamps, _ii, data in self.read_plan(gulp, **kwargs):
-            libcpp.remove_zerodm(data, out_ar, bpass, chanwts, self.header.nchans, nsamps)
+            kernels.remove_zerodm(data, out_ar, bpass, chanwts, self.header.nchans, nsamps)
             out_file.cwrite(out_ar[: nsamps * self.header.nchans])
         out_file.close()
         return out_file.name

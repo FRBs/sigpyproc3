@@ -336,6 +336,7 @@ def sum_harms(spec_arr, sum_arr, harm_arr, fact_arr, nharms, nsamps, nfold):
 
 
 MomentsBagSpec = [
+    ("nchans", types.i4),
     ("m1", types.f4[:]),
     ("m2", types.f4[:]),
     ("m3", types.f4[:]),
@@ -349,6 +350,7 @@ MomentsBagSpec = [
 @jitclass(MomentsBagSpec)
 class MomentsBag(object):
     def __init__(self, nchans):
+        self.nchans = nchans
         self.m1 = np.zeros(nchans, dtype=np.float32)
         self.m2 = np.zeros(nchans, dtype=np.float32)
         self.m3 = np.zeros(nchans, dtype=np.float32)

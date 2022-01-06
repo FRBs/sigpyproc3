@@ -2,8 +2,6 @@ from __future__ import annotations
 import numpy as np
 import bottleneck as bn
 
-from typing import Type
-
 from sigpyproc.core import kernels
 
 
@@ -56,18 +54,6 @@ def running_mean(array, window):
 
 
 class ChannelStats(object):
-    __slots__ = (
-        "_nchans",
-        "_nsamps",
-        "_m1",
-        "_m2",
-        "_m3",
-        "_m4",
-        "_min",
-        "_max",
-        "_count",
-    )
-
     def __init__(self, nchans: int, nsamps: int):
         """Central central moments for filterbank channels in one pass.
 
@@ -108,37 +94,37 @@ class ChannelStats(object):
     @property
     def maxima(self) -> np.ndarray:
         """np.ndarray: Get the maximum value of each channel."""
-        return self._max
+        return self._mbag.max
 
     @property
     def minima(self) -> np.ndarray:
         """np.ndarray: Get the minimum value of each channel."""
-        return self._min
+        return self._mbag.min
 
     @property
     def mean(self) -> np.ndarray:
         """np.ndarray: Get the mean of each channel."""
-        return self._m1
+        return self._mbag.m1
 
     @property
     def var(self) -> np.ndarray:
         """np.ndarray: Get the variance of each channel."""
-        return self._m2 / self.nsamps
+        return self._mbag.m2 / self.nsamps
 
     @property
     def std(self) -> np.ndarray:
         """np.ndarray: Get the standard deviation of each channel."""
-        return np.sqrt(self._m2 / self.nsamps)
+        return np.sqrt(self._mbag.m2 / self.nsamps)
 
     @property
     def skew(self) -> np.ndarray:
         """np.ndarray: Get the skewness of each channel."""
         return (
             np.divide(
-                self._m3,
-                np.power(self._m2, 1.5),
-                out=np.zeros_like(self._m3),
-                where=self._m2 != 0,
+                self._mbag.m3,
+                np.power(self._mbag.m2, 1.5),
+                out=np.zeros_like(self._mbag.m3),
+                where=self._mbag.m2 != 0,
             )
             * np.sqrt(self.nsamps)
         )
@@ -148,10 +134,10 @@ class ChannelStats(object):
         """np.ndarray: Get the kurtosis of each channel."""
         return (
             np.divide(
-                self._m4,
-                np.power(self._m2, 2.0),
-                out=np.zeros_like(self._m4),
-                where=self._m2 != 0,
+                self._mbag.m4,
+                np.power(self._mbag.m2, 2.0),
+                out=np.zeros_like(self._mbag.m4),
+                where=self._mbag.m2 != 0,
             )
             * self.nsamps
             - 3.0
@@ -165,17 +151,17 @@ class ChannelStats(object):
         else:
             kernels.compute_online_moments(array, self.mbag, gulp_size, start_index)
 
-    def __add__(self, other: Type[ChannelStats]) -> Type[ChannelStats]:
+    def __add__(self, other: type[ChannelStats]) -> type[ChannelStats]:
         """Add two ChannelStats objects together as if all the data belonged to one.
 
         Parameters
         ----------
-        other : Type[ChannelStats]
+        other : type[ChannelStats]
             The other ChannelStats object to add.
 
         Returns
         -------
-        Type[ChannelStats]
+        type[ChannelStats]
             The sum of the two ChannelStats objects.
 
         Raises
@@ -186,6 +172,6 @@ class ChannelStats(object):
         if not isinstance(other, ChannelStats):
             raise TypeError("ChannelStats can only be added to other ChannelStats object")
 
-        combined = ChannelStats()
+        combined = ChannelStats(self.nchans, self.nsamps)
         kernels.add_online_moments(self.mbag, other.mbag, combined.mbag)
         return combined
