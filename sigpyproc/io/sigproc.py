@@ -47,6 +47,7 @@ telescope_ids = bidict(
         "Effelsberg LOFAR": 9,
         "SRT": 10,
         "Unknown": 11,
+        "CHIME": 20,
     }
 )
 
@@ -62,6 +63,7 @@ machine_ids = bidict(
         "GBT Pulsar Spigot": 7,
         "PFFTS": 8,
         "Unknown": 9,
+        "CHIME": 20,
     }
 )
 
