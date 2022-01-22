@@ -464,7 +464,6 @@ class Header(object):
 
         """
         header = sigproc.parse_header_multi(filenames, check_contiguity=check_contiguity)
-        print("Header:\n", header)
         frame = "pulsarcentric" if header.get("pulsarcentric") else "topocentric"
         frame = "barycentric" if header.get("barycentric") else "topocentric"
         hdr_update = {
