@@ -490,16 +490,11 @@ class Filterbank(ABC):
             },
             back_compatible=back_compatible,
         )
-
-        write_ar = np.zeros(
-            gulp * self.header.nchans // ffactor // tfactor,
-            dtype=self.header.dtype,
-        )
         for nsamps, _ii, data in self.read_plan(gulp, **kwargs):
-            kernels.downsample_2d(
-                data, write_ar, tfactor, ffactor, self.header.nchans, nsamps
+            write_ar = kernels.downsample_2d(
+                data, tfactor, ffactor, self.header.nchans, nsamps
             )
-            out_file.cwrite(write_ar[: nsamps * self.header.nchans // ffactor // tfactor])
+            out_file.cwrite(write_ar)
         return out_file.name
 
     def split(
