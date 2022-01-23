@@ -37,7 +37,6 @@ release = version
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom ones.
 extensions = [
-    "myst_parser",
     "sphinx.ext.autodoc",
     "sphinx.ext.napoleon",
     "sphinx.ext.intersphinx",
@@ -63,16 +62,10 @@ exclude_patterns = ["_build", "**.ipynb_checkpoints", "Thumbs.db", ".DS_Store"]
 
 html_theme = "sphinx_book_theme"
 html_theme_options = {
-    "logo_only": False,
-    "display_version": True,
-    "prev_next_buttons_location": "bottom",
-    "style_external_links": False,
-    # Toc options
-    "collapse_navigation": True,
-    "sticky_navigation": True,
-    "navigation_depth": 4,
-    "includehidden": True,
-    "titles_only": False,
+    "repository_url": "https://github.com/FRBs/sigpyproc3",
+    "use_repository_button": True,
+    "use_issues_button": True,
+    "use_download_button": True,
 }
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
@@ -85,6 +78,7 @@ html_theme_options = {
 autoclass_content = "class"  # include both class docstring and __init__
 autodoc_member_order = "bysource"
 autodoc_typehints = "none"
+autodoc_inherit_docstrings = True
 
 napoleon_google_docstring = False
 napoleon_numpy_docstring = True
