@@ -1,7 +1,8 @@
+from __future__ import annotations
 import numpy as np
 import inspect
 
-from typing import Union, Optional, Generator, List, Tuple
+from collections.abc import Iterator
 from rich.progress import track, Progress
 
 from sigpyproc.io.fileio import FileReader
@@ -25,9 +26,7 @@ class FilReader(Filterbank):
     contain keywords found in the ``HeaderParams.header_keys`` dictionary.
     """
 
-    def __init__(
-        self, filenames: Union[str, List[str]], check_contiguity: bool = True
-    ) -> None:
+    def __init__(self, filenames: str | list[str], check_contiguity: bool = True) -> None:
         """Initialize Filterbank reading.
 
         Parameters
@@ -59,7 +58,6 @@ class FilReader(Filterbank):
 
     @property
     def header(self) -> Header:
-        """Header metadata of input file (:class:`~sigpyproc.header.Header`, read-only)."""
         return self._header
 
     @property
@@ -73,20 +71,6 @@ class FilReader(Filterbank):
         return self.header.nchans * self.bitsinfo.itemsize // self.bitsinfo.bitfact
 
     def read_block(self, start: int, nsamps: int) -> FilterbankBlock:
-        """Read a block of filterbank data.
-
-        Parameters
-        ----------
-        start : int
-            first time sample of the block to be read
-        nsamps : int
-            number of samples in the block (i.e. block will be nsamps*nchans in size)
-
-        Returns
-        -------
-        :class:`~sigpyproc.block.FilterbankBlock`
-            2-D array of filterbank data
-        """
         self._file.seek(start * self.sampsize)
         data = self._file.cread(self.header.nchans * nsamps)
         nsamps_read = data.size // self.header.nchans
@@ -182,62 +166,22 @@ class FilReader(Filterbank):
 
     def read_plan(
         self,
-        gulp: int,
-        skipback: int = 0,
+        gulp: int = 16385,
         start: int = 0,
-        nsamps: Optional[int] = None,
-        rich_desc: Optional[str] = None,
-        verbose: bool = True,
-    ) -> Generator[Tuple[int, int, np.ndarray], None, None]:
-        """A generator used to perform filterbank reading.
-
-        Parameters
-        ----------
-        gulp : int
-            number of samples in each read
-        skipback : int, optional
-            number of samples to skip back after each read, by default 0
-        start : int, optional
-            first sample to read from filterbank, by default 0 (start of the file)
-        nsamps : int, optional
-            total number samples to read, by default None (end of the file)
-        rich_desc : str, optional
-            [description], by default None
-        verbose : bool, optional
-            flag for display of reading plan information, by default True
-
-        Yields
-        -------
-        int, int, :py:obj:`~numpy.ndarray`
-            An generator that can read through the file.
-
-        Raises
-        ------
-        ValueError
-            If read samples < ``skipback``.
-
-        Notes
-        -----
-        For each read, the generator yields a tuple ``x``, where:
-
-            * ``x[0]`` is the number of samples read
-            * ``x[1]`` is the index of the read (i.e. ``x[1]=0`` is the first read)
-            * ``x[2]`` is a 1-D numpy array containing the data that was read
-
-        Examples
-        --------
-        The normal calling syntax for this is function is:
-
-        >>> for nsamps, ii, data in self.readPlan(*args,**kwargs):
-                # do something
-        where data always has contains ``nchans*nsamps`` points.
-        """
+        nsamps: int | None = None,
+        skipback: int = 0,
+        description: str | None = None,
+        verbose: bool = False,
+    ) -> Iterator[tuple[int, int, np.ndarray]]:
         if nsamps is None:
             nsamps = self.header.nsamples - start
+        if description is None:
+            description = f"{inspect.stack()[1][3]} : "
+
         gulp = min(nsamps, gulp)
         skipback = abs(skipback)
         if skipback >= gulp:
-            raise ValueError("readsamps must be > skipback value")
+            raise ValueError(f"readsamps ({gulp}) must be > skipback ({skipback})")
         self._file.seek(start * self.sampsize)
         nreads, lastread = divmod(nsamps, (gulp - skipback))
         if lastread < skipback:
@@ -252,7 +196,7 @@ class FilReader(Filterbank):
 
         # / self.logger.debug(f"Reading plan: nsamps = {nsamps}, nreads = {nreads}")
         # / self.logger.debug(f"Reading plan: gulp = {gulp}, lastread = {lastread}, skipback = {skipback}")
-        for ii, block, skip in track(blocks, description=f"{inspect.stack()[1][3]} : "):
+        for ii, block, skip in track(blocks, description=description):
             data = self._file.cread(block)
             self._file.seek(
                 skip * self.bitsinfo.itemsize // self.bitsinfo.bitfact,

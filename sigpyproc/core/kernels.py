@@ -173,37 +173,18 @@ def dedisperse(inarray, outarray, delays, maxdelay, nchans, nsamps, index):
 
 
 @njit(
-    ["void(u1[:], f4[:], i4, i4, i4, i4)", "void(f4[:], f4[:], i4, i4, i4, i4)"],
+    ["u1[:](u1[:], i4, i4)", "f4[:](f4[:], i4, i4)"],
     cache=True,
     parallel=True,
 )
-def extract_channel(inarray, outarray, ichannel, nchans, nsamps, index):
-    for isamp in prange(nsamps):
-        outarray[index + isamp] = inarray[nchans * isamp + ichannel]
-
-
-@njit(
-    ["void(u1[:], f4[:], i4, i4, i4)", "void(f4[:], f4[:], i4, i4, i4)"],
-    cache=True,
-    parallel=True,
-)
-def split_to_channels(inarray, outarray, nchans, nsamps, gulp):
+def invert_freq(array, nchans, nsamps):
+    outarray = np.empty_like(array)
     for isamp in prange(nsamps):
         for ichan in range(nchans):
-            outarray[ichan * gulp + isamp] = inarray[nchans * isamp + ichan]
-
-
-@njit(
-    ["void(u1[:], u1[:], i4, i4)", "void(f4[:], f4[:], i4, i4)"],
-    cache=True,
-    parallel=True,
-)
-def invert_freq(inarray, outarray, nchans, nsamps):
-    for isamp in prange(nsamps):
-        for ichan in range(nchans):
-            outarray[nchans * isamp + ichan] = inarray[
+            outarray[nchans * isamp + ichan] = array[
                 nchans * isamp + (nchans - ichan - 1)
             ]
+    return outarray
 
 
 @njit(
