@@ -287,7 +287,7 @@ class Filterbank(ABC):
         return out_file.name
 
     def apply_channel_mask(
-        self, chanmask: npt.ArrayLike, outfilename: str | None = None, **plan_kwargs
+        self, chanmask: npt.ArrayLike, filename: str | None = None, **plan_kwargs
     ) -> str:
         """Set the data in the given channels to zero.
 
@@ -295,7 +295,7 @@ class Filterbank(ABC):
         ----------
         chanmask : :py:obj:`~numpy.typing.ArrayLike`
             binary channel mask (0 for bad channel, 1 for good)
-        outfilename : str, optional
+        filename : str, optional
             name of the output filterbank file, by default ``basename_masked.fil``
         **plan_kwargs : dict
             Additional keyword arguments for :func:`read_plan`.
@@ -305,11 +305,11 @@ class Filterbank(ABC):
         str
             name of output file
         """
-        if outfilename is None:
-            outfilename = f"{self.header.basename}_masked.fil"
+        if filename is None:
+            filename = f"{self.header.basename}_masked.fil"
 
         mask = np.array(chanmask).astype("ubyte")
-        out_file = self.header.prep_outfile(outfilename)
+        out_file = self.header.prep_outfile(filename)
         for nsamps, _ii, data in self.read_plan(**plan_kwargs):
             kernels.mask_channels(data, mask, self.header.nchans, nsamps)
             out_file.cwrite(data)
@@ -441,13 +441,13 @@ class Filterbank(ABC):
         if chans is None:
             chans = np.arange(self.header.nchans)
         chans = np.array(chans).astype("int")
-        if not np.all(np.logical_or(chans >= self.header.nchans, chans < 0)):
+        if np.all(np.logical_or(chans >= self.header.nchans, chans < 0)):
             raise ValueError("Selected channel out of range.")
 
         out_files = [
             self.header.prep_outfile(
                 f"{self.header.basename}_chan{chan:04d}.tim",
-                {"nchans": 1, "nbits": 32, "data_type": 2},
+                {"nchans": 1, "nbits": 32, "data_type": "time series"},
                 nbits=32,
             )
             for chan in chans

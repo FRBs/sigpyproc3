@@ -178,9 +178,7 @@ class TimeSeries(np.ndarray):
         Time series returned is of size nsamples-width with width/2
         removed from either end.
         """
-        # TODO Not implemented
-        tim_ar = stats.run_boxcar(self, width)
-        return tim_ar.view(TimeSeries)
+        raise NotImplementedError
 
     def downsample(self, factor: int) -> TimeSeries:
         """Downsample the time series.

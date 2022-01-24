@@ -1,7 +1,8 @@
-import attr
+from __future__ import annotations
+import attrs
 import numpy as np
 
-from typing import Optional, ClassVar, Dict, Any
+from typing import ClassVar, Any
 
 from sigpyproc.core import kernels
 
@@ -13,14 +14,14 @@ def unpack(array, nbits):
 
     Parameters
     ----------
-    array : ndarray
+    array : numpy.ndarray
         Array to unpack.
     nbits : int
         Number of bits to unpack.
 
     Returns
     -------
-    ndarray
+    numpy.ndarray
         Unpacked array.
 
     Raises
@@ -45,14 +46,14 @@ def pack(array, nbits):
 
     Parameters
     ----------
-    array : ndarray
+    array : numpy.ndarray
         Array to pack.
     nbits : int
         Number of bits to pack.
 
     Returns
     -------
-    ndarray
+    numpy.ndarray
         Packed array.
 
     Raises
@@ -72,7 +73,7 @@ def pack(array, nbits):
     return packed
 
 
-@attr.s(auto_attribs=True)
+@attrs.define(auto_attribs=True)
 class BitsInfo(object):
     """Class to handle bits info.
 
@@ -82,11 +83,11 @@ class BitsInfo(object):
         if input `nbits` not in [1, 2, 4, 8, 16, 32]
     """
 
-    nbits: int = attr.ib(validator=attr.validators.in_(nbits_to_dtype.keys()))
-    digi_sigma: float = attr.ib()
+    nbits: int = attrs.field(validator=attrs.validators.in_(nbits_to_dtype.keys()))
+    digi_sigma: float = attrs.field()
 
     float_bits: ClassVar[int] = 32
-    default_sigma: ClassVar[Dict[int, float]] = {
+    default_sigma: ClassVar[dict[int, float]] = {
         1: 0.5,
         2: 1.5,
         4: 6,
@@ -122,26 +123,26 @@ class BitsInfo(object):
         return 8 // self.nbits if self.unpack else 1
 
     @property
-    def digi_min(self) -> Optional[int]:
+    def digi_min(self) -> int | None:
         """Minimum value used to quantize data (`int` or None, read-only)."""
         return None if self.nbits == self.float_bits else self._digi_min
 
     @property
-    def digi_max(self) -> Optional[int]:
+    def digi_max(self) -> int | None:
         """Maximum value used to quantize data (`int` or None, read-only)."""
         return None if self.nbits == self.float_bits else self._digi_max
 
     @property
-    def digi_mean(self) -> Optional[float]:
+    def digi_mean(self) -> float | None:
         """Mean used to quantize data (`float` or None, read-only)."""
         return None if self.nbits == self.float_bits else self._digi_mean
 
     @property
-    def digi_scale(self) -> Optional[float]:
+    def digi_scale(self) -> float | None:
         """Scale used to quantize data (`float` or None, read-only)."""
         return None if self.nbits == self.float_bits else self._digi_scale
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Get a dict of all property attributes.
 
         Returns

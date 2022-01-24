@@ -2,7 +2,6 @@ from __future__ import annotations
 import pathlib
 import numpy as np
 
-from typing import Optional, Tuple, List
 from numpy import typing as npt
 
 try:
@@ -108,7 +107,7 @@ class PowerSpectrum(np.ndarray):
         """
         return self.freq2bin(1 / period)
 
-    def harmonic_fold(self, nfolds: int = 1) -> List[PowerSpectrum]:
+    def harmonic_fold(self, nfolds: int = 1) -> list[PowerSpectrum]:
         """Perform Lyne-Ashworth harmonic folding of the power spectrum.
 
         Parameters
@@ -118,7 +117,7 @@ class PowerSpectrum(np.ndarray):
 
         Returns
         -------
-        List[:class:`~sigpyproc.fourierseries.PowerSpectrum`]
+        list of :class:`~sigpyproc.fourierseries.PowerSpectrum`
             A list of folded spectra where the i :sup:`th` element
             is the spectrum folded i times.
         """
@@ -289,7 +288,7 @@ class FourierSeries(np.ndarray):
         harm_ar = np.hstack((harms, np.conj(harms[1:][::-1])))
         return Profile(np.absolute(np.fft.ifft(harm_ar)))
 
-    def to_file(self, filename: Optional[str] = None) -> str:
+    def to_file(self, filename: str | None = None) -> str:
         """Write spectrum to file in sigpyproc format.
 
         Parameters
@@ -308,7 +307,7 @@ class FourierSeries(np.ndarray):
             outfile.cwrite(self)
         return filename
 
-    def to_fftfile(self, basename: Optional[str] = None) -> Tuple[str, str]:
+    def to_fftfile(self, basename: str | None = None) -> tuple[str, str]:
         """Write spectrum to file in presto ``.fft`` format.
 
         Parameters
@@ -328,7 +327,7 @@ class FourierSeries(np.ndarray):
         return f"{basename}.fft", f"{basename}.inf"
 
     @classmethod
-    def read_fft(cls, fftfile: str, inffile: Optional[str] = None) -> FourierSeries:
+    def read_fft(cls, fftfile: str, inffile: str | None = None) -> FourierSeries:
         """Read a presto format ``.fft`` file.
 
         Parameters
