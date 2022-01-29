@@ -45,7 +45,39 @@ class Filterbank(ABC):
         Returns
         -------
         :class:`~sigpyproc.block.FilterbankBlock`
-            2-D array of filterbank data
+            2-D array of filterbank data with observational metadata
+
+        Raises
+        ------
+        ValueError
+            if requested samples are out of range
+        """
+        pass
+
+    @abstractmethod
+    def read_dedisp_block(self, start: int, nsamps: int, dm: float) -> FilterbankBlock:
+        """Read a block of dedispersed filterbank data.
+
+        Best used in cases where I/O time dominates reading a block of data.
+
+        Parameters
+        ----------
+        start : int
+            first time sample of the block to be read
+        nsamps : int
+            number of samples in the block (i.e. block will be nsamps*nchans in size)
+        dm : float
+            dispersion measure to dedisperse at
+
+        Returns
+        -------
+        :class:`~sigpyproc.block.FilterbankBlock`
+            2-D array of filterbank data with observational metadata
+
+        Raises
+        ------
+        ValueError
+            if requested dedispersed samples are out of range
         """
         pass
 
@@ -98,7 +130,7 @@ class Filterbank(ABC):
         --------
         The normal calling syntax for this is function is:
 
-        >>> for nsamps, ii, data in self.readPlan(**kwargs):
+        >>> for nsamps, ii, data in self.read_plan(**plan_kwargs):
                 # do something
         where data always has contains ``nchans*nsamps`` points.
         """

@@ -73,7 +73,7 @@ def pack(array, nbits):
     return packed
 
 
-@attrs.define(auto_attribs=True)
+@attrs.define(auto_attribs=True, frozen=True, slots=True)
 class BitsInfo(object):
     """Class to handle bits info.
 
@@ -86,7 +86,6 @@ class BitsInfo(object):
     nbits: int = attrs.field(validator=attrs.validators.in_(nbits_to_dtype.keys()))
     digi_sigma: float = attrs.field()
 
-    float_bits: ClassVar[int] = 32
     default_sigma: ClassVar[dict[int, float]] = {
         1: 0.5,
         2: 1.5,
@@ -95,12 +94,6 @@ class BitsInfo(object):
         16: 6,
         32: 6,
     }
-
-    def __attrs_post_init__(self) -> None:
-        self._digi_min = 0
-        self._digi_max = (1 << self.nbits) - 1
-        self._digi_mean = (1 << (self.nbits - 1)) - 0.5
-        self._digi_scale = self._digi_mean / self.digi_sigma
 
     @property
     def dtype(self) -> np.dtype:
@@ -123,24 +116,24 @@ class BitsInfo(object):
         return 8 // self.nbits if self.unpack else 1
 
     @property
-    def digi_min(self) -> int | None:
-        """Minimum value used to quantize data (`int` or None, read-only)."""
-        return None if self.nbits == self.float_bits else self._digi_min
+    def digi_min(self) -> int:
+        """Minimum value used to quantize data (`int`, read-only)."""
+        return 0
 
     @property
-    def digi_max(self) -> int | None:
-        """Maximum value used to quantize data (`int` or None, read-only)."""
-        return None if self.nbits == self.float_bits else self._digi_max
+    def digi_max(self) -> int:
+        """Maximum value used to quantize data (`int`, read-only)."""
+        return (1 << self.nbits) - 1
 
     @property
-    def digi_mean(self) -> float | None:
-        """Mean used to quantize data (`float` or None, read-only)."""
-        return None if self.nbits == self.float_bits else self._digi_mean
+    def digi_mean(self) -> float:
+        """Mean used to quantize data (`float`, read-only)."""
+        return (1 << (self.nbits - 1)) - 0.5
 
     @property
-    def digi_scale(self) -> float | None:
-        """Scale used to quantize data (`float` or None, read-only)."""
-        return None if self.nbits == self.float_bits else self._digi_scale
+    def digi_scale(self) -> float:
+        """Scale used to quantize data (`float`, read-only)."""
+        return self.digi_mean / self.digi_sigma
 
     def to_dict(self) -> dict[str, Any]:
         """Get a dict of all property attributes.
@@ -150,11 +143,14 @@ class BitsInfo(object):
         dict
             property attributes
         """
-        return {
+        attributes = attrs.asdict(self)
+        prop = {
             key: getattr(self, key)
             for key, value in vars(type(self)).items()  # noqa: WPS421
             if isinstance(value, property)
         }
+        attributes.update(prop)
+        return attributes
 
     @digi_sigma.default
     def _set_digi_sigma(self):

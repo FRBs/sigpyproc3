@@ -4,7 +4,6 @@ from numpy import typing as npt
 
 from sigpyproc.header import Header
 from sigpyproc.timeseries import TimeSeries
-from sigpyproc.utils import roll_array
 from sigpyproc.core import kernels
 
 
@@ -75,47 +74,40 @@ class FilterbankBlock(np.ndarray):
         new_header = self.header.new_header(
             {
                 "tsamp": self.header.tsamp * tfactor,
+                "foff": self.header.foff * ffactor,
+                "nsamples": self.header.nsamples // tfactor,
                 "nchans": self.header.nchans // ffactor,
             }
         )
         return FilterbankBlock(new_ar, new_header)
 
-    def to_file(self, filename: str = None, back_compatible: bool = True) -> str:
-        """Write the data to file.
+    def normalise(self, by="mean", axis=1) -> FilterbankBlock:
+        """Normalise the data block (Subtract mean/median, divide by std).
 
         Parameters
         ----------
-        filename : str, optional
-            name of the output file, by default ``basename_split_start_to_end.fil``
-        back_compatible : bool, optional
-            sigproc compatibility flag (legacy code), by default True
-
-        Returns
-        -------
-        str
-            name of output file
-        """
-        if filename is None:
-            mjd_after = self.header.mjd_after_nsamps(self.shape[1])
-            filename = (
-                f"{self.header.basename}_{self.header.tstart:d}_to_{mjd_after:d}.fil"
-            )
-        new_header = {"nbits": 32}
-        out_file = self.header.prep_outfile(
-            filename, new_header, nbits=32, back_compatible=back_compatible
-        )
-        out_file.cwrite(self.transpose().ravel())
-        return filename
-
-    def normalise(self) -> FilterbankBlock:
-        """Divide each frequency channel by its average.
+        by : str, optional
+            measurement to subtract from each channel, by default "mean"
+        axis : int, optional
+            axis to operate, by default 1
 
         Returns
         -------
         FilterbankBlock
-            normalised version of the data
+            A normalised version of the data block
+
+        Raises
+        ------
+        ValueError
+            If `by` is not one of "mean" or "median".
         """
-        return self / self.mean(axis=1).reshape(self.shape[0], 1)
+        if by == "mean":
+            mean = np.mean(self, axis=axis)
+        elif by == "median":
+            mean = np.median(self, axis=axis)
+        else:
+            raise ValueError(f"Invalid normalisation method {by}")
+        return FilterbankBlock((self - mean) / np.std(self, axis=axis), self.header)
 
     def get_tim(self) -> TimeSeries:
         """Sum across all frequencies for each time sample.
@@ -126,7 +118,7 @@ class FilterbankBlock(np.ndarray):
             Sum of all channels as timeseries
         """
         ts = self.sum(axis=0)
-        return TimeSeries(ts, self.header.new_header())
+        return TimeSeries(ts, self.header.dedispersed_header(dm=self.dm))
 
     def get_bandpass(self) -> npt.ArrayLike:
         """Average across each time sample for all frequencies.
@@ -166,29 +158,40 @@ class FilterbankBlock(np.ndarray):
         """
         delays = self.header.get_dmdelays(dm)
         if only_valid_samples:
-            if self.shape[1] < delays[-1]:
+            valid_samps = self.shape[1] - delays[-1]
+            if valid_samps < 0:
                 raise ValueError(
                     f"Insufficient time samples to dedisperse to {dm} (requires "
                     + f"at least {delays[-1]} samples, given {self.shape[1]})."
                 )
-            new_ar = FilterbankBlock(
-                np.zeros(
-                    (self.header.nchans, self.shape[1] - delays[-1]), dtype=self.dtype
-                ),
-                header=self.header,
-            )
-            end_samples = delays + new_ar.shape[1]
-
-            slices = [
-                np.arange(delay, end_sample)
-                for delay, end_sample in zip(delays, end_samples)
-            ]
-            for idx, time_slice in enumerate(slices):
-                new_ar[idx, :] = self[idx, time_slice]
+            new_ar = np.empty((self.shape[0], valid_samps), dtype=self.dtype)
+            for ichan in range(self.shape[0]):
+                new_ar[ichan] = self[ichan, delays[ichan] : delays[ichan] + valid_samps]
         else:
-            new_ar = self.copy()
-            for ii in range(self.shape[0]):
-                new_ar[ii] = roll_array(self[ii], delays[ii] % self.shape[1], 0)
+            new_ar = np.empty(self.shape, dtype=self.dtype)
+            for ichan in range(self.shape[0]):
+                new_ar[ichan] = np.roll(self[ichan], -delays[ichan])
+        return FilterbankBlock(new_ar, self.header.new_header(), dm=dm)
 
-        new_ar.dm = dm
-        return new_ar
+    def to_file(self, filename: str = None) -> str:
+        """Write the data to file.
+
+        Parameters
+        ----------
+        filename : str, optional
+            name of the output file, by default ``basename_split_start_to_end.fil``
+
+        Returns
+        -------
+        str
+            name of output file
+        """
+        if filename is None:
+            mjd_after = self.header.mjd_after_nsamps(self.shape[1])
+            filename = (
+                f"{self.header.basename}_{self.header.tstart:d}_to_{mjd_after:d}.fil"
+            )
+        changes = {"nbits": 32}
+        out_file = self.header.prep_outfile(filename, changes, nbits=32)
+        out_file.cwrite(self.transpose().ravel())
+        return filename
