@@ -2,12 +2,12 @@ from __future__ import annotations
 import numpy as np
 import logging
 
-from typing import Union
 from numpy import typing as npt
 
 from datetime import datetime
 from rich.text import Text
 from rich.logging import RichHandler
+from astropy.time import Time, TimeDelta
 
 
 class AttrDict(dict):  # noqa:WPS600
@@ -65,9 +65,7 @@ def nearest_factor(num: int, fac: int) -> int:
 
 
 def get_logger(
-    name: str,
-    level: Union[int, str] = logging.INFO,
-    quiet: bool = False,
+    name: str, level: int | str = logging.INFO, quiet: bool = False
 ) -> logging.Logger:
     """Get a fancy logging utility using Rich library.
 
@@ -75,7 +73,7 @@ def get_logger(
     ----------
     name : str
         logger name
-    level : Union[int, str], optional
+    level : int or str, optional
         logging level, by default logging.INFO
     quiet : bool, optional
         if True set `level` as logging.WARNING, by default False
@@ -108,3 +106,25 @@ def get_logger(
 
 def _time_formatter(timestamp: datetime) -> Text:
     return Text(timestamp.isoformat(sep=" ", timespec="milliseconds"))
+
+
+def time_after_nsamps(tstart: float, tsamp: float, nsamps: int = 0) -> Time:
+    """Get precise time nsamps after input tstart. If nsamps is not given then just return tstart.
+
+    Parameters
+    ----------
+    tstart : float
+        starting mjd.
+    tsamp : float
+        sampling time in seconds.
+    nsamps : int, optional
+        number of samples, by default 0
+
+    Returns
+    -------
+    :class:`~astropy.time.Time`
+        Astropy Time object after given nsamps
+    """
+    precision = int(np.ceil(abs(np.log10(tsamp))))
+    tstart = Time(tstart, format="mjd", scale="utc", precision=precision)
+    return tstart + TimeDelta(nsamps * tsamp, format="sec")

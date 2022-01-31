@@ -7,7 +7,7 @@ from astropy.coordinates import SkyCoord
 from sigpyproc.io import sigproc
 
 
-class TestSigprocHeader(object):
+class TestSigproc(object):
     def test_read_string(self, tmpfile):
         header = sigproc.encode_key("HEADER_START")
         with open(tmpfile, mode="wb") as wf:

@@ -1,7 +1,6 @@
+from __future__ import annotations
 import struct
 import numpy as np
-
-from typing import List, Dict, Union, Optional
 
 from bidict import bidict
 from astropy.time import Time, TimeDelta
@@ -68,7 +67,7 @@ machine_ids = bidict(
 )
 
 
-def edit_header(filename: str, key: str, value: Union[int, float, str]) -> None:
+def edit_header(filename: str, key: str, value: int | float | str) -> None:
     """Edit a sigproc style header directly in place for the given file.
 
     Parameters
@@ -77,7 +76,7 @@ def edit_header(filename: str, key: str, value: Union[int, float, str]) -> None:
         name of the sigproc file to modify header.
     key : str
         name of parameter to change (must be a valid sigproc key)
-    value : Union[int, float, str]
+    value : int or float or str
         new value to enter into header
 
     Raises
@@ -109,19 +108,17 @@ def edit_header(filename: str, key: str, value: Union[int, float, str]) -> None:
         raise ValueError("New header is too long/short for file")
 
 
-def parse_header_multi(
-    filenames: Union[str, List[str]], check_contiguity: bool = True
-) -> Dict:
+def parse_header_multi(filenames: str | list[str], check_contiguity: bool = True) -> dict:
     """Parse the metadata from Sigproc-style file/sequential files.
 
     Parameters
     ----------
-    filenames : list
+    filenames : str or list of str
         sigproc filterbank files containing the header
 
     Returns
     -------
-    Dict
+    dict
         observational metadata
 
     """
@@ -154,7 +151,7 @@ def parse_header_multi(
     return header
 
 
-def parse_header(filename: str) -> Dict:
+def parse_header(filename: str) -> dict:
     """Parse the metadata from a single Sigproc-style file.
 
     Parameters
@@ -164,7 +161,7 @@ def parse_header(filename: str) -> Dict:
 
     Returns
     -------
-    Dict
+    dict
         observational metadata
 
     Raises
@@ -201,14 +198,14 @@ def parse_header(filename: str) -> Dict:
     return header
 
 
-def match_header(header1: Dict, header2: Dict) -> None:
+def match_header(header1: dict, header2: dict) -> None:
     """Match header keywords between two parsed sigproc headers.
 
     Parameters
     ----------
-    header1 : Dict
+    header1 : dict
         parsed header from file 1.
-    header2 : Dict
+    header2 : dict
         parsed header from file 2.
 
     Raises
@@ -227,12 +224,12 @@ def match_header(header1: Dict, header2: Dict) -> None:
             )
 
 
-def ensure_contiguity(header: Dict) -> None:
+def ensure_contiguity(header: dict) -> None:
     """Check if list of sigproc files are contiguous/sequential.
 
     Parameters
     ----------
-    header : Dict
+    header : dict
         parsed header of sigproc files
 
     Raises
@@ -258,7 +255,7 @@ def ensure_contiguity(header: Dict) -> None:
             )
 
 
-def encode_header(header: Dict) -> bytes:
+def encode_header(header: dict) -> bytes:
     """Get sigproc format header in binary format.
 
     Returns
@@ -278,7 +275,7 @@ def encode_header(header: Dict) -> bytes:
 
 
 def encode_key(
-    key: str, value: Optional[Union[int, float, str]] = None, value_type: str = "str"
+    key: str, value: int | float | str | None = None, value_type: str = "str"
 ) -> bytes:
     """Encode given header key to a bytes string.
 
@@ -286,7 +283,7 @@ def encode_key(
     ----------
     key : str
         header key
-    value : Optional[Union[int, float, str]], optional
+    value : int or float or str, optional
         value of the header key, by default None
     value_type : str, optional
         type of the header key, by default "str"
@@ -321,7 +318,7 @@ def parse_radec(src_raj: float, src_dej: float) -> SkyCoord:
 
     Returns
     -------
-    SkyCoord
+    :class:`~astropy.coordinates.SkyCoord`
         Astropy coordinate class
     """
     ho, mi = divmod(src_raj, 10000)  # noqa: WPS432

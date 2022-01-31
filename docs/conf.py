@@ -20,8 +20,8 @@ sys.path.insert(0, os.path.abspath("../"))
 # -- Project information -----------------------------------------------------
 
 project = "sigpyproc3"
-copyright = "2022, Ewan Barr & Fast Radio Burst Software"
-author = "Ewan Barr"
+copyright = "2020, Fast Radio Burst Software"
+author = "Fast Radio Burst Software"
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the
@@ -37,14 +37,10 @@ release = version
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom ones.
 extensions = [
-    "myst_parser",
     "sphinx.ext.autodoc",
     "sphinx.ext.napoleon",
     "sphinx.ext.intersphinx",
-    "sphinx.ext.viewcode",
-    "nbsphinx",
-    "IPython.sphinxext.ipython_console_highlighting",
-    "IPython.sphinxext.ipython_directive",
+    "myst_nb",
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -62,29 +58,27 @@ exclude_patterns = ["_build", "**.ipynb_checkpoints", "Thumbs.db", ".DS_Store"]
 # a list of builtin themes.
 
 html_theme = "sphinx_book_theme"
+html_title = "sigpyproc3"
 html_theme_options = {
-    "logo_only": False,
-    "display_version": True,
-    "prev_next_buttons_location": "bottom",
-    "style_external_links": False,
-    # Toc options
-    "collapse_navigation": True,
-    "sticky_navigation": True,
-    "navigation_depth": 4,
-    "includehidden": True,
-    "titles_only": False,
+    "repository_url": "https://github.com/FRBs/sigpyproc3",
+    "use_repository_button": True,
+    "use_issues_button": True,
+    "use_download_button": True,
 }
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
 # \html_static_path = ["_static"]
 
+jupyter_execute_notebooks = "auto"
+execution_timeout = -1
 
 # -- Extension configuration -------------------------------------------------
 
 autoclass_content = "class"  # include both class docstring and __init__
 autodoc_member_order = "bysource"
 autodoc_typehints = "none"
+autodoc_inherit_docstrings = True
 
 napoleon_google_docstring = False
 napoleon_numpy_docstring = True

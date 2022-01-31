@@ -2,7 +2,6 @@ from __future__ import annotations
 import pathlib
 import numpy as np
 
-from typing import Optional, Tuple, Union
 from numpy import typing as npt
 
 try:
@@ -29,15 +28,14 @@ class TimeSeries(np.ndarray):
     Returns
     -------
     :py:obj:`~numpy.ndarray`
-        1 dimensional time series with header
+        1 dimensional time series array with header metadata
 
     Notes
     -----
-    Data is converted to 32 bits regardless of original type.
+    Data is converted to 32-bit floats regardless of original type.
     """
 
     def __new__(cls, input_array: npt.ArrayLike, header: Header) -> TimeSeries:
-        """Create a new TimeSeries array."""
         obj = np.asarray(input_array).astype(np.float32, copy=False).view(cls)
         obj.header = header
         return obj
@@ -73,13 +71,13 @@ class TimeSeries(np.ndarray):
         """
         if self.size // (nbins * nints) < 10:
             raise ValueError("nbins x nints is too large for length of data")
-        fold_ar = np.zeros(nbins * nints, dtype=np.float64)
+        fold_ar = np.zeros(nbins * nints, dtype=np.float32)
         count_ar = np.zeros(nbins * nints, dtype=np.int32)
         kernels.fold(
             self,
             fold_ar,
             count_ar,
-            np.array([0]),
+            np.array([0], dtype=np.int32),
             0,
             self.header.tsamp,
             period,
@@ -93,12 +91,13 @@ class TimeSeries(np.ndarray):
             0,
         )
         fold_ar /= count_ar
+        fold_ar = fold_ar.reshape(nints, 1, nbins)
         return foldedcube.FoldedData(
-            fold_ar, self.header.new_header(), period, self.header.refdm, accel
+            fold_ar, self.header.new_header(), period, self.header.dm, accel
         )
 
     def rfft(self) -> fourierseries.FourierSeries:
-        """Perform 1-D real to complex forward FFT using FFTW3.
+        """Perform 1-D real to complex forward FFT.
 
         Returns
         -------
@@ -132,8 +131,7 @@ class TimeSeries(np.ndarray):
 
         Notes
         -----
-        Window edges will be dealt by reflecting about the edges of the time series.
-        For more robust implemetation, use :py:obj:`scipy.ndimage.uniform_filter1d`.
+        Window edges is dealt by reflecting about the edges of the time series.
         """
         if window < 1:
             raise ValueError("incorrect window size")
@@ -155,32 +153,39 @@ class TimeSeries(np.ndarray):
 
         Notes
         -----
-        Window edges will be dealt with only at the start of the time series.
+        Window edges is dealt by reflecting about the edges of the time series.
         """
         tim_ar = stats.running_median(self, window)
         return tim_ar.view(TimeSeries)
 
     def apply_boxcar(self, width: int) -> TimeSeries:
-        """Apply a boxcar filter to the time series.
+        """Apply a square-normalized boxcar filter to the time series.
 
         Parameters
         ----------
         width : int
-            width in bins of filter
+            width of boxcar to apply in bins
 
         Returns
         -------
         :class:`~sigpyproc.timeseries.TimeSeries`
             filtered time series
 
+        Raises
+        ------
+        ValueError
+            If boxcar width < 1
+
         Notes
         -----
-        Time series returned is of size nsamples-width with width/2
-        removed from either end.
+        Time series returned is normalized in units of S/N.
         """
-        # TODO Not implemented
-        tim_ar = stats.run_boxcar(self, width)
-        return tim_ar.view(TimeSeries)
+        if width < 1:
+            raise ValueError("incorrect boxcar window size")
+        mean_ar = stats.running_mean(self, width) * np.sqrt(width)
+        ref_bin = -width // 2 + 1 if width % 2 else -width // 2
+        boxcar_ar = np.roll(mean_ar, ref_bin)
+        return boxcar_ar.view(TimeSeries)
 
     def downsample(self, factor: int) -> TimeSeries:
         """Downsample the time series.
@@ -197,30 +202,33 @@ class TimeSeries(np.ndarray):
 
         Notes
         -----
-        Returned time series is of size nsamples//factor
+        Returned time series is of size nsamples // factor
         """
         if factor == 1:
             return self
         tim_ar = kernels.downsample_1d(self, factor)
-        return TimeSeries(
-            tim_ar, self.header.new_header({"tsamp": self.header.tsamp * factor})
-        )
+        changes = {"tsamp": self.header.tsamp * factor, "nsamples": tim_ar.size}
+        return TimeSeries(tim_ar, self.header.new_header(changes))
 
-    def pad(self, npad: int) -> TimeSeries:
+    def pad(self, npad: int, mode: str = "mean", **pad_kwargs) -> TimeSeries:
         """Pad a time series with mean valued data.
 
         Parameters
         ----------
         npad : int
-            number of padding points
+            number of padding points (bins) to add at the end of the time series
+        mode : str, optional
+            mode of padding (as used by :py:func:`numpy.pad()`), by default 'mean'
+        **pad_kwargs : dict
+            Keyword arguments for :py:func:`numpy.pad()`
 
         Returns
         -------
         :class:`~sigpyproc.timeseries.TimeSeries`
             padded time series
         """
-        new_ar = np.hstack((self, self.mean() * np.ones(npad)))
-        return TimeSeries(new_ar, self.header.new_header())
+        tim_ar = np.pad(self, (0, npad), mode=mode, **pad_kwargs)
+        return tim_ar.view(TimeSeries)
 
     def resample(self, accel: float, jerk: float = 0) -> TimeSeries:
         """Perform time domain resampling to remove acceleration and jerk.
@@ -237,11 +245,11 @@ class TimeSeries(np.ndarray):
         :class:`~sigpyproc.timeseries.TimeSeries`
             resampled time series
         """
-        out_ar = kernels.resample_tim(self, accel, self.header.tsamp)
-        new_header = self.header.new_header({"nsamples": out_ar.size, "accel": accel})
-        return TimeSeries(out_ar, new_header)
+        tim_ar = kernels.resample_tim(self, accel, self.header.tsamp)
+        changes = {"nsamples": tim_ar.size, "accel": accel}
+        return TimeSeries(tim_ar, self.header.new_header(changes))
 
-    def correlate(self, other: Union[TimeSeries, npt.ArrayLike]) -> TimeSeries:
+    def correlate(self, other: TimeSeries | npt.ArrayLike) -> TimeSeries:
         """Cross correlate with another time series of the same length.
 
         Parameters
@@ -261,12 +269,13 @@ class TimeSeries(np.ndarray):
         """
         if not isinstance(other, TimeSeries):
             try:
-                other = TimeSeries(other, self.header.newHeader())
+                other = TimeSeries(other, self.header.new_header())
             except Exception:
                 raise IOError("Could not convert input to TimeSeries instance")
-        return (self.rfft() * other.rfft()).ifft()
+        corr_ar = self.rfft() * other.rfft()
+        return corr_ar.ifft()  # type: ignore
 
-    def to_dat(self, basename: str) -> Tuple[str, str]:
+    def to_dat(self, basename: str) -> tuple[str, str]:
         """Write time series in presto ``.dat`` format.
 
         Parameters
@@ -290,7 +299,7 @@ class TimeSeries(np.ndarray):
             self[:-1].tofile(f"{basename}.dat")
         return f"{basename}.dat", f"{basename}.inf"
 
-    def to_file(self, filename: Optional[str] = None) -> str:
+    def to_file(self, filename: str | None = None) -> str:
         """Write time series in sigproc format.
 
         Parameters
@@ -310,7 +319,7 @@ class TimeSeries(np.ndarray):
         return filename
 
     @classmethod
-    def read_dat(cls, datfile: str, inffile: Optional[str] = None) -> TimeSeries:
+    def read_dat(cls, datfile: str, inffile: str | None = None) -> TimeSeries:
         """Read a presto format ``.dat`` file.
 
         Parameters
@@ -361,5 +370,4 @@ class TimeSeries(np.ndarray):
         """
         header = Header.from_sigproc(timfile)
         data = np.fromfile(timfile, dtype=header.dtype, offset=header.hdrlens[0])
-        data = data.astype(np.float32, copy=False)
         return cls(data, header)

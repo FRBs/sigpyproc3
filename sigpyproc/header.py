@@ -1,21 +1,21 @@
 from __future__ import annotations
 import pathlib
-import attr
+import attrs
 import numpy as np
 
-from typing import Dict, List, Any, Union, Optional
+from typing import Any
 
 from astropy import units
-from astropy.time import Time, TimeDelta
 from astropy.coordinates import Angle, SkyCoord
 
 from sigpyproc import params
 from sigpyproc.io import sigproc
 from sigpyproc.io.bits import BitsInfo
 from sigpyproc.io.fileio import FileWriter
+from sigpyproc.utils import time_after_nsamps
 
 
-@attr.s(auto_attribs=True, kw_only=True)
+@attrs.define(auto_attribs=True, kw_only=True)
 class Header(object):
     """Container object to handle observation metadata.
 
@@ -40,12 +40,12 @@ class Header(object):
     nsamples: int
         Number of samples
     nifs: int
-        NUmber of polarizations
-    coord: SkyCoord
+        Number of polarizations
+    coord: :class:`~astropy.coordinates.SkyCoord`
         Sky coordinate
-    azimuth: Angle
+    azimuth: :class:`~astropy.coordinates.Angle`
         Telescope Azimuth
-    zenith: Angle
+    zenith: :class:`~astropy.coordinates.Angle`
         Telescope Zenith angle
     telescope: str
         Telescope name
@@ -67,17 +67,17 @@ class Header(object):
         Acceleration
     signed: bool
         if the data is signed
-    rawdatafile: Optional[str]
+    rawdatafile: str or None
         Original file name
-    hdrlens: List[int]
+    hdrlens: list of int
         List of header length of files
-    datalens: List[int]
+    datalens: list of int
         List of data length of files
-    filenames: List[str]
+    filenames: list of str
         List of filenames
-    nsamples_files: List[int]
+    nsamples_files: list of int
         List of samples in each file
-    tstart_files: List[float]
+    tstart_files: list of float
         List of start MJD in each file
     """
 
@@ -105,13 +105,13 @@ class Header(object):
     period: float = 0
     accel: float = 0
     signed: bool = False
-    rawdatafile: Optional[str] = None
+    rawdatafile: str | None = None
 
-    hdrlens: List[int] = attr.Factory(list)
-    datalens: List[int] = attr.Factory(list)
-    filenames: List[str] = attr.Factory(list)
-    nsamples_files: List[int] = attr.Factory(list)
-    tstart_files: List[float] = attr.Factory(list)
+    hdrlens: list[int] = attrs.Factory(list)
+    datalens: list[int] = attrs.Factory(list)
+    filenames: list[str] = attrs.Factory(list)
+    nsamples_files: list[int] = attrs.Factory(list)
+    tstart_files: list[float] = attrs.Factory(list)
 
     @property
     def basename(self) -> str:
@@ -179,29 +179,9 @@ class Header(object):
         return self.coord.dec.to_string(unit="deg", sep=":", pad=True)
 
     @property
-    def ra_rad(self) -> float:
-        """Right Ascension in radians (`float`, read-only)."""
-        return self.coord.ra.rad
-
-    @property
-    def dec_rad(self) -> float:
-        """Declination in radians (`float`, read-only)."""
-        return self.coord.dec.rad
-
-    @property
-    def ra_deg(self) -> float:
-        """Right Ascension in degrees (`float`, read-only)."""
-        return self.coord.ra.deg
-
-    @property
-    def dec_deg(self) -> float:
-        """Declination in degrees (`float`, read-only)."""
-        return self.coord.dec.deg
-
-    @property
     def obs_date(self) -> str:
         """Observation date and time (`str`, read-only)."""
-        return get_time_after_nsamps(self.tstart, self.tsamp).iso
+        return time_after_nsamps(self.tstart, self.tsamp).iso
 
     def mjd_after_nsamps(self, nsamps: int) -> float:
         """Find the Modified Julian Date after nsamps have elapsed.
@@ -216,7 +196,7 @@ class Header(object):
         float
             Modified Julian Date
         """
-        return get_time_after_nsamps(self.tstart, self.tsamp, nsamps).mjd
+        return time_after_nsamps(self.tstart, self.tsamp, nsamps).mjd
 
     def get_dmdelays(self, dm: float, in_samples: bool = True) -> np.ndarray:
         """For a given dispersion measure get the dispersive ISM delay for middle of each frequency channel.
@@ -237,11 +217,11 @@ class Header(object):
             dm * params.DM_CONSTANT_LK * ((self.chan_freqs ** -2) - (self.fch1 ** -2))
         )
         if in_samples:
-            return (delays / self.tsamp).round().astype("int32")
+            return (delays / self.tsamp).round().astype(np.int32)
         return delays
 
-    def new_header(self, update_dict: Optional[Dict[str, Any]] = None) -> Header:
-        """Get a new instance of :class:`~sigpyproc.Header.Header`.
+    def new_header(self, update_dict: dict[str, Any] | None = None) -> Header:
+        """Get a new instance of :class:`~sigpyproc.header.Header`.
 
         Parameters
         ----------
@@ -250,14 +230,14 @@ class Header(object):
 
         Returns
         -------
-        :class:`~sigpyproc.Header.Header`
+        :class:`~sigpyproc.header.Header`
             new header information
         """
-        new = attr.asdict(self)
+        new = attrs.asdict(self)
         if update_dict is not None:
             new.update(update_dict)
         new_checked = {
-            key: value for key, value in new.items() if key in attr.asdict(self).keys()
+            key: value for key, value in new.items() if key in attrs.asdict(self).keys()
         }
         return Header(**new_checked)
 
@@ -271,14 +251,14 @@ class Header(object):
 
         Returns
         -------
-        :class:`~sigpyproc.Header.Header`
+        :class:`~sigpyproc.header.Header`
             A dedispersed version of the header
         """
         return self.new_header(
             {"dm": dm, "nchans": 1, "data_type": "time series", "nbits": 32}
         )
 
-    def to_dict(self, with_properties=True) -> Dict[str, Any]:
+    def to_dict(self, with_properties=True) -> dict[str, Any]:
         """Get a dict of all attributes including property attributes.
 
         Returns
@@ -286,7 +266,7 @@ class Header(object):
         dict
             attributes
         """
-        attributes = attr.asdict(self)
+        attributes = attrs.asdict(self)
         if with_properties:
             prop = {
                 key: getattr(self, key)
@@ -296,7 +276,7 @@ class Header(object):
             attributes.update(prop)
         return attributes
 
-    def to_sigproc(self, as_dict=False) -> Union[Dict, bytes]:
+    def to_sigproc(self, as_dict=False) -> dict | bytes:
         """Get sigproc format header binary header.
 
         Returns
@@ -328,8 +308,8 @@ class Header(object):
     def prep_outfile(
         self,
         filename: str,
-        update_dict: Optional[Dict[str, Any]] = None,
-        nbits: Optional[int] = None,
+        update_dict: dict[str, Any] | None = None,
+        nbits: int | None = None,
         quantize: bool = False,
         interval_seconds: float = 10,
         constant_offset_scale: bool = False,
@@ -349,7 +329,7 @@ class Header(object):
 
         Returns
         -------
-        FileWriter
+        :class:`~sigpyproc.io.fileio.FileWriter`
             a prepared file
         """
         if nbits is None:
@@ -358,10 +338,10 @@ class Header(object):
         new_hdr.nbits = nbits
         out_file = FileWriter(
             filename,
-            mode="w+",
-            nbits=nbits,
             tsamp=new_hdr.tsamp,
             nchans=new_hdr.nchans,
+            mode="w+",
+            nbits=nbits,
             quantize=quantize,
             interval_seconds=interval_seconds,
             constant_offset_scale=constant_offset_scale,
@@ -411,10 +391,10 @@ class Header(object):
 
         Returns
         -------
-        :class:`~sigpyproc.Header.Header`
+        :class:`~sigpyproc.header.Header`
             observational metadata
         """
-        header: Dict[str, Any] = {}
+        header: dict[str, Any] = {}
         with open(filename, "r") as fp:
             lines = fp.readlines()
 
@@ -442,13 +422,13 @@ class Header(object):
         header_check = {
             key: value
             for key, value in header.items()
-            if key in attr.fields_dict(cls).keys()
+            if key in attrs.fields_dict(cls).keys()
         }
         return cls(**header_check)
 
     @classmethod
     def from_sigproc(
-        cls, filenames: Union[str, List[str]], check_contiguity: bool = True
+        cls, filenames: str | list[str], check_contiguity: bool = True
     ) -> Header:
         """Parse the metadata from Sigproc-style file/sequential files.
 
@@ -459,7 +439,7 @@ class Header(object):
 
         Returns
         -------
-        :class:`~sigpyproc.Header.Header`
+        :class:`~sigpyproc.header.Header`
             observational metadata
 
         """
@@ -473,41 +453,17 @@ class Header(object):
             "source": header["source_name"],
             "dm": header.get("refdm", 0),
             "foff": header.get("foff", 0),
-            "coord": sigproc.parse_radec(header["src_raj"], header["src_dej"]),
-            "azimuth": Angle(header["az_start"] * units.deg),
-            "zenith": Angle(header["za_start"] * units.deg),
+            "coord": sigproc.parse_radec(
+                header.get("src_raj", 0), header.get("src_dej", 0)
+            ),
+            "azimuth": Angle(header.get("az_start", 0) * units.deg),
+            "zenith": Angle(header.get("za_start", 0) * units.deg),
             "frame": frame,
         }
         header.update(hdr_update)
         header_check = {
             key: value
             for key, value in header.items()
-            if key in attr.fields_dict(cls).keys()
+            if key in attrs.fields_dict(cls).keys()
         }
         return cls(**header_check)
-
-
-def get_time_after_nsamps(
-    tstart: float, tsamp: float, nsamps: Optional[int] = None
-) -> Time:
-    """Get precise time nsamps after input tstart. If nsamps is not given then just return tstart.
-
-    Parameters
-    ----------
-    tstart : float
-        starting mjd.
-    tsamp : float
-        sampling time in seconds.
-    nsamps : Optional[int], optional
-        number of samples, by default None
-
-    Returns
-    -------
-    Time
-        Astropy Time object after given nsamps
-    """
-    precision = int(np.ceil(abs(np.log10(tsamp))))
-    tstart = Time(tstart, format="mjd", scale="utc", precision=precision)
-    if nsamps:
-        return tstart + TimeDelta(nsamps * tsamp, format="sec")
-    return tstart

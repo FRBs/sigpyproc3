@@ -78,7 +78,7 @@ class ChannelStats(object):
 
     @property
     def mbag(self) -> kernels.MomentsBag:
-        """kernels.MomentsBag: The central moments of the data."""
+        """:class:`~sigpyproc.core.kernels.MomentsBag`: The central moments of the data."""
         return self._mbag
 
     @property
@@ -93,32 +93,32 @@ class ChannelStats(object):
 
     @property
     def maxima(self) -> np.ndarray:
-        """np.ndarray: Get the maximum value of each channel."""
+        """numpy.ndarray: Get the maximum value of each channel."""
         return self._mbag.max
 
     @property
     def minima(self) -> np.ndarray:
-        """np.ndarray: Get the minimum value of each channel."""
+        """numpy.ndarray: Get the minimum value of each channel."""
         return self._mbag.min
 
     @property
     def mean(self) -> np.ndarray:
-        """np.ndarray: Get the mean of each channel."""
+        """numpy.ndarray: Get the mean of each channel."""
         return self._mbag.m1
 
     @property
     def var(self) -> np.ndarray:
-        """np.ndarray: Get the variance of each channel."""
+        """numpy.ndarray: Get the variance of each channel."""
         return self._mbag.m2 / self.nsamps
 
     @property
     def std(self) -> np.ndarray:
-        """np.ndarray: Get the standard deviation of each channel."""
+        """numpy.ndarray: Get the standard deviation of each channel."""
         return np.sqrt(self._mbag.m2 / self.nsamps)
 
     @property
     def skew(self) -> np.ndarray:
-        """np.ndarray: Get the skewness of each channel."""
+        """numpy.ndarray: Get the skewness of each channel."""
         return (
             np.divide(
                 self._mbag.m3,
@@ -131,7 +131,7 @@ class ChannelStats(object):
 
     @property
     def kurtosis(self) -> np.ndarray:
-        """np.ndarray: Get the kurtosis of each channel."""
+        """numpy.ndarray: Get the kurtosis of each channel."""
         return (
             np.divide(
                 self._mbag.m4,

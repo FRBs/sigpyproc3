@@ -1,10 +1,9 @@
-API Reference
-=============
+API documentation
+=================
 
 .. toctree::
    :maxdepth: 4
 
-   api/io
    api/readers
    api/header
    api/block
@@ -13,5 +12,5 @@ API Reference
    api/foldedcube
    api/base
    api/utils
-   api/params
+   api/io
    api/core

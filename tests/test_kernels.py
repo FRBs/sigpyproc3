@@ -1,8 +1,6 @@
 import numpy as np
 from sigpyproc.core import kernels
 
-numpy_types = [np.int8, np.uint8, np.int32, np.int64, np.float32, np.float64]
-
 
 class TestKernels(object):
     def test_unpack1_8(self):

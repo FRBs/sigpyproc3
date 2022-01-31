@@ -3,41 +3,73 @@ from pathlib import Path
 
 from sigpyproc.header import Header
 from sigpyproc.timeseries import TimeSeries
+from sigpyproc.fourierseries import FourierSeries
+from sigpyproc.foldedcube import FoldedData
 
 
 class TestTimeSeries(object):
     def test_timeseries(self, tim_data, tim_header):
         tim = TimeSeries(tim_data, Header(**tim_header))
-        assert tim.header.nbits == 32
+        np.testing.assert_equal(tim.header.nbits, 32)
         np.testing.assert_allclose(tim.mean(), 128, atol=0.1)
+
+    def test_fold(self, tim_data, tim_header):
+        period = 1
+        tim = TimeSeries(tim_data, Header(**tim_header))
+        tim_folded = tim.fold(period=period, nints=16)
+        assert isinstance(tim_folded, FoldedData)
+
+    def test_rfft(self, tim_data, tim_header):
+        tim = TimeSeries(tim_data, Header(**tim_header))
+        tim_rfft = tim.rfft()
+        assert isinstance(tim_rfft, FourierSeries)
 
     def test_running_mean(self, tim_data, tim_header):
         window = 101
         tim = TimeSeries(tim_data, Header(**tim_header))
         tim_filtered_mean = tim.running_mean(window=window)
-        assert tim_filtered_mean.size == tim.size
+        np.testing.assert_equal(tim_filtered_mean.size, tim.size)
         np.testing.assert_allclose(tim_filtered_mean.mean(), tim.mean(), atol=0.1)
 
     def test_running_median(self, tim_data, tim_header):
         window = 101
         tim = TimeSeries(tim_data, Header(**tim_header))
         tim_filtered_median = tim.running_median(window=window)
-        assert tim_filtered_median.size == tim.size
+        np.testing.assert_equal(tim_filtered_median.size, tim.size)
         np.testing.assert_allclose(tim_filtered_median.mean(), tim.mean(), atol=0.2)
 
-    """
+    def test_apply_boxcar(self, tim_data, tim_header):
+        tim = TimeSeries(tim_data, Header(**tim_header))
+        tim_boxcar = tim.apply_boxcar(width=5)
+        assert isinstance(tim_boxcar, TimeSeries)
+        np.testing.assert_equal(tim_boxcar.size, tim.size)
+
     def test_downsample(self, tim_data, tim_header):
         tfactor = 16
         tim = TimeSeries(tim_data, Header(**tim_header))
         tim_decimated = tim.downsample(factor=tfactor)
-        assert tim_decimated.size == tim.size // tfactor
-        np.testing.assert_allclose(tim[:tfactor].sum(), tim_decimated[0], atol=0.01)
-    """
+        assert isinstance(tim_decimated, TimeSeries)
+        np.testing.assert_equal(tim_decimated.size, tim.size // tfactor)
+        np.testing.assert_allclose(tim[:tfactor].mean(), tim_decimated[0], atol=0.01)
+
     def test_pad(self, tim_data, tim_header):
         npad = 100
         tim = TimeSeries(tim_data, Header(**tim_header))
         tim_padded = tim.pad(npad=npad)
-        assert tim_padded.size == tim.size + npad
+        assert isinstance(tim_padded, TimeSeries)
+        np.testing.assert_equal(tim_padded.size, tim.size + npad)
+
+    def test_resample(self, tim_data, tim_header):
+        accel = 1
+        tim = TimeSeries(tim_data, Header(**tim_header))
+        tim_resampled = tim.resample(accel=accel)
+        assert isinstance(tim_resampled, TimeSeries)
+        np.testing.assert_equal(tim_resampled.header.accel, accel)
+
+    def test_correlate(self, tim_data, tim_header):
+        tim = TimeSeries(tim_data, Header(**tim_header))
+        tim_corr = tim.correlate(tim)
+        assert isinstance(tim_corr, TimeSeries)
 
     def test_to_dat(self, tim_data, tim_header):
         tim = TimeSeries(tim_data, Header(**tim_header))

@@ -1,26 +1,27 @@
-import attr
+from __future__ import annotations
+import attrs
 import numpy as np
 
-from typing import Optional, ClassVar, Dict, Any
+from typing import ClassVar, Any
 
 from sigpyproc.core import kernels
 
 nbits_to_dtype = {1: "<u1", 2: "<u1", 4: "<u1", 8: "<u1", 16: "<u2", 32: "<f4"}
 
 
-def unpack(array, nbits):
+def unpack(array: np.ndarray, nbits: int) -> np.ndarray:
     """Unpack 1, 2 and 4 bit array. Only unpacks in big endian bit ordering.
 
     Parameters
     ----------
-    array : ndarray
+    array : numpy.ndarray
         Array to unpack.
     nbits : int
         Number of bits to unpack.
 
     Returns
     -------
-    ndarray
+    numpy.ndarray
         Unpacked array.
 
     Raises
@@ -45,14 +46,14 @@ def pack(array, nbits):
 
     Parameters
     ----------
-    array : ndarray
+    array : numpy.ndarray
         Array to pack.
     nbits : int
         Number of bits to pack.
 
     Returns
     -------
-    ndarray
+    numpy.ndarray
         Packed array.
 
     Raises
@@ -72,7 +73,7 @@ def pack(array, nbits):
     return packed
 
 
-@attr.s(auto_attribs=True)
+@attrs.define(auto_attribs=True, frozen=True, slots=True)
 class BitsInfo(object):
     """Class to handle bits info.
 
@@ -82,11 +83,10 @@ class BitsInfo(object):
         if input `nbits` not in [1, 2, 4, 8, 16, 32]
     """
 
-    nbits: int = attr.ib(validator=attr.validators.in_(nbits_to_dtype.keys()))
-    digi_sigma: float = attr.ib()
+    nbits: int = attrs.field(validator=attrs.validators.in_(nbits_to_dtype.keys()))
+    digi_sigma: float = attrs.field()
 
-    float_bits: ClassVar[int] = 32
-    default_sigma: ClassVar[Dict[int, float]] = {
+    default_sigma: ClassVar[dict[int, float]] = {
         1: 0.5,
         2: 1.5,
         4: 6,
@@ -94,12 +94,6 @@ class BitsInfo(object):
         16: 6,
         32: 6,
     }
-
-    def __attrs_post_init__(self) -> None:
-        self._digi_min = 0
-        self._digi_max = (1 << self.nbits) - 1
-        self._digi_mean = (1 << (self.nbits - 1)) - 0.5
-        self._digi_scale = self._digi_mean / self.digi_sigma
 
     @property
     def dtype(self) -> np.dtype:
@@ -122,26 +116,26 @@ class BitsInfo(object):
         return 8 // self.nbits if self.unpack else 1
 
     @property
-    def digi_min(self) -> Optional[int]:
-        """Minimum value used to quantize data (`int` or None, read-only)."""
-        return None if self.nbits == self.float_bits else self._digi_min
+    def digi_min(self) -> int:
+        """Minimum value used to quantize data (`int`, read-only)."""
+        return 0
 
     @property
-    def digi_max(self) -> Optional[int]:
-        """Maximum value used to quantize data (`int` or None, read-only)."""
-        return None if self.nbits == self.float_bits else self._digi_max
+    def digi_max(self) -> int:
+        """Maximum value used to quantize data (`int`, read-only)."""
+        return (1 << self.nbits) - 1
 
     @property
-    def digi_mean(self) -> Optional[float]:
-        """Mean used to quantize data (`float` or None, read-only)."""
-        return None if self.nbits == self.float_bits else self._digi_mean
+    def digi_mean(self) -> float:
+        """Mean used to quantize data (`float`, read-only)."""
+        return (1 << (self.nbits - 1)) - 0.5
 
     @property
-    def digi_scale(self) -> Optional[float]:
-        """Scale used to quantize data (`float` or None, read-only)."""
-        return None if self.nbits == self.float_bits else self._digi_scale
+    def digi_scale(self) -> float:
+        """Scale used to quantize data (`float`, read-only)."""
+        return self.digi_mean / self.digi_sigma
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Get a dict of all property attributes.
 
         Returns
@@ -149,11 +143,14 @@ class BitsInfo(object):
         dict
             property attributes
         """
-        return {
+        attributes = attrs.asdict(self)
+        prop = {
             key: getattr(self, key)
             for key, value in vars(type(self)).items()  # noqa: WPS421
             if isinstance(value, property)
         }
+        attributes.update(prop)
+        return attributes
 
     @digi_sigma.default
     def _set_digi_sigma(self):

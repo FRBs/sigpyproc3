@@ -56,7 +56,7 @@ pytestdebug.log
 docs/_build/
 docs/_static/
 docs/_templates/
-doc/_build/
+docs/jupyter_execute/
 
 # Jupyter Notebook
 .ipynb_checkpoints
