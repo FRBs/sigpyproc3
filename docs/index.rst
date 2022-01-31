@@ -27,6 +27,8 @@ environment, with a simple plug-and-play system with new modules and extensions.
   :alt: Documentation Status
 .. image:: https://codecov.io/gh/FRBs/sigpyproc3/branch/master/graph/badge.svg
   :target: https://codecov.io/gh/FRBs/sigpyproc3
+.. image:: https://img.shields.io/github/license/FRBs/sigpyproc3
+  :target: https://github.com/FRBs/sigpyproc3/blob/main/LICENSE
 .. image:: https://img.shields.io/badge/code%20style-black-000000.svg
   :target: https://github.com/psf/black
 

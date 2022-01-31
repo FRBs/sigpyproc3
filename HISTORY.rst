@@ -1,3 +1,17 @@
+1.0.0 (2022-02-01)
+++++++++++++++++++
+
+- First stable release of the new API.
+- Adds Multifile support for ``SIGPROC Filterbank`` files. (`#13 <https://github.com/FRBs/sigpyproc3/pull/13>`_)
+- Adds Numba backend for kernel functions in place of the earlier `pybind11 <https://github.com/pybind/pybind11>`_. (`#17 <https://github.com/FRBs/sigpyproc3/pull/17>`_)
+- Removes dependence on `pybind11 <https://github.com/pybind/pybind11>`_ and `fftw3 <http://www.fftw.org/>`_.
+- Adds Packaging structure as for the new API. (`#16 <https://github.com/FRBs/sigpyproc3/pull/16>`_)
+- Adds ``io`` module for reading and writing of ``SIGPROC`` files.
+- Adds fast median and mean filter (`bottleneck <https://github.com/pydata/bottleneck>`_) and Higher-Order running stats.
+- Support for command-line utilities
+- Adds CHIME telescope code to ``params``.
+
+
 0.5.5 (2021-03-31)
 ++++++++++++++++++
 
