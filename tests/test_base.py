@@ -1,4 +1,6 @@
 import numpy as np
+from pathlib import Path
+
 from sigpyproc.readers import FilReader
 from sigpyproc.timeseries import TimeSeries
 from sigpyproc.core import stats
@@ -92,9 +94,12 @@ class TestFilterbank(object):
         chans = np.random.choice(fil.header.nchans, 5, replace=False)
         timfiles = fil.extract_chans(chans)
         for timfile in timfiles:
+            timfile_path = Path(timfile)
+            assert timfile_path.is_file()
             tim = TimeSeries.read_tim(timfile)
             np.testing.assert_equal(tim.header.nbits, 32)
             np.testing.assert_equal(tim.header.nchans, 1)
+            timfile_path.unlink()
 
     def test_extract_bands(self, filfile_4bit):
         chanstart = 10
@@ -105,8 +110,11 @@ class TestFilterbank(object):
             chanstart=chanstart, nchans=nchans, chanpersub=chanpersub
         )
         for subfile in subfiles:
+            subfile_path = Path(subfile)
+            assert subfile_path.is_file()
             new_fil = FilReader(subfile)
             np.testing.assert_equal(new_fil.header.nbits, fil.header.nbits)
             np.testing.assert_equal(new_fil.header.dtype, fil.header.dtype)
             np.testing.assert_equal(new_fil.header.nsamples, fil.header.nsamples)
             np.testing.assert_equal(new_fil.header.nchans, chanpersub)
+            subfile_path.unlink()

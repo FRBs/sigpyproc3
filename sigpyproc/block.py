@@ -71,43 +71,39 @@ class FilterbankBlock(np.ndarray):
         new_ar = new_ar.reshape(
             self.shape[1] // tfactor, self.shape[0] // ffactor
         ).transpose()
-        new_header = self.header.new_header(
-            {
-                "tsamp": self.header.tsamp * tfactor,
-                "foff": self.header.foff * ffactor,
-                "nsamples": self.header.nsamples // tfactor,
-                "nchans": self.header.nchans // ffactor,
-            }
-        )
-        return FilterbankBlock(new_ar, new_header)
+        changes = {
+            "tsamp": self.header.tsamp * tfactor,
+            "foff": self.header.foff * ffactor,
+            "nsamples": self.header.nsamples // tfactor,
+            "nchans": self.header.nchans // ffactor,
+        }
+        return FilterbankBlock(new_ar, self.header.new_header(changes))
 
-    def normalise(self, by="mean", axis=1) -> FilterbankBlock:
+    def normalise(self, by: str = "mean", chans: bool = True) -> FilterbankBlock:
         """Normalise the data block (Subtract mean/median, divide by std).
 
         Parameters
         ----------
         by : str, optional
             measurement to subtract from each channel, by default "mean"
-        axis : int, optional
-            axis to operate, by default 1
+        chans : bool, optional
+            if True, normalise each channel, by default True
 
         Returns
         -------
         FilterbankBlock
             A normalised version of the data block
-
-        Raises
-        ------
-        ValueError
-            If `by` is not one of "mean" or "median".
         """
-        if by == "mean":
-            mean = np.mean(self, axis=axis)
-        elif by == "median":
-            mean = np.median(self, axis=axis)
+        np_op = getattr(np, by)
+        if chans:
+            norm_block = self - np_op(self, axis=1)[:, np.newaxis]
+            data_std = np.std(norm_block, axis=1)
+            norm_block /= np.where(np.isclose(data_std, 0, atol=1e-4), 1, data_std)[
+                :, np.newaxis
+            ]
         else:
-            raise ValueError(f"Invalid normalisation method {by}")
-        return FilterbankBlock((self - mean) / np.std(self, axis=axis), self.header)
+            norm_block = (self - np_op(self)) / np.std(self)
+        return FilterbankBlock(norm_block, self.header.new_header())
 
     def get_tim(self) -> TimeSeries:
         """Sum across all frequencies for each time sample.

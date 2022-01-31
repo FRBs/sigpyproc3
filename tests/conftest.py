@@ -74,11 +74,6 @@ def fftfile():
 
 
 @pytest.fixture(scope="session", autouse=True)
-def fftfile_mean():
-    return 443190
-
-
-@pytest.fixture(scope="session", autouse=True)
 def inffile():
     return Path(_datadir / "GBT_J1807-0847.inf").as_posix()
 
@@ -108,7 +103,7 @@ def tim_header():
 @pytest.fixture(scope="class", autouse=True)
 def fourier_data(tim_data):  # noqa: WPS442
     fft = np.fft.rfft(tim_data)
-    return fft.view(np.float64).astype(np.float32)
+    return fft.view(np.float64).astype(np.float32).view(np.complex64)
 
 
 @pytest.fixture(scope="class", autouse=True)

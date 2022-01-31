@@ -10,31 +10,49 @@ class TestHeader(object):
     def test_new_header_pass(self, filfile_4bit, key, newval):
         header = Header.from_sigproc(filfile_4bit)
         newhdr = header.new_header(update_dict={key: newval})
-        assert getattr(newhdr, key) == newval
+        np.testing.assert_equal(getattr(newhdr, key), newval)
 
     def test_new_header_fail(self, filfile_4bit):
         header = Header.from_sigproc(filfile_4bit)
         newhdr = header.new_header(update_dict={"random_key": 0})
-        with pytest.raises(AttributeError):
+        with np.testing.assert_raises(AttributeError):
             assert newhdr.random_key == 0
 
-    def test_dedispersed_header(self, filfile_4bit):
+    def test_mjd_after_nsamps(self, filfile_4bit):
         header = Header.from_sigproc(filfile_4bit)
-        newhdr = header.dedispersed_header(dm=10)
-        assert newhdr.dm == 10
-        assert newhdr.nchans == 1
-
-    def test_to_sigproc(self, filfile_4bit):
-        header = Header.from_sigproc(filfile_4bit)
-        spphdr = header.to_sigproc()
-        assert len(spphdr) >= header.hdrlens[0]
-        assert isinstance(spphdr, bytes)
+        np.testing.assert_equal(header.mjd_after_nsamps(0), header.tstart)
 
     @pytest.mark.parametrize("dm, maxdelay", [(0, 0), (100, 0.8), (5000, 40.4)])
     def test_get_dmdelays(self, filfile_4bit, dm, maxdelay):
         header = Header.from_sigproc(filfile_4bit)
         delays_time = header.get_dmdelays(dm=dm, in_samples=False)
         np.testing.assert_allclose(delays_time.max(), maxdelay, atol=0.1)
+        delays_sample = header.get_dmdelays(dm=dm, in_samples=True)
+        np.testing.assert_equal(delays_sample.dtype, np.int32)
+
+    def test_new_header(self, filfile_4bit):
+        nchans = 15
+        header = Header.from_sigproc(filfile_4bit)
+        newhdr = header.new_header({"nchans": nchans})
+        np.testing.assert_equal(newhdr.nchans, nchans)
+
+    def test_dedispersed_header(self, filfile_4bit):
+        dm = 10
+        header = Header.from_sigproc(filfile_4bit)
+        newhdr = header.dedispersed_header(dm=dm)
+        np.testing.assert_equal(newhdr.dm, dm)
+        np.testing.assert_equal(newhdr.nchans, 1)
+
+    def test_to_dict(self, filfile_4bit):
+        header = Header.from_sigproc(filfile_4bit)
+        header_dict = header.to_dict()
+        np.testing.assert_equal(header_dict["nchans"], header.nchans)
+
+    def test_to_sigproc(self, filfile_4bit):
+        header = Header.from_sigproc(filfile_4bit)
+        spphdr = header.to_sigproc()
+        assert len(spphdr) >= header.hdrlens[0]
+        assert isinstance(spphdr, bytes)
 
     def test_prep_outfile(self, filfile_4bit, tmpfile):
         header = Header.from_sigproc(filfile_4bit)

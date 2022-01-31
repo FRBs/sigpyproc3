@@ -9,7 +9,7 @@ from sigpyproc.core import kernels
 nbits_to_dtype = {1: "<u1", 2: "<u1", 4: "<u1", 8: "<u1", 16: "<u2", 32: "<f4"}
 
 
-def unpack(array, nbits):
+def unpack(array: np.ndarray, nbits: int) -> np.ndarray:
     """Unpack 1, 2 and 4 bit array. Only unpacks in big endian bit ordering.
 
     Parameters

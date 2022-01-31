@@ -217,7 +217,7 @@ class Header(object):
             dm * params.DM_CONSTANT_LK * ((self.chan_freqs ** -2) - (self.fch1 ** -2))
         )
         if in_samples:
-            return (delays / self.tsamp).round().astype("int32")
+            return (delays / self.tsamp).round().astype(np.int32)
         return delays
 
     def new_header(self, update_dict: dict[str, Any] | None = None) -> Header:

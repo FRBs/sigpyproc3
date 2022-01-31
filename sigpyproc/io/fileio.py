@@ -1,9 +1,8 @@
+from __future__ import annotations
 import io
 import os
 import warnings
 import numpy as np
-
-from typing import List
 
 from sigpyproc.io.bits import BitsInfo, unpack, pack
 from sigpyproc.utils import get_logger
@@ -43,9 +42,9 @@ class _FileBase(object):
 class FileReader(_FileBase):
     def __init__(
         self,
-        files: List[str],
-        hdrlens: List[int],
-        datalens: List[int],
+        files: list[str],
+        hdrlens: list[int],
+        datalens: list[int],
         mode: str = "r",
         nbits: int = 8,
     ) -> None:

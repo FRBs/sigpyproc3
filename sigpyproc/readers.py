@@ -85,7 +85,7 @@ class FilReader(Filterbank):
         delays = self.header.get_dmdelays(dm)
         min_sample = start + delays
         max_sample = min_sample + nsamps
-        if min_sample.any() < 0 or max_sample.any() > self.header.nsamples:
+        if np.any(min_sample < 0) or np.any(max_sample > self.header.nsamples):
             raise ValueError("requested dedispersed block is out of range")
 
         self._file.seek(start * self.sampsize)
