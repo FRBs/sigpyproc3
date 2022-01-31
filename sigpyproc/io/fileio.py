@@ -40,6 +40,24 @@ class _FileBase(object):
 
 
 class FileReader(_FileBase):
+    """A file reader class that can read from multiple files.
+
+    Files should have format similar to ``sigproc``.
+
+    Parameters
+    ----------
+    files : list[str]
+        list of files to be read from
+    hdrlens : list[int]
+        list of header lengths for each file
+    datalens : list[int]
+        list of data lengths for each file
+    mode : str, optional
+        file opening mode, by default "r"
+    nbits : int, optional
+        number of bits per sample in the files, by default 8
+    """
+
     def __init__(
         self,
         files: list[str],
@@ -58,6 +76,7 @@ class FileReader(_FileBase):
 
     @property
     def cur_data_pos(self) -> int:
+        """int: Current position in the data stream."""
         return self.file_obj.tell() - self.hdrlens[self.ifile_cur]
 
     def cread(self, nunits: int) -> np.ndarray:
@@ -128,11 +147,11 @@ class FileReader(_FileBase):
         else:
             raise ValueError("whence should be either 0 (SEEK_SET) or 1 (SEEK_CUR)")
 
-    def _seek2hdr(self, fileid):
+    def _seek2hdr(self, fileid: int) -> None:
         self._open(fileid)
         self.file_obj.seek(self.hdrlens[fileid])
 
-    def _seek_set(self, offset):
+    def _seek_set(self, offset: int) -> None:
         if offset < 0:
             raise ValueError("offset should be zero or positive when SEEK_SET")
 
@@ -146,7 +165,7 @@ class FileReader(_FileBase):
             file_offset = offset - cumsum_data_bytes[fileid - 1]
             self.file_obj.seek(file_offset, os.SEEK_CUR)
 
-    def _seek_cur(self, offset):
+    def _seek_cur(self, offset: int) -> None:
         cumsum_data_bytes = np.cumsum(self.datalens) - self.cur_data_pos
         fileid = np.where(offset <= cumsum_data_bytes)[0][0]
 
@@ -157,23 +176,52 @@ class FileReader(_FileBase):
             file_offset = offset - cumsum_data_bytes[fileid - 1]
             self.file_obj.seek(file_offset, os.SEEK_CUR)
 
-    def _configure_logger(self, **kwargs):
+    def _configure_logger(self, **kwargs) -> None:
         logger_name = "FileReader"
         self.logger = get_logger(logger_name, **kwargs)
 
 
 class FileWriter(_FileBase):
+    """A file writer class that can write to a ``sigproc`` format file.
+
+    Parameters
+    ----------
+    file : str
+        file to be written to
+    mode : str, optional
+        file writing mode, by default "w"
+    nbits : int, optional
+        number of bits per sample in the file, by default 8
+    quantize : bool, optional
+        whether to quantize the data, by default False
+    tsamp : float, optional
+        sampling time, by default None
+    nchans : int, optional
+        number of channels, by default None
+    interval_seconds : float, optional
+        sample interval used for quantization in seconds, by default 10
+    constant_offset_scale : bool, optional
+        whether to use constant offset and scale, by default False
+    **digi_kwargs : dict
+        keyword arguments for the digitizer: ``digi_mean``, ``digi_scale``, ``digi_min``, ``digi_max``
+
+    Raises
+    ------
+    ValueError
+        if quantize is True and outut ``nbits`` is 32.
+    """
+
     def __init__(
         self,
-        file,
-        mode="w",
-        nbits=8,
-        quantize=False,
-        tsamp=None,
-        nchans=None,
-        interval_seconds=10,
-        constant_offset_scale=False,
-        **kwargs,
+        file: str,
+        tsamp: float,
+        nchans: int,
+        mode: str = "w",
+        nbits: int = 8,
+        quantize: bool = False,
+        interval_seconds: float = 10,
+        constant_offset_scale: bool = False,
+        **digi_kwargs,
     ):
         super().__init__([file], mode)
         self.name = file
@@ -184,9 +232,9 @@ class FileWriter(_FileBase):
         if self.quantize:
             if self.nbits == 32:
                 raise ValueError("Output nbits can not be 32 while quantizing")
-            digi = self.bitsinfo.properties()
+            digi = self.bitsinfo.to_dict()
             digi.update(
-                (key, value) for key, value in kwargs.items() if key in digi.keys()
+                (key, value) for key, value in digi_kwargs.items() if key in digi.keys()
             )
             self._transform = Transform(
                 tsamp,
@@ -199,7 +247,7 @@ class FileWriter(_FileBase):
                 constant_offset_scale,
             )
 
-    def cwrite(self, ar):
+    def cwrite(self, ar: np.ndarray) -> None:
         """Write an array to file.
 
         Parameters
@@ -237,10 +285,10 @@ class FileWriter(_FileBase):
         else:
             ar.tofile(self.file_obj)
 
-    def write(self, bo):
+    def write(self, bo: bytes) -> None:
         """Write the given bytes-like object, bo to the file stream.
 
-        Wrapper for io.RawIOBase.write().
+        Wrapper for :py:obj:`io.RawIOBase.write()`.
 
         Parameters
         ----------
@@ -249,22 +297,44 @@ class FileWriter(_FileBase):
         """
         self.file_obj.write(bo)
 
-    def close(self):
+    def close(self) -> None:
         """Close the currently open file object."""
         self._close_current()
 
 
 class Transform(object):
+    """A class to transform data to the quantized format.
+
+    Parameters
+    ----------
+    tsamp : float
+        sampling time, by default None
+    nchans : int
+        number of channels, by default None
+    digi_mean : float
+        mean of the quantized data
+    digi_scale : float
+        scale of the quantized data
+    digi_min : float
+        minimum value of the quantized data
+    digi_max : float
+        maximum value of the quantized data
+    interval_seconds : float, optional
+        sample interval used for quantization in seconds, by default 10
+    constant_offset_scale : bool, optional
+        whether to use constant offset and scale, by default False
+    """
+
     def __init__(
         self,
-        tsamp,
-        nchans,
-        digi_mean,
-        digi_scale,
-        digi_min,
-        digi_max,
-        interval_seconds=10,
-        constant_offset_scale=False,
+        tsamp: float,
+        nchans: int,
+        digi_mean: float,
+        digi_scale: float,
+        digi_min: float,
+        digi_max: float,
+        interval_seconds: float = 10,
+        constant_offset_scale: bool = False,
     ):
         self.tsamp = tsamp
         self.nchans = nchans
@@ -283,10 +353,10 @@ class Transform(object):
         self._initialize_arr()
 
     @property
-    def interval_samples(self):
+    def interval_samples(self) -> int:
         return round(self.interval_seconds / self.tsamp)
 
-    def rescale(self, data):
+    def rescale(self, data: np.ndarray) -> np.ndarray:
         data = data.reshape(-1, self.nchans)
 
         if not self.constant_offset_scale or self.first_call:
@@ -296,12 +366,12 @@ class Transform(object):
         self.first_call = False
         return normdata.ravel()
 
-    def quantize(self, data):
+    def quantize(self, data: np.ndarray) -> np.ndarray:
         ar = (data * self.digi_scale) + self.digi_mean + 0.5
         ar = ar.astype(int)
         return np.clip(ar, self.digi_min, self.digi_max)
 
-    def _compute_stats(self, data):
+    def _compute_stats(self, data: np.ndarray) -> None:
         self.sum_ar += np.sum(data, axis=0)
         self.sumsq_ar += np.sum(data ** 2, axis=0)
         self.isample += data.shape[0]
@@ -315,7 +385,7 @@ class Transform(object):
             )
             self._initialize_arr()
 
-    def _initialize_arr(self):
+    def _initialize_arr(self) -> None:
         self.sum_ar = np.zeros(self.nchans, dtype=float)
         self.sumsq_ar = np.zeros(self.nchans, dtype=float)
         self.isample = 0

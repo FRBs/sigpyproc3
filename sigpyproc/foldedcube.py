@@ -266,7 +266,7 @@ class FoldedData(np.ndarray):
             for iband in range(self.nbands):
                 self[iint][iband] = roll_array(self[iint][iband], dmdelays[iband], 0)
         self.dm = dm
-        self.header.refdm = dm
+        self.header.dm = dm
 
     def update_period(self, period: float) -> None:
         """Install a new folding period in the data cube.

@@ -8,11 +8,17 @@ different data types (e.g.
 `PSRFITS <https://www.atnf.csiro.au/research/pulsar/psrfits_definition/Psrfits.html>`_,
 time series, fourier series, etc.).
 
-As pulsar data processing is often time critical, speed is maintained through
-the use of compiled C++ code that are accessed via the excellent
-`pybind11 <https://pybind11.readthedocs.io/>`_ library.
-Additional performance increases are obtained via the use of multi-threading
-with OpenMP, a threading library standard to most linux and mac systems.
+As pulsar data processing is often time critical, speed is maintained using
+the excellent `numba <https://numba.pydata.org/>`_ library.
+
+`sigpyproc` is intended to be an Python alternative for the
+`SIGPROC filterbank <http://sigproc.sourceforge.net>`_ pulsar signal processing toolbox.
+Over time it has also developed and become an independent project in its own right.
+Unlike `SIGPROC <http://sigproc.sourceforge.net>`_ and `PRESTO <https://github.com/scottransom/presto>`_,
+`sigpyproc` does not currently have full capabilities as a piece of FRB/pulsar searching software.
+Instead, `sigpyproc` provides data manipulation routines which are well suited to preprocessing
+and micro-management of pulsar data. The structure of the package also makes it an ideal development
+environment, with a simple plug-and-play system with new modules and extensions.
 
 .. image:: https://github.com/FRBs/sigpyproc3/workflows/GitHub%20CI/badge.svg
   :target: https://github.com/FRBs/sigpyproc3/actions
@@ -25,15 +31,20 @@ with OpenMP, a threading library standard to most linux and mac systems.
   :target: https://github.com/psf/black
 
 
-.. toctree::
-  :maxdepth: 2
-  :caption: Documentation
+Contents
+--------
 
+.. toctree::
+  :maxdepth: 1
+  :caption: User Guide
+
+  install
   modules
   dev
+  changes
 
 .. toctree::
-  :maxdepth: 2
+  :maxdepth: 1
   :caption: Tutorials
 
   tutorials/quickstart.ipynb

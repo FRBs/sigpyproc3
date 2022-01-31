@@ -338,10 +338,10 @@ class Header(object):
         new_hdr.nbits = nbits
         out_file = FileWriter(
             filename,
-            mode="w+",
-            nbits=nbits,
             tsamp=new_hdr.tsamp,
             nchans=new_hdr.nchans,
+            mode="w+",
+            nbits=nbits,
             quantize=quantize,
             interval_seconds=interval_seconds,
             constant_offset_scale=constant_offset_scale,
@@ -453,9 +453,11 @@ class Header(object):
             "source": header["source_name"],
             "dm": header.get("refdm", 0),
             "foff": header.get("foff", 0),
-            "coord": sigproc.parse_radec(header["src_raj"], header["src_dej"]),
-            "azimuth": Angle(header["az_start"] * units.deg),
-            "zenith": Angle(header["za_start"] * units.deg),
+            "coord": sigproc.parse_radec(
+                header.get("src_raj", 0), header.get("src_dej", 0)
+            ),
+            "azimuth": Angle(header.get("az_start", 0) * units.deg),
+            "zenith": Angle(header.get("za_start", 0) * units.deg),
             "frame": frame,
         }
         header.update(hdr_update)

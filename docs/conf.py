@@ -20,8 +20,8 @@ sys.path.insert(0, os.path.abspath("../"))
 # -- Project information -----------------------------------------------------
 
 project = "sigpyproc3"
-copyright = "2022, Ewan Barr & Fast Radio Burst Software"
-author = "Ewan Barr"
+copyright = "2020, Fast Radio Burst Software"
+author = "Fast Radio Burst Software"
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the
@@ -40,10 +40,7 @@ extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.napoleon",
     "sphinx.ext.intersphinx",
-    "sphinx.ext.viewcode",
-    "nbsphinx",
-    "IPython.sphinxext.ipython_console_highlighting",
-    "IPython.sphinxext.ipython_directive",
+    "myst_nb",
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -61,6 +58,7 @@ exclude_patterns = ["_build", "**.ipynb_checkpoints", "Thumbs.db", ".DS_Store"]
 # a list of builtin themes.
 
 html_theme = "sphinx_book_theme"
+html_title = "sigpyproc3"
 html_theme_options = {
     "repository_url": "https://github.com/FRBs/sigpyproc3",
     "use_repository_button": True,
@@ -72,6 +70,8 @@ html_theme_options = {
 # so a file named "default.css" will overwrite the builtin "default.css".
 # \html_static_path = ["_static"]
 
+jupyter_execute_notebooks = "auto"
+execution_timeout = -1
 
 # -- Extension configuration -------------------------------------------------
 
