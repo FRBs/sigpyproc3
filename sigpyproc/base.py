@@ -803,7 +803,7 @@ class Filterbank(ABC):
         custom_funcn: Callable[[npt.ArrayLike], np.ndarray] | None = None,
         filename: str | None = None,
         **plan_kwargs,
-    ) -> str:
+    ) -> tuple[str, RFIMask]:
         """Clean RFI from the data.
 
         Parameters
@@ -823,8 +823,8 @@ class Filterbank(ABC):
 
         Returns
         -------
-        str
-            name of output file
+        tuple[str, RFIMask]
+            Filename and mask of cleaned data
 
         Raises
         ------
@@ -840,6 +840,7 @@ class Filterbank(ABC):
             # 1st pass to compute channel statistics (upto kurtosis)
             self.compute_stats(**plan_kwargs)
 
+        assert isinstance(self.chan_stats, stats.ChannelStats)
         # Initialise mask
         rfimask = RFIMask(
             threshold,
@@ -854,7 +855,7 @@ class Filterbank(ABC):
         rfimask.apply_mask(chanmask)
         rfimask.apply_method(method)
         if custom_funcn is not None:
-            rfimask.apply_custom(custom_funcn)
+            rfimask.apply_funcn(custom_funcn)
 
         maskvalue = 0
         # Apply the channel mask

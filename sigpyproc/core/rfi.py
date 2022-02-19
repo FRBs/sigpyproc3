@@ -11,7 +11,7 @@ from sigpyproc.header import Header
 from sigpyproc.core.stats import zscore_double_mad
 
 
-def double_mad_mask(array: npt.ArrayLike, threshold: float = 3.0) -> np.ndarray:
+def double_mad_mask(array: npt.ArrayLike, threshold: float = 3) -> np.ndarray:
     """Calculate the mask of an array using the double MAD (Modified z-score).
 
     Parameters
@@ -64,12 +64,12 @@ class RFIMask(object):
         """float: Fraction of channels masked."""
         return self.num_masked * 100 / self.header.nchans
 
-    def apply_mask(self, chanmask: np.ndarray) -> None:
+    def apply_mask(self, chanmask: npt.ArrayLike) -> None:
         """Apply a channel mask to the current mask.
 
         Parameters
         ----------
-        chanmask : numpy.ndarray
+        chanmask : :py:obj:`~numpy.typing.ArrayLike`
             User channel mask to apply.
 
         Raises
@@ -77,6 +77,7 @@ class RFIMask(object):
         ValueError
             If the channel mask is not the same size as the current mask.
         """
+        chanmask = np.asarray(chanmask, dtype="bool")
         if chanmask.size != self.header.nchans:
             raise ValueError(
                 f"chanmask len {chanmask.size} does not match nchans {self.header.nchans}"
@@ -97,7 +98,9 @@ class RFIMask(object):
             If the method is not supported.
         """
         if method == "iqrm":
-            method_funcn = iqrm_mask
+            method_funcn = lambda arr, thres: iqrm_mask(  # noqa: E731
+                arr, radius=0.1 * self.header.nchans, threshold=thres
+            )
         elif method == "mad":
             method_funcn = double_mad_mask
         else:

@@ -128,3 +128,25 @@ def time_after_nsamps(tstart: float, tsamp: float, nsamps: int = 0) -> Time:
     precision = int(np.ceil(abs(np.log10(tsamp))))
     tstart = Time(tstart, format="mjd", scale="utc", precision=precision)
     return tstart + TimeDelta(nsamps * tsamp, format="sec")
+
+
+def duration_string(duration: float) -> str:
+    """Convert duration in seconds to human readable string.
+
+    Parameters
+    ----------
+    duration : float
+        duration in seconds
+
+    Returns
+    -------
+    str
+        human readable duration string
+    """
+    if duration < 60:
+        return f"{duration:.1f} seconds"
+    elif duration < 3600:
+        return f"{duration / 60:.1f} minutes"
+    elif duration < 86400:
+        return f"{duration / 3600:.1f} hours"
+    return f"{duration / 86400:.1f} days"

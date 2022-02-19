@@ -12,7 +12,7 @@ from sigpyproc import params
 from sigpyproc.io import sigproc
 from sigpyproc.io.bits import BitsInfo
 from sigpyproc.io.fileio import FileWriter
-from sigpyproc.utils import time_after_nsamps
+from sigpyproc.utils import time_after_nsamps, duration_string
 
 
 @attrs.define(auto_attribs=True, kw_only=True)
@@ -304,6 +304,59 @@ class Header(object):
             return sig_header
 
         return sigproc.encode_header(sig_header)
+
+    def to_string(self) -> str:
+        hdr = []
+        temp = "{0:<33}: {1}"
+        hdr.extend(
+            [
+                temp.format("Data file", self.filename),
+                temp.format("Header size (bytes)", self.hdrlens[0]),
+                temp.format("Data size (bytes)", self.datalens[0]),
+                temp.format("Data type", f"{self.data_type} ({self.frame})"),
+                temp.format("Telescope", self.telescope),
+                temp.format("Datataking Machine", self.backend),
+                temp.format("Source Name", self.source),
+                temp.format("Source RA (J2000)", self.ra),
+                temp.format("Source DEC (J2000)", self.dec),
+                temp.format("Start AZ (deg)", self.azimuth.deg),
+                temp.format("Start ZA (deg)", self.zenith.deg),
+            ]
+        )
+        if self.data_type == "filterbank":
+            hdr.extend(
+                [
+                    temp.format("Frequency of channel 1 (MHz)", self.fch1),
+                    temp.format("Channel bandwidth      (MHz)", self.foff),
+                    temp.format("Number of channels", self.nchans),
+                    temp.format("Number of beams", self.nbeams),
+                    temp.format("Beam number", self.ibeam),
+                ]
+            )
+        elif self.data_type == "time series":
+            hdr.extend(
+                [
+                    temp.format("Reference DM (pc/cc)", self.dm),
+                    temp.format("Reference frequency    (MHz)", self.fch1),
+                    temp.format("Number of channels", self.nchans),
+                ]
+            )
+        print_dur, print_unit = duration_string(self.tobs).split()
+        hdr.extend(
+            [
+                temp.format("Time stamp of first sample (MJD)", self.tstart),
+                temp.format("Gregorian date (YYYY-MM-DD)", self.obs_date),
+                temp.format(
+                    "Sample time (us)",
+                    (self.tsamp * units.second).to(units.microsecond).value,
+                ),
+                temp.format("Number of samples", self.nsamples),
+                temp.format(f"Observation length {print_unit}", print_dur),
+                temp.format("Number of bits per sample", self.nbits),
+                temp.format("Number of IFs", self.nifs),
+            ]
+        )
+        return "\n".join(hdr)
 
     def prep_outfile(
         self,

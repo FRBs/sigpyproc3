@@ -8,10 +8,10 @@ from sigpyproc.readers import FilReader
 )
 @click.argument("filfile", type=click.Path(exists=True))
 @click.option(
-    "-t", "--tfactor", type=int, default=1, help="Number of time samples to add"
+    "-s", "--start", type=int, default=0, help="Start time sample"
 )
 @click.option(
-    "-c", "--ffactor", type=int, default=1, help="Number of frequency channels to add"
+    "-n", "--nsamps", type=int, help="Number of time samples to extract"
 )
 @click.option(
     "-g", "--gulp", type=int, default=16384, help="Number of samples to read at once"
@@ -19,10 +19,10 @@ from sigpyproc.readers import FilReader
 @click.option(
     "-o", "--outfile", type=click.Path(exists=False), default=None, help="Output filename"
 )
-def main(filfile: str, tfactor: int, ffactor: int, gulp: int, outfile: str) -> None:
-    """Reduce time and/or frequency resolution of filterbank data."""
+def main(filfile: str, start: int, nsamps: int, gulp: int, outfile: str) -> None:
+    """Extract time samples from filterbank data."""
     fil = FilReader(filfile)
-    fil.downsample(tfactor=tfactor, ffactor=ffactor, gulp=gulp, filename=outfile)
+    fil.extract_samps(start=start, nsamps=nsamps, outfile=outfile, gulp=gulp)
 
 
 if __name__ == "__main__":
