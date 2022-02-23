@@ -67,7 +67,7 @@ class Header(object):
         Acceleration
     signed: bool
         if the data is signed
-    rawdatafile: str or None
+    rawdatafile: str
         Original file name
     hdrlens: list of int
         List of header length of files
@@ -96,7 +96,7 @@ class Header(object):
     azimuth: Angle = Angle("0d")
     zenith: Angle = Angle("0d")
     telescope: str = "Fake"
-    backend: str = "Fake"
+    backend: str = "FAKE"
     source: str = "Fake"
     frame: str = "topocentric"
     ibeam: int = 0
@@ -105,7 +105,7 @@ class Header(object):
     period: float = 0
     accel: float = 0
     signed: bool = False
-    rawdatafile: str | None = None
+    rawdatafile: str = ""
 
     hdrlens: list[int] = attrs.Factory(list)
     datalens: list[int] = attrs.Factory(list)
