@@ -96,7 +96,7 @@ class Header(object):
     azimuth: Angle = Angle("0d")
     zenith: Angle = Angle("0d")
     telescope: str = "Fake"
-    backend: str = "Fake"
+    backend: str = "FAKE"
     source: str = "Fake"
     frame: str = "topocentric"
     ibeam: int = 0
