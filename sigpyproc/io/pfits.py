@@ -122,7 +122,7 @@ class PrimaryHdr(object):
 
     @property
     def receiver(self) -> Receiver:
-        """sigpyproc.io.hdu.Receiver: Receiver information."""
+        """:class:`~sigpyproc.io.hdu.Receiver`: Receiver information."""
         return Receiver(
             name=self.header["FRONTEND"],
             nrcvr=self.header["NRCVR"],
@@ -136,7 +136,7 @@ class PrimaryHdr(object):
 
     @property
     def backend(self) -> Backend:
-        """sigpyproc.io.hdu.Backend: Backend information."""
+        """:class:`~sigpyproc.io.hdu.Backend`: Backend information."""
         return Backend(
             name=self.header["BACKEND"],
             phase=self.header["BE_PHASE"],
@@ -165,7 +165,7 @@ class PrimaryHdr(object):
 
     @property
     def freqs(self) -> FrequencyChannels:
-        """sigpyproc.utils.FrequencyChannels: Frequency channels."""
+        """:class:`~sigpyproc.utils.FrequencyChannels`: Frequency channels."""
         return FrequencyChannels.from_pfits(
             self.header["OBSFREQ"], self.header["OBSBW"], self.header["OBSNCHAN"]
         )

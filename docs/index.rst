@@ -41,6 +41,7 @@ Contents
   :caption: User Guide
 
   install
+  cmd
   modules
   dev
   changes

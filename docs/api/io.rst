@@ -24,3 +24,11 @@ sigpyproc.io.fileio
    :members:
    :undoc-members:
    :show-inheritance:
+
+sigpyproc.io.pfits
+-------------------
+
+.. automodule:: sigpyproc.io.pfits
+   :members:
+   :undoc-members:
+   :show-inheritance:

@@ -823,7 +823,7 @@ class Filterbank(ABC):
 
         Returns
         -------
-        tuple[str, RFIMask]
+        tuple(str, :class:`~sigpyproc.core.rfi.RFIMask`)
             Filename and mask of cleaned data
 
         Raises

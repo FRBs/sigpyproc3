@@ -170,12 +170,12 @@ class PFITSReader(Filterbank):
 
     @property
     def pri_hdr(self) -> pfits.PrimaryHdr:
-        """:class:`~sigpyproc.io.hdu.PFITSPrimaryHdr`: Primary header of input file."""
+        """:class:`~sigpyproc.io.pfits.PrimaryHdr`: Primary header of input file."""
         return self._fitsfile.pri_hdr
 
     @property
     def sub_hdr(self) -> pfits.SubintHdr:
-        """:class:`~sigpyproc.io.hdu.PFITSSubintHdr`: Subint header of input file."""
+        """:class:`~sigpyproc.io.pfits.SubintHdr`: Subint header of input file."""
         return self._fitsfile.sub_hdr
 
     @property

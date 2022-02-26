@@ -22,8 +22,11 @@ Some of the required dependencies are:
 - `astropy <https://www.astropy.org>`_
 - `numba <https://numba.pydata.org>`_
 - `bottleneck <https://bottleneck.readthedocs.io>`_
+- `h5py <https://docs.h5py.org/en/stable/>`_
 - `attrs <https://attrs.org>`_
 - `rich <https://rich.readthedocs.io>`_
+- `click <https://click.palletsprojects.com/en/latest/>`_
+- `iqrm <https://github.com/v-morello/iqrm>`_
 
 
 .. _source:

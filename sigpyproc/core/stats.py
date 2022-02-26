@@ -64,7 +64,7 @@ def zscore_mad(array: npt.ArrayLike) -> np.ndarray:
 
     Returns
     -------
-    numy.ndarray
+    :py:obj:`~numpy.ndarray`
         The modified z-score of the array.
 
     Notes
@@ -95,7 +95,7 @@ def zscore_double_mad(array: npt.ArrayLike) -> np.ndarray:
 
     Returns
     -------
-    numy.ndarray
+    :py:obj:`~numpy.ndarray`
         The modified z-score of the array.
 
     Notes

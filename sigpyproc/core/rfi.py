@@ -23,7 +23,7 @@ def double_mad_mask(array: npt.ArrayLike, threshold: float = 3) -> np.ndarray:
 
     Returns
     -------
-    numpy.ndarray
+    :py:obj:`~numpy.ndarray`
         The mask for the array.
 
     Raises
