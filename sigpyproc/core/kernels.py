@@ -147,15 +147,15 @@ def extract_bpass(inarray, outarray, nchans, nsamps):
 
 
 @njit(
-    ["void(u1[:], u1[:], i4, i4)", "void(f4[:], u1[:], i4, i4)"],
+    ["void(u1[:], b1[:], u1, i4, i4)", "void(f4[:], b1[:], f4, i4, i4)"],
     cache=True,
     parallel=True,
 )
-def mask_channels(array, mask, nchans, nsamps):
+def mask_channels(array, mask, maskvalue, nchans, nsamps):
     for ichan in prange(nchans):
-        if mask[ichan] == 0:
+        if mask[ichan]:
             for isamp in range(nsamps):
-                array[nchans * isamp + ichan] = 0
+                array[nchans * isamp + ichan] = maskvalue
 
 
 @njit(

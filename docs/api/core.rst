@@ -9,6 +9,14 @@ sigpyproc.core.stats
    :undoc-members:
    :show-inheritance:
 
+sigpyproc.core.rfi
+--------------------
+
+.. automodule:: sigpyproc.core.rfi
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 
 sigpyproc.core.kernels
 ----------------------

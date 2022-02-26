@@ -10,3 +10,35 @@ build-backend = "setuptools.build_meta"
 [tool.black]
 line-length = 90
 target_version = ['py38', 'py39', 'py310']
+
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+testpaths = [
+    "tests",
+]
+
+
+[tool.coverage.paths]
+source = ["./sigpyproc/"]
+
+[tool.coverage.run]
+omit = [
+    '*tests*',
+    '*docs*',
+    '*apps*',
+    '*setup.py',
+    '*__init__.py',
+    '*sigpyproc/core/kernels.py',
+]
+
+[tool.coverage.report]
+show_missing = true
+#fail_under = 85
+ignore_errors = true
+exclude_lines = ['raise AssertionError', 'raise NotImplementedError']
+
+
+[tool.mypy]
+ignore_missing_imports = true
+plugins = ["numpy.typing.mypy_plugin"]

@@ -3,7 +3,8 @@ from pathlib import Path
 
 from sigpyproc.readers import FilReader
 from sigpyproc.timeseries import TimeSeries
-from sigpyproc.core import stats
+from sigpyproc.foldedcube import FoldedData
+from sigpyproc.core import stats, rfi
 
 
 class TestFilterbank(object):
@@ -66,7 +67,7 @@ class TestFilterbank(object):
         np.testing.assert_equal(new_fil.header.dtype, fil.header.dtype)
         np.testing.assert_equal(new_fil.header.nsamples, fil.header.nsamples)
         np.testing.assert_array_equal(
-            np.where(~newdata.any(axis=1))[0], np.where(chanmask == 0)[0]
+            np.where(~newdata.any(axis=1))[0], np.where(chanmask == 1)[0]
         )
 
     def test_downsample(self, filfile_4bit, tmpfile):
@@ -118,3 +119,33 @@ class TestFilterbank(object):
             np.testing.assert_equal(new_fil.header.nsamples, fil.header.nsamples)
             np.testing.assert_equal(new_fil.header.nchans, chanpersub)
             subfile_path.unlink()
+
+    def test_subband(self, filfile_4bit, tmpfile):
+        fil = FilReader(filfile_4bit)
+        outfile = fil.subband(dm=0, nsub=fil.header.nchans // 16, filename=tmpfile)
+        new_fil = FilReader(outfile)
+        np.testing.assert_equal(new_fil.header.nchans, fil.header.nchans // 16)
+        np.testing.assert_equal(new_fil.header.nsamples, fil.header.nsamples)
+
+    def test_fold(self, filfile_4bit):
+        fil = FilReader(filfile_4bit)
+        cube = fil.fold(period=1, dm=10, nints=16, nbins=50)
+        assert isinstance(cube, FoldedData)
+        np.testing.assert_equal(cube.header.nchans, fil.header.nchans)
+        np.testing.assert_equal(cube.nints, 16)
+        np.testing.assert_equal(cube.nbins, 50)
+
+    def test_clean_rfi(self, filfile_4bit, tmpfile):
+        fil = FilReader(filfile_4bit)
+        out_file, rfimask = fil.clean_rfi(filename=tmpfile)
+        new_fil = FilReader(out_file)
+        np.testing.assert_equal(new_fil.header.nchans, fil.header.nchans)
+        np.testing.assert_equal(new_fil.header.nsamples, fil.header.nsamples)
+
+    def test_clean_rfi_mask(self, filfile_4bit, tmpfile):
+        fil = FilReader(filfile_4bit)
+        out_file, rfimask = fil.clean_rfi(filename=tmpfile)
+        assert isinstance(rfimask, rfi.RFIMask)
+        mask_file = Path(rfimask.to_file())
+        assert mask_file.is_file()
+        mask_file.unlink()

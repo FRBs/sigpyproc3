@@ -2,6 +2,7 @@ from __future__ import annotations
 import warnings
 import numpy as np
 
+from typing import Callable
 from numpy import typing as npt
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
@@ -11,6 +12,7 @@ from sigpyproc.timeseries import TimeSeries
 from sigpyproc.header import Header
 from sigpyproc.block import FilterbankBlock
 from sigpyproc.core import stats, kernels
+from sigpyproc.core.rfi import RFIMask
 
 
 class Filterbank(ABC):
@@ -319,14 +321,20 @@ class Filterbank(ABC):
         return out_file.name
 
     def apply_channel_mask(
-        self, chanmask: npt.ArrayLike, filename: str | None = None, **plan_kwargs
+        self,
+        chanmask: npt.ArrayLike,
+        maskvalue: int | float = 0,
+        filename: str | None = None,
+        **plan_kwargs,
     ) -> str:
-        """Set the data in the given channels to zero.
+        """Apply a channel mask to the data and write to a new file.
 
         Parameters
         ----------
         chanmask : :py:obj:`~numpy.typing.ArrayLike`
-            binary channel mask (0 for bad channel, 1 for good)
+            boolean array of channel mask (1 or True for bad channel)
+        maskvalue : int or float, optional
+            value to set the masked data to, by default 0
         filename : str, optional
             name of the output filterbank file, by default ``basename_masked.fil``
         **plan_kwargs : dict
@@ -340,10 +348,11 @@ class Filterbank(ABC):
         if filename is None:
             filename = f"{self.header.basename}_masked.fil"
 
-        mask = np.array(chanmask).astype("ubyte")
+        mask = np.array(chanmask).astype("bool")
+        maskvalue = np.float32(maskvalue).astype(self.header.dtype)
         out_file = self.header.prep_outfile(filename)
         for nsamps, _ii, data in self.read_plan(**plan_kwargs):
-            kernels.mask_channels(data, mask, self.header.nchans, nsamps)
+            kernels.mask_channels(data, mask, maskvalue, self.header.nchans, nsamps)
             out_file.cwrite(data)
         return out_file.name
 
@@ -537,7 +546,7 @@ class Filterbank(ABC):
         if nchans % chanpersub != 0:
             raise ValueError("Number of channels must be divisible by sub-band size.")
 
-        nsub = (nchans - chanstart) // chanpersub
+        nsub = (self.header.nchans - chanstart) // chanpersub
         fstart = self.header.fch1 + chanstart * self.header.foff
 
         out_files = [
@@ -785,3 +794,72 @@ class Filterbank(ABC):
         fold_ar /= count_ar
         fold_ar = fold_ar.reshape(nints, nbands, nbins)
         return FoldedData(fold_ar, self.header.new_header(), period, dm, accel)
+
+    def clean_rfi(
+        self,
+        method: str = "mad",
+        threshold: float = 3,
+        chanmask: npt.ArrayLike | None = None,
+        custom_funcn: Callable[[npt.ArrayLike], np.ndarray] | None = None,
+        filename: str | None = None,
+        **plan_kwargs,
+    ) -> tuple[str, RFIMask]:
+        """Clean RFI from the data.
+
+        Parameters
+        ----------
+        method : str, optional
+            method to use for cleaning ("mad", "iqrm"), by default "mad"
+        threshold : float, optional
+            threshold for cleaning, by default 3
+        chanmask : :py:obj:`~numpy.typing.ArrayLike`, optional
+            User channel mask to use (1 or True for bad channels), by default None
+        custom_funcn : :py:obj:`~typing.Callable`, optional
+            Custom function to apply to the mask, by default None
+        filename : str, optional
+            output file name, by default None
+        **plan_kwargs : dict
+            Additional keyword arguments for :func:`read_plan`.
+
+        Returns
+        -------
+        tuple(str, :class:`~sigpyproc.core.rfi.RFIMask`)
+            Filename and mask of cleaned data
+
+        Raises
+        ------
+        ValueError
+            If `method` is not "mad" or "iqrm"
+        """
+        if chanmask is None:
+            chanmask = np.zeros(self.header.nchans, dtype="bool")
+        if method not in {"mad", "iqrm"}:
+            raise ValueError("Clean method must be 'mad' or 'iqrm'")
+
+        if self.chan_stats is None:
+            # 1st pass to compute channel statistics (upto kurtosis)
+            self.compute_stats(**plan_kwargs)
+
+        assert isinstance(self.chan_stats, stats.ChannelStats)
+        # Initialise mask
+        rfimask = RFIMask(
+            threshold,
+            self.header,
+            self.chan_stats.mean,
+            self.chan_stats.var,
+            self.chan_stats.skew,
+            self.chan_stats.kurtosis,
+            self.chan_stats.maxima,
+            self.chan_stats.minima,
+        )
+        rfimask.apply_mask(chanmask)
+        rfimask.apply_method(method)
+        if custom_funcn is not None:
+            rfimask.apply_funcn(custom_funcn)
+
+        maskvalue = 0
+        # Apply the channel mask
+        out_file = self.apply_channel_mask(
+            rfimask.chan_mask, maskvalue, filename=filename, **plan_kwargs
+        )
+        return out_file, rfimask

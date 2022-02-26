@@ -54,6 +54,11 @@ class TestHeader(object):
         assert len(spphdr) >= header.hdrlens[0]
         assert isinstance(spphdr, bytes)
 
+    def test_to_string(self, filfile_4bit):
+        header = Header.from_sigproc(filfile_4bit)
+        header_string = header.to_string()
+        assert isinstance(header_string, str)
+
     def test_prep_outfile(self, filfile_4bit, tmpfile):
         header = Header.from_sigproc(filfile_4bit)
         with header.prep_outfile(tmpfile) as outfile:
@@ -70,3 +75,13 @@ class TestHeader(object):
         infheader = Header.from_inffile(inffile)
         infheader.make_inf(outfile=tmpfile)
         self.test_from_inffile(tmpfile, inf_header)
+
+    def test_from_pfits(self, fitsfile_4bit):
+        header = Header.from_pfits(fitsfile_4bit)
+        np.testing.assert_equal(header.nchans, 416)
+        np.testing.assert_equal(header.nbits, 4)
+        np.testing.assert_equal(header.nifs, 1)
+
+    def test_from_pfits_otherfile(self, inffile):
+        with np.testing.assert_raises(OSError):
+            Header.from_pfits(inffile)

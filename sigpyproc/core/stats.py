@@ -1,6 +1,7 @@
 from __future__ import annotations
 import numpy as np
 import bottleneck as bn
+from numpy import typing as npt
 
 from sigpyproc.core import kernels
 
@@ -51,6 +52,78 @@ def running_mean(array, window):
 
     mean = bn.move_mean(padded, window)
     return mean[window - 1 :]
+
+
+def zscore_mad(array: npt.ArrayLike) -> np.ndarray:
+    """Calculate the z-score of an array using the MAD (Modified z-score).
+
+    Parameters
+    ----------
+    array : :py:obj:`~numpy.typing.ArrayLike`
+        The array to calculate the modified z-score of.
+
+    Returns
+    -------
+    :py:obj:`~numpy.ndarray`
+        The modified z-score of the array.
+
+    Notes
+    -----
+    The modified z-score is defined as:
+    https://www.ibm.com/docs/en/cognos-analytics/11.1.0?topic=terms-modified-z-score
+    """
+    scale_mad = 0.6744897501960817  # scipy.stats.norm.ppf(3/4.)
+    scale_aad = np.sqrt(2 / np.pi)
+    array = np.asarray(array)
+    med = np.median(array)
+    diff = array - med
+    mad = np.median(np.abs(diff)) / scale_mad
+    if mad == 0:
+        std = np.mean(np.abs(diff)) / scale_aad
+    else:
+        std = mad
+    return np.divide(diff, std, out=np.zeros_like(diff), where=std != 0)
+
+
+def zscore_double_mad(array: npt.ArrayLike) -> np.ndarray:
+    """Calculate the modified z-score of an array using the Double MAD.
+
+    Parameters
+    ----------
+    array : :py:obj:`~numpy.typing.ArrayLike`
+        The array to calculate the modified z-score of.
+
+    Returns
+    -------
+    :py:obj:`~numpy.ndarray`
+        The modified z-score of the array.
+
+    Notes
+    -----
+    The Double MAD is defined as:
+    https://eurekastatistics.com/using-the-median-absolute-deviation-to-find-outliers/
+    https://aakinshin.net/posts/harrell-davis-double-mad-outlier-detector/
+    """
+    scale_mad = 0.6744897501960817  # scipy.stats.norm.ppf(3/4.)
+    scale_aad = np.sqrt(2 / np.pi)
+    array = np.asarray(array)
+    med = np.median(array)
+    diff = array - med
+    mad_left = np.median(np.abs(diff[array <= med])) / scale_mad
+    mad_right = np.median(np.abs(diff[array >= med])) / scale_mad
+
+    if mad_left == 0:
+        std_left = np.mean(np.abs(diff[array <= med])) / scale_aad
+    else:
+        std_left = mad_left
+
+    if mad_right == 0:
+        std_right = np.mean(np.abs(diff[array >= med])) / scale_aad
+    else:
+        std_right = mad_right
+
+    std_map = np.where(array < med, std_left, std_right)
+    return np.divide(diff, std_map, out=np.zeros_like(diff), where=std_map != 0)
 
 
 class ChannelStats(object):
@@ -119,15 +192,12 @@ class ChannelStats(object):
     @property
     def skew(self) -> np.ndarray:
         """numpy.ndarray: Get the skewness of each channel."""
-        return (
-            np.divide(
-                self._mbag.m3,
-                np.power(self._mbag.m2, 1.5),
-                out=np.zeros_like(self._mbag.m3),
-                where=self._mbag.m2 != 0,
-            )
-            * np.sqrt(self.nsamps)
-        )
+        return np.divide(
+            self._mbag.m3,
+            np.power(self._mbag.m2, 1.5),
+            out=np.zeros_like(self._mbag.m3),
+            where=self._mbag.m2 != 0,
+        ) * np.sqrt(self.nsamps)
 
     @property
     def kurtosis(self) -> np.ndarray:

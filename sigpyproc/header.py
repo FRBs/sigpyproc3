@@ -9,10 +9,10 @@ from astropy import units
 from astropy.coordinates import Angle, SkyCoord
 
 from sigpyproc import params
-from sigpyproc.io import sigproc
+from sigpyproc.io import sigproc, pfits
 from sigpyproc.io.bits import BitsInfo
 from sigpyproc.io.fileio import FileWriter
-from sigpyproc.utils import time_after_nsamps
+from sigpyproc.utils import time_after_nsamps, duration_string
 
 
 @attrs.define(auto_attribs=True, kw_only=True)
@@ -214,7 +214,7 @@ class Header(object):
             delays for middle of each channel (highest frequency first)
         """
         delays = (
-            dm * params.DM_CONSTANT_LK * ((self.chan_freqs ** -2) - (self.fch1 ** -2))
+            dm * params.DM_CONSTANT_LK * ((self.chan_freqs**-2) - (self.fch1**-2))
         )
         if in_samples:
             return (delays / self.tsamp).round().astype(np.int32)
@@ -304,6 +304,59 @@ class Header(object):
             return sig_header
 
         return sigproc.encode_header(sig_header)
+
+    def to_string(self) -> str:
+        hdr = []
+        temp = "{0:<33}: {1}"
+        hdr.extend(
+            [
+                temp.format("Data file", self.filename),
+                temp.format("Header size (bytes)", self.hdrlens[0]),
+                temp.format("Data size (bytes)", self.datalens[0]),
+                temp.format("Data type", f"{self.data_type} ({self.frame})"),
+                temp.format("Telescope", self.telescope),
+                temp.format("Datataking Machine", self.backend),
+                temp.format("Source Name", self.source),
+                temp.format("Source RA (J2000)", self.ra),
+                temp.format("Source DEC (J2000)", self.dec),
+                temp.format("Start AZ (deg)", self.azimuth.deg),
+                temp.format("Start ZA (deg)", self.zenith.deg),
+            ]
+        )
+        if self.data_type == "filterbank":
+            hdr.extend(
+                [
+                    temp.format("Frequency of channel 1 (MHz)", self.fch1),
+                    temp.format("Channel bandwidth      (MHz)", self.foff),
+                    temp.format("Number of channels", self.nchans),
+                    temp.format("Number of beams", self.nbeams),
+                    temp.format("Beam number", self.ibeam),
+                ]
+            )
+        elif self.data_type == "time series":
+            hdr.extend(
+                [
+                    temp.format("Reference DM (pc/cc)", self.dm),
+                    temp.format("Reference frequency    (MHz)", self.fch1),
+                    temp.format("Number of channels", self.nchans),
+                ]
+            )
+        print_dur, print_unit = duration_string(self.tobs).split()
+        hdr.extend(
+            [
+                temp.format("Time stamp of first sample (MJD)", self.tstart),
+                temp.format("Gregorian date (YYYY-MM-DD)", self.obs_date),
+                temp.format(
+                    "Sample time (us)",
+                    (self.tsamp * units.second).to(units.microsecond).value,
+                ),
+                temp.format("Number of samples", self.nsamples),
+                temp.format(f"Observation length {print_unit}", print_dur),
+                temp.format("Number of bits per sample", self.nbits),
+                temp.format("Number of IFs", self.nifs),
+            ]
+        )
+        return "\n".join(hdr)
 
     def prep_outfile(
         self,
@@ -447,10 +500,10 @@ class Header(object):
         frame = "pulsarcentric" if header.get("pulsarcentric") else "topocentric"
         frame = "barycentric" if header.get("barycentric") else "topocentric"
         hdr_update = {
-            "data_type": params.data_types[header["data_type"]],
-            "telescope": sigproc.telescope_ids.inverse[header["telescope_id"]],
-            "backend": sigproc.machine_ids.inverse[header["machine_id"]],
-            "source": header["source_name"],
+            "data_type": params.data_types[header.get("data_type", 1)],
+            "telescope": sigproc.telescope_ids.inverse[header.get("telescope_id", 0)],
+            "backend": sigproc.machine_ids.inverse[header.get("machine_id", 0)],
+            "source": header.get("source_name", "Fake"),
             "dm": header.get("refdm", 0),
             "foff": header.get("foff", 0),
             "coord": sigproc.parse_radec(
@@ -459,6 +512,47 @@ class Header(object):
             "azimuth": Angle(header.get("az_start", 0) * units.deg),
             "zenith": Angle(header.get("za_start", 0) * units.deg),
             "frame": frame,
+        }
+        header.update(hdr_update)
+        header_check = {
+            key: value
+            for key, value in header.items()
+            if key in attrs.fields_dict(cls).keys()
+        }
+        return cls(**header_check)
+
+    @classmethod
+    def from_pfits(cls, filename: str) -> Header:
+        """Parse the metadata from a PSRFITS file.
+
+        Parameters
+        ----------
+        filename : str
+            the name of the PSRFITS file containing the header
+
+        Returns
+        -------
+        :class:`~sigpyproc.header.Header`
+            observational metadata
+        """
+        primary_hdr = pfits.PrimaryHdr(filename)
+        subint_hdr = pfits.SubintHdr(filename)
+
+        header: dict[str, Any] = {}
+        hdr_update = {
+            "filename": filename,
+            "data_type": "filterbank",
+            "nchans": subint_hdr.nchans,
+            "foff": subint_hdr.freqs.foff,
+            "fch1": subint_hdr.freqs.fch1,
+            "nbits": subint_hdr.nbits,
+            "tsamp": subint_hdr.tsamp,
+            "tstart": primary_hdr.tstart.mjd,
+            "nsamples": subint_hdr.nsamples,
+            "coord": primary_hdr.coord,
+            "telescope": primary_hdr.telescope,
+            "backend": primary_hdr.backend.name,
+            "source": primary_hdr.source,
         }
         header.update(hdr_update)
         header_check = {
