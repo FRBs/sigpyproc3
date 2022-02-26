@@ -9,7 +9,7 @@ from astropy import units
 from astropy.coordinates import Angle, SkyCoord
 
 from sigpyproc import params
-from sigpyproc.io import sigproc
+from sigpyproc.io import sigproc, pfits
 from sigpyproc.io.bits import BitsInfo
 from sigpyproc.io.fileio import FileWriter
 from sigpyproc.utils import time_after_nsamps, duration_string
@@ -67,7 +67,7 @@ class Header(object):
         Acceleration
     signed: bool
         if the data is signed
-    rawdatafile: str or None
+    rawdatafile: str
         Original file name
     hdrlens: list of int
         List of header length of files
@@ -105,7 +105,7 @@ class Header(object):
     period: float = 0
     accel: float = 0
     signed: bool = False
-    rawdatafile: str | None = None
+    rawdatafile: str = ""
 
     hdrlens: list[int] = attrs.Factory(list)
     datalens: list[int] = attrs.Factory(list)
@@ -214,7 +214,7 @@ class Header(object):
             delays for middle of each channel (highest frequency first)
         """
         delays = (
-            dm * params.DM_CONSTANT_LK * ((self.chan_freqs ** -2) - (self.fch1 ** -2))
+            dm * params.DM_CONSTANT_LK * ((self.chan_freqs**-2) - (self.fch1**-2))
         )
         if in_samples:
             return (delays / self.tsamp).round().astype(np.int32)
@@ -512,6 +512,47 @@ class Header(object):
             "azimuth": Angle(header.get("az_start", 0) * units.deg),
             "zenith": Angle(header.get("za_start", 0) * units.deg),
             "frame": frame,
+        }
+        header.update(hdr_update)
+        header_check = {
+            key: value
+            for key, value in header.items()
+            if key in attrs.fields_dict(cls).keys()
+        }
+        return cls(**header_check)
+
+    @classmethod
+    def from_pfits(cls, filename: str) -> Header:
+        """Parse the metadata from a PSRFITS file.
+
+        Parameters
+        ----------
+        filename : str
+            the name of the PSRFITS file containing the header
+
+        Returns
+        -------
+        :class:`~sigpyproc.header.Header`
+            observational metadata
+        """
+        primary_hdr = pfits.PrimaryHdr(filename)
+        subint_hdr = pfits.SubintHdr(filename)
+
+        header: dict[str, Any] = {}
+        hdr_update = {
+            "filename": filename,
+            "data_type": "filterbank",
+            "nchans": subint_hdr.nchans,
+            "foff": subint_hdr.freqs.foff,
+            "fch1": subint_hdr.freqs.fch1,
+            "nbits": subint_hdr.nbits,
+            "tsamp": subint_hdr.tsamp,
+            "tstart": primary_hdr.tstart.mjd,
+            "nsamples": subint_hdr.nsamples,
+            "coord": primary_hdr.coord,
+            "telescope": primary_hdr.telescope,
+            "backend": primary_hdr.backend.name,
+            "source": primary_hdr.source,
         }
         header.update(hdr_update)
         header_check = {
