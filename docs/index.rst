@@ -25,7 +25,7 @@ environment, with a simple plug-and-play system with new modules and extensions.
 .. image:: https://readthedocs.org/projects/sigpyproc3/badge/?version=latest
   :target: https://sigpyproc3.readthedocs.io/en/latest/?badge=latest
   :alt: Documentation Status
-.. image:: https://codecov.io/gh/FRBs/sigpyproc3/branch/master/graph/badge.svg
+.. image:: https://codecov.io/gh/FRBs/sigpyproc3/branch/main/graph/badge.svg
   :target: https://codecov.io/gh/FRBs/sigpyproc3
 .. image:: https://img.shields.io/github/license/FRBs/sigpyproc3
   :target: https://github.com/FRBs/sigpyproc3/blob/main/LICENSE

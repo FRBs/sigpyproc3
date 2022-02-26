@@ -145,9 +145,9 @@ class RFIMask(object):
             filename = f"{self.header.basename}_mask.h5"
         with h5py.File(filename, "w") as fp:
             fp.attrs["threshold"] = self.threshold
-            hdr_dict = self.header.to_dict(with_properties=False)
-            for key in hdr_dict.keys():
-                fp.attrs[key] = hdr_dict[key]
+            for key, value in attrs.asdict(self.header).items():
+                if isinstance(value, (int, float, str)):
+                    fp.attrs[key] = value
             for key, value in attrs.asdict(self).items():
                 if isinstance(value, np.ndarray):
                     fp.create_dataset(key, data=value)
@@ -173,7 +173,7 @@ class RFIMask(object):
         hdr_checked = {
             key: value
             for key, value in fp_attrs.items()
-            if key in attrs.asdict(Header).keys()
+            if key in attrs.fields_dict(Header).keys()
         }
         kws = {
             "header": Header(**hdr_checked),

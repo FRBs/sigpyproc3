@@ -66,7 +66,7 @@ class TestFilterbank(object):
         np.testing.assert_equal(new_fil.header.dtype, fil.header.dtype)
         np.testing.assert_equal(new_fil.header.nsamples, fil.header.nsamples)
         np.testing.assert_array_equal(
-            np.where(~newdata.any(axis=1))[0], np.where(chanmask == 0)[0]
+            np.where(~newdata.any(axis=1))[0], np.where(chanmask == 1)[0]
         )
 
     def test_downsample(self, filfile_4bit, tmpfile):

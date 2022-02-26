@@ -39,6 +39,11 @@ def filfile_8bit_2():
 
 
 @pytest.fixture(scope="session", autouse=True)
+def fitsfile_4bit():
+    return Path(_datadir / "parkes_4bit.sf").as_posix()
+
+
+@pytest.fixture(scope="session", autouse=True)
 def timfile():
     return Path(_datadir / "GBT_J1807-0847.tim").as_posix()
 

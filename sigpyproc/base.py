@@ -349,7 +349,7 @@ class Filterbank(ABC):
             filename = f"{self.header.basename}_masked.fil"
 
         mask = np.array(chanmask).astype("bool")
-        maskvalue = np.float32(maskvalue).astype(self.header.data_type)
+        maskvalue = np.float32(maskvalue).astype(self.header.dtype)
         out_file = self.header.prep_outfile(filename)
         for nsamps, _ii, data in self.read_plan(**plan_kwargs):
             kernels.mask_channels(data, mask, maskvalue, self.header.nchans, nsamps)
@@ -546,7 +546,7 @@ class Filterbank(ABC):
         if nchans % chanpersub != 0:
             raise ValueError("Number of channels must be divisible by sub-band size.")
 
-        nsub = (nchans - chanstart) // chanpersub
+        nsub = (self.header.nchans - chanstart) // chanpersub
         fstart = self.header.fch1 + chanstart * self.header.foff
 
         out_files = [

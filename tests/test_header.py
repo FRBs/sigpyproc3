@@ -75,3 +75,13 @@ class TestHeader(object):
         infheader = Header.from_inffile(inffile)
         infheader.make_inf(outfile=tmpfile)
         self.test_from_inffile(tmpfile, inf_header)
+
+    def test_from_pfits(self, fitsfile_4bit):
+        header = Header.from_pfits(fitsfile_4bit)
+        np.testing.assert_equal(header.nchans, 416)
+        np.testing.assert_equal(header.nbits, 4)
+        np.testing.assert_equal(header.nifs, 1)
+
+    def test_from_pfits_otherfile(self, inffile):
+        with np.testing.assert_raises(OSError):
+            Header.from_pfits(inffile)

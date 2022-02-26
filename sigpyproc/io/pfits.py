@@ -191,16 +191,9 @@ class PrimaryHdr(object):
     def tstart(self):
         """astropy.time.Time: Observation start time."""
         return Time(
-            self.header["STT_IMJD"],
-            format="mjd",
-            scale="utc",
-            location=self.location,
+            self.header["STT_IMJD"], format="mjd", scale="utc", location=self.location
         ) + TimeDelta(
-            float(self.header["STT_SMJD"]),
-            float(self.header["STT_OFFS"]),
-            format="sec",
-            scale="utc",
-            location=self.location,
+            float(self.header["STT_SMJD"]), float(self.header["STT_OFFS"]), format="sec"
         )
 
     def _check_header(self, header):
@@ -492,13 +485,16 @@ class PFITSFile(object):
         """
         sdata = self._fits["SUBINT"].data[isub]["DATA"]  # noqa: WPS219
         sdata = sdata.squeeze()
-        assert (
-            sdata.shape == self.sub_hdr.subint_shape
-        ), f"DATA column ordering {sdata.shape} is not TPF"
         if self.bitsinfo.unpack:
-            data = unpack(sdata, self.bitsinfo.nbits)
+            data = unpack(sdata.ravel(), self.bitsinfo.nbits)
+            data = data.reshape(
+                (sdata.shape[0] * self.bitsinfo.bitfact, sdata.shape[1], sdata.shape[2])
+            )
         else:
             data = np.array(sdata)
+        assert (
+            data.shape == self.sub_hdr.subint_shape
+        ), f"DATA column ordering {data.shape} is not TPF"
 
         if scloffs or weights:
             data = data.astype(np.float32, copy=False)

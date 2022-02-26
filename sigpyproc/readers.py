@@ -212,6 +212,9 @@ class PFITSReader(Filterbank):
         new_header = self.header.new_header({"tstart": start_mjd, "nsamples": nsamps})
         return FilterbankBlock(data, new_header)
 
+    def read_dedisp_block(self, start: int, nsamps: int, dm: float) -> FilterbankBlock:
+        raise NotImplementedError("Not implemented for PFITSReader")
+
     def read_plan(
         self,
         gulp: int = 16384,

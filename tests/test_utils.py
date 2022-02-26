@@ -30,8 +30,8 @@ class TestFrequencyChannels(object):
         foff = -1
         nchans = 1024
         freqs = utils.FrequencyChannels.from_sig(fch1, foff, nchans)
-        np.testing.assert_equal(freqs.fch1, fch1)
-        np.testing.assert_equal(freqs.foff, foff)
+        np.testing.assert_equal(freqs.fch1.value, fch1)
+        np.testing.assert_equal(freqs.foff.value, foff)
         np.testing.assert_equal(freqs.nchans, nchans)
 
     def test_from_pfits(self):
@@ -39,8 +39,8 @@ class TestFrequencyChannels(object):
         bandwidth = -1024
         nchans = 1024
         freqs = utils.FrequencyChannels.from_pfits(fcenter, bandwidth, nchans)
-        np.testing.assert_equal(freqs.fcenter, fcenter)
-        np.testing.assert_equal(freqs.bandwidth, bandwidth)
+        np.testing.assert_equal(freqs.fcenter.value, fcenter)
+        np.testing.assert_equal(freqs.bandwidth.value, -bandwidth)
         np.testing.assert_equal(freqs.nchans, nchans)
 
     def test_fail(self):

@@ -21,12 +21,21 @@ from sigpyproc.readers import FilReader
     "-g", "--gulp", type=int, default=16384, help="Number of samples to read at once"
 )
 @click.option(
-    "-o", "--outfile", type=click.Path(exists=False), default=None, help="Output filename"
+    "-o", "--outfile", type=click.Path(exists=False), help="Output masked filterbank file"
 )
-def main(filfile: str, method: str, threshold: float, outfile: str, gulp: int) -> None:
+@click.option(
+    "--save/--no-save", default=True, help="Save the mask information to a file"
+)
+def main(
+    filfile: str, method: str, threshold: float, outfile: str, gulp: int, save: bool
+) -> None:
     """Clean RFI from filterbank data."""
     fil = FilReader(filfile)
-    fil.clean_rfi(method=method, threshold=threshold, outfile=outfile, gulp=gulp)
+    _out_file, rfimask = fil.clean_rfi(
+        method=method, threshold=threshold, filename=outfile, gulp=gulp
+    )
+    if save:
+        rfimask.to_file()
 
 
 if __name__ == "__main__":
