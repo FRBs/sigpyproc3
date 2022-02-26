@@ -500,10 +500,10 @@ class Header(object):
         frame = "pulsarcentric" if header.get("pulsarcentric") else "topocentric"
         frame = "barycentric" if header.get("barycentric") else "topocentric"
         hdr_update = {
-            "data_type": params.data_types[header["data_type"]],
-            "telescope": sigproc.telescope_ids.inverse[header["telescope_id"]],
-            "backend": sigproc.machine_ids.inverse[header["machine_id"]],
-            "source": header["source_name"],
+            "data_type": params.data_types[header.get("data_type", 1)],
+            "telescope": sigproc.telescope_ids.inverse[header.get("telescope_id", 0)],
+            "backend": sigproc.machine_ids.inverse[header.get("machine_id", 0)],
+            "source": header.get("source_name", "Fake"),
             "dm": header.get("refdm", 0),
             "foff": header.get("foff", 0),
             "coord": sigproc.parse_radec(
