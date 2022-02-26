@@ -44,6 +44,11 @@ def fitsfile_4bit():
 
 
 @pytest.fixture(scope="session", autouse=True)
+def maskfile():
+    return Path(_datadir / "parkes_8bit_1_mask.h5").as_posix()
+
+
+@pytest.fixture(scope="session", autouse=True)
 def timfile():
     return Path(_datadir / "GBT_J1807-0847.tim").as_posix()
 
