@@ -11,6 +11,7 @@ from sigpyproc.io.bits import BitsInfo
 from sigpyproc.header import Header
 from sigpyproc.base import Filterbank
 from sigpyproc.block import FilterbankBlock
+from sigpyproc.utils import get_logger
 
 
 class FilReader(Filterbank):
@@ -251,3 +252,158 @@ class PFITSReader(Filterbank):
             data = data[startsamp : startsamp + nsamps]
             start += block + skip
             yield block, ii, data.ravel()
+
+
+class PulseExtractor(object):
+    """Extracts a data block from a filterbank file centered on a pulse.
+
+    The extracted block is centered on the given pulse toa at the highest
+    frequency in the band. The block is padded if the pulse is too close
+    to the edge of the filterbank file.
+
+    Parameters
+    ----------
+    filfile : str
+        Name of the filterbank file.
+    pulse_toa : int
+        Time of arrival of the pulse in samples at the highest frequency.
+    pulse_width : int
+        Width of the pulse in samples.
+    pulse_dm : float
+        Dispersion measure of the pulse.
+    min_nsamps : int, optional
+        Minimum number of samples in the extracted block, by default 256
+    quiet : bool, optional
+        If True, suppresses logging messages, by default False
+    """
+
+    def __init__(
+        self,
+        filfile: str,
+        pulse_toa: int,
+        pulse_width: int,
+        pulse_dm: float,
+        min_nsamps: int = 256,
+        quiet: bool = False,
+    ) -> None:
+        self.fil = FilReader(filfile)
+        self.header = self.fil.header
+        self.pulse_toa = pulse_toa
+        self.pulse_width = pulse_width
+        self.pulse_dm = pulse_dm
+        self.min_nsamps = min_nsamps
+
+        self._disp_delay = max(
+            np.abs(self.header.get_dmdelays(pulse_dm, in_samples=True))
+        )
+        self._configure_logger(quiet=quiet)
+
+    @property
+    def disp_delay(self) -> int:
+        """int: Dispersion delay in samples."""
+        return self._disp_delay
+
+    @property
+    def block_delay(self) -> int:
+        """int: Dispersion Block size in samples."""
+        return self.disp_delay + self.pulse_width * 5  # Just to be safe
+
+    @property
+    def min_nsamps_out(self) -> int:
+        """int: Minimum number of samples in the output block."""
+        return max(self.min_nsamps, self.min_nsamps * (self.pulse_width // 2))
+
+    @property
+    def nsamps(self) -> int:
+        """int: Number of samples in the output block."""
+        return max(2 * self.block_delay, self.min_nsamps_out)
+
+    @property
+    def nstart(self) -> int:
+        """int: Start sample of the output block."""
+        return self.pulse_toa - self.nsamps // 2
+
+    @property
+    def nstart_file(self) -> int:
+        """int: Start sample to read in the file."""
+        return max(0, self.nstart)
+
+    @property
+    def nsamps_file(self) -> int:
+        """int: Number of samples to read in the file."""
+        return min(
+            self.nsamps + min(0, self.nstart),
+            self.header.nsamples - max(0, self.nstart),
+        )
+
+    @property
+    def pulse_toa_block(self) -> int:
+        """int: Time of arrival of the pulse in the output block."""
+        return self.pulse_toa - self.nstart
+
+    def get_data(self, pad_mode: str = "median") -> FilterbankBlock:
+        """Extracts the data block from the filterbank file.
+
+        Parameters
+        ----------
+        pad_mode : str, optional
+            Mode for padding the data, by default "median"
+
+        Returns
+        -------
+        FilterbankBlock
+            Data block.
+        """
+        self.logger.info(
+            f"Required samples = {2 * self.block_delay}, Reading samples = {self.nsamps}"
+        )
+        self.logger.debug(f"nstart = {self.nstart}, nsamps = {self.nsamps}")
+        self.logger.debug(
+            f"nstart_file = {self.nstart_file}, nsamps_file = {self.nsamps_file}"
+        )
+        data = self.myFil.read_block(start=self.nstart_file, nsamps=self.nsamps_file)
+
+        if self.nstart < 0 or self.nstart + self.nsamps > self.header.nsamples:
+            data = self._pad_data(data, pad_mode=pad_mode)
+        return FilterbankBlock(data, self.header.new_header())
+
+    def _pad_data(
+        self, data: FilterbankBlock, pad_mode: str = "median"
+    ) -> FilterbankBlock:
+        """Pads the data block with the given mode.
+
+        Parameters
+        ----------
+        data : FilterbankBlock
+            Data block to be padded.
+        pad_mode : str, optional
+            Mode for padding the data, by default "median"
+
+        Returns
+        -------
+        FilterbankBlock
+            Padded data block.
+
+        Raises
+        ------
+        ValueError
+            If the pad_mode is not "mean" or "median".
+        """
+        if pad_mode == "mean":
+            pad_arr = np.mean(data, axis=1)
+        elif pad_mode == "median":
+            pad_arr = np.median(data, axis=1)
+        else:
+            raise ValueError(f"pad_mode {pad_mode} not supported.")
+
+        data_pad = np.ones((self.header.nchans, self.nsamps), dtype=self.header.dtype)
+        data_pad *= pad_arr[:, None]
+
+        offset = min(0, self.nstart)
+        self.logger.info(f"Padding with {pad_mode}. start offset = {offset}")
+        data_pad[:, -offset : -offset + self.nsamps_file] = data
+        return data_pad
+
+    def _configure_logger(self, **kwargs) -> None:
+        logger_name = "PulseExtractor"
+        self.logger = get_logger(logger_name, **kwargs)
