@@ -361,7 +361,7 @@ class PulseExtractor(object):
         self.logger.debug(
             f"nstart_file = {self.nstart_file}, nsamps_file = {self.nsamps_file}"
         )
-        data = self.myFil.read_block(start=self.nstart_file, nsamps=self.nsamps_file)
+        data = self.fil.read_block(start=self.nstart_file, nsamps=self.nsamps_file)
 
         if self.nstart < 0 or self.nstart + self.nsamps > self.header.nsamples:
             data = self._pad_data(data, pad_mode=pad_mode)
@@ -396,7 +396,7 @@ class PulseExtractor(object):
         else:
             raise ValueError(f"pad_mode {pad_mode} not supported.")
 
-        data_pad = np.ones((self.header.nchans, self.nsamps), dtype=self.header.dtype)
+        data_pad = np.ones((self.header.nchans, self.nsamps), dtype=pad_arr.dtype)
         data_pad *= pad_arr[:, None]
 
         offset = min(0, self.nstart)
