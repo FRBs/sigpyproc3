@@ -1,5 +1,6 @@
 import numpy as np
-from numba import njit, prange, generated_jit, types
+from numba import njit, prange, types
+from numba.extending import overload
 from numba.experimental import jitclass
 from scipy import constants
 
@@ -88,8 +89,14 @@ def np_mean(array, axis):
     return np_apply_along_axis(np.mean, axis, array)
 
 
-@generated_jit(nopython=True, cache=True)
 def downcast(intype, result):
+    if isinstance(intype, int):
+        return np.uint8(result)
+    return np.float32(result)
+
+
+@overload(downcast)
+def ol_downcast(intype, result):
     if isinstance(intype, types.Integer):
         return lambda intype, result: np.uint8(result)
     return lambda intype, result: np.float32(result)

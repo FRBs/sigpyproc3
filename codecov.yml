@@ -1,1 +1,8 @@
 comment: false
+coverage:
+  status:
+    project:
+      default:
+        target: 80%
+        threshold: 5%
+        if_ci_failed: error

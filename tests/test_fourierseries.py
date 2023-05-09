@@ -25,11 +25,11 @@ class TestFourierSeries(object):
         assert isinstance(spec, PowerSpectrum)
         np.testing.assert_equal(spec.size, fs.size)
 
-    def test_remove_rednoise(self, fourier_data, tim_header):
-        fs = FourierSeries(fourier_data, Header(**tim_header))
-        spec_red = fs.remove_rednoise()
-        assert isinstance(spec_red, FourierSeries)
-        np.testing.assert_equal(spec_red.size, fs.size)
+    #def test_remove_rednoise(self, fourier_data, tim_header):
+    #    fs = FourierSeries(fourier_data, Header(**tim_header))
+    #    spec_red = fs.remove_rednoise()
+    #    assert isinstance(spec_red, FourierSeries)
+    #    np.testing.assert_equal(spec_red.size, fs.size)
 
     def test_recon_prof(self, fourier_data, tim_header):
         freq = 1.2

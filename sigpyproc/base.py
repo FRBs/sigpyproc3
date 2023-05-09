@@ -91,7 +91,7 @@ class Filterbank(ABC):
         nsamps: int | None = None,
         skipback: int = 0,
         description: str | None = None,
-        verbose: bool = False,
+        quiet: bool = False,
     ) -> Iterator[tuple[int, int, np.ndarray]]:
         """A generator used to perform filterbank reading.
 
@@ -107,8 +107,8 @@ class Filterbank(ABC):
             number of samples to skip back after each read, by default 0
         description : str, optional
             description of task show next to progress bar (rich), by default Calling Stack
-        verbose : bool, optional
-            whether to display progress bar, by default False
+        quiet : bool, optional
+            suppress progress bar and logging, by default False
 
         Yields
         -------

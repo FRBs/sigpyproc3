@@ -1,5 +1,5 @@
 import numpy as np
-from sigpyproc.readers import FilReader, PFITSReader
+from sigpyproc.readers import FilReader, PFITSReader, PulseExtractor
 from sigpyproc.header import Header
 from sigpyproc.block import FilterbankBlock
 
@@ -81,3 +81,19 @@ class TestPFITSReader(object):
             fits.read_block(-10, 100)
         with np.testing.assert_raises(ValueError):
             fits.read_block(100, fits.header.nsamples + 1)
+
+    def test_read_plan(self, fitsfile_4bit):
+        fits = PFITSReader(fitsfile_4bit)
+        for nsamps, ii, data in fits.read_plan(gulp=512, nsamps=1024):
+            assert isinstance(data, np.ndarray)
+
+class TestPulseExtractor(object):
+    def test_filterbank_single(self, filfile_4bit):
+        pulse = PulseExtractor(filfile_4bit, 1000, 50, 0)
+        block = pulse.get_data()
+        assert isinstance(block, FilterbankBlock)
+
+    def test_filterbank_dm(self, filfile_4bit):
+        pulse = PulseExtractor(filfile_4bit, 1000, 50, 10)
+        block = pulse.get_data()
+        assert isinstance(block, FilterbankBlock)

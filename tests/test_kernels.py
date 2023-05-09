@@ -58,7 +58,7 @@ class TestStats(object):
 class TestRFI(object):
     def test_double_mad_mask(self):
         input_arr = np.array([1, 2, 3, 4, 5, 20], dtype=np.uint8)
-        desired = np.array([0, 0, 0, 0, 0, 1], dtype=np.bool)
+        desired = np.array([0, 0, 0, 0, 0, 1], dtype=bool)
         np.testing.assert_array_equal(desired, rfi.double_mad_mask(input_arr))
 
 
