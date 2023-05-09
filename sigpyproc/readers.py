@@ -119,7 +119,7 @@ class FilReader(Filterbank):
         nsamps: int | None = None,
         skipback: int = 0,
         description: str | None = None,
-        verbose: bool = False,
+        quiet: bool = False,
     ) -> Iterator[tuple[int, int, np.ndarray]]:
         if nsamps is None:
             nsamps = self.header.nsamples - start
@@ -144,7 +144,7 @@ class FilReader(Filterbank):
 
         # / self.logger.debug(f"Reading plan: nsamps = {nsamps}, nreads = {nreads}")
         # / self.logger.debug(f"Reading plan: gulp = {gulp}, lastread = {lastread}, skipback = {skipback}")
-        for ii, block, skip in track(blocks, description=description):
+        for ii, block, skip in track(blocks, description=description, disable=quiet):
             data = self._file.cread(block)
             if skip != 0:
                 self._file.seek(
@@ -223,7 +223,7 @@ class PFITSReader(Filterbank):
         nsamps: int | None = None,
         skipback: int = 0,
         description: str | None = None,
-        verbose: bool = False,
+        quiet: bool = False,
     ) -> Iterator[tuple[int, int, np.ndarray]]:
         if nsamps is None:
             nsamps = self.header.nsamples - start
@@ -242,7 +242,7 @@ class PFITSReader(Filterbank):
         if lastread != 0:
             blocks.append((nreads, lastread, 0))
 
-        for ii, block, skip in track(blocks, description=description):
+        for ii, block, skip in track(blocks, description=description, disable=quiet):
             startsub, startsamp = divmod(start, self.sub_hdr.subint_samples)
             nsubs = (
                 nsamps + self.sub_hdr.subint_samples - 1
