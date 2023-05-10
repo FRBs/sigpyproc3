@@ -1,5 +1,6 @@
 import pytest
 import numpy as np
+from pathlib import Path
 
 from sigpyproc.header import Header
 from sigpyproc.readers import FilReader
@@ -19,6 +20,8 @@ class TestFilterbankBlock(object):
         block = FilterbankBlock(data, header)
         assert isinstance(block.header, Header)
         assert block.dm == 0
+        assert isinstance(block, FilterbankBlock)
+        assert isinstance(block, np.ndarray)
 
     def test_downsample(self, filfile_8bit_1):
         tfactor = 4
@@ -42,13 +45,21 @@ class TestFilterbankBlock(object):
         with pytest.raises(ValueError):
             data.downsample(tfactor, ffactor)
 
-    def test_normalise(self, filfile_8bit_1):
+    def test_normalise_chans(self, filfile_8bit_1):
         fil = FilReader(filfile_8bit_1)
         data = fil.read_block(100, 1024)
         norm_data = data.normalise()
         np.testing.assert_equal(norm_data.header.nchans, data.header.nchans)
         np.testing.assert_allclose(norm_data.mean(), 0, atol=0.01)
         np.testing.assert_allclose(norm_data.std(), 1, atol=0.01)
+
+    def test_normalise(self, filfile_8bit_1):
+        fil = FilReader(filfile_8bit_1)
+        data = fil.read_block(100, 1024)
+        norm_data = data.normalise(chans=False)
+        np.testing.assert_equal(norm_data.header.nchans, data.header.nchans)
+        np.testing.assert_allclose(norm_data.mean(), 0, atol=0.01)
+        np.testing.assert_allclose(norm_data.std(), 1, atol=0.01)       
 
     def test_get_tim(self, filfile_8bit_1):
         fil = FilReader(filfile_8bit_1)
@@ -109,3 +120,16 @@ class TestFilterbankBlock(object):
         new_data = new_fil.read_block(0, 1024)
         np.testing.assert_equal(new_fil.header.nbits, 32)
         np.testing.assert_array_equal(data, new_data)
+
+    def test_to_file_without_path(self, filfile_8bit_1):
+        fil = FilReader(filfile_8bit_1)
+        data = fil.read_block(100, 1024)
+        outfile = data.to_file()
+        outfile_path = Path(outfile)
+        assert outfile_path.is_file()
+
+        new_fil = FilReader(outfile)
+        new_data = new_fil.read_block(0, 1024)
+        np.testing.assert_equal(new_fil.header.nbits, 32)
+        np.testing.assert_array_equal(data, new_data)
+        outfile_path.unlink()
