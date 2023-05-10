@@ -91,6 +91,16 @@ class TestFilterbankBlock(object):
         with pytest.raises(ValueError):
             data.dedisperse(dm, only_valid_samples=True)
 
+    def test_dmt_transform(self, filfile_8bit_1):
+        dm = 50
+        dmsteps = 256
+        fil = FilReader(filfile_8bit_1)
+        data = fil.read_block(100, 1024)
+        dmt_data = data.dmt_transform(dm, dmsteps)
+        np.testing.assert_equal(dmt_data.shape[0], dmsteps)
+        np.testing.assert_equal(dmt_data.shape[1], data.shape[1])
+        np.testing.assert_equal(dmt_data.dm, dm)
+
     def test_to_file(self, filfile_8bit_1, tmpfile):
         fil = FilReader(filfile_8bit_1)
         data = fil.read_block(100, 1024)
