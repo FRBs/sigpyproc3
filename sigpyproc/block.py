@@ -64,9 +64,13 @@ class FilterbankBlock(np.ndarray):
         ------
         ValueError
             If number of channels is not divisible by `ffactor`.
+        ValueError
+            If number of time samples is not divisible by `tfactor`.
         """
         if self.shape[0] % ffactor != 0:
             raise ValueError("Bad frequency factor given")
+        if self.shape[1] % tfactor != 0:
+            raise ValueError("Bad time factor given")
         ar = self.transpose().ravel().copy()
         new_ar = kernels.downsample_2d(ar, tfactor, ffactor, self.shape[0], self.shape[1])
         new_ar = new_ar.reshape(

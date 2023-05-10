@@ -37,9 +37,8 @@ class TestFilterbankBlock(object):
         np.testing.assert_equal(new_data.header.foff, data.header.foff * ffactor)
         np.testing.assert_equal(new_data.header.tsamp, data.header.tsamp * tfactor)
 
-    def test_downsample_invalid(self, filfile_8bit_1):
-        tfactor = 4
-        ffactor = 3
+    @pytest.mark.parametrize("tfactor, ffactor", [(4, 3), (3, 4), (7, 7)])
+    def test_downsample_invalid(self, filfile_8bit_1, tfactor, ffactor):
         fil = FilReader(filfile_8bit_1)
         data = fil.read_block(100, 1024)
         with pytest.raises(ValueError):
