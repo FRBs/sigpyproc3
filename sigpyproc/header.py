@@ -181,12 +181,12 @@ class Header(object):
     @property
     def ra(self) -> str:
         """Right Ascension (`str`, read-only)."""
-        return self.coord.ra.to_string(unit="hourangle", sep=":", pad=True, precision=2)
+        return self.coord.ra.to_string(unit="hourangle", sep=":", pad=True)
 
     @property
     def dec(self) -> str:
         """Declination (`str`, read-only)."""
-        return self.coord.dec.to_string(unit="deg", sep=":", pad=True, precision=2)
+        return self.coord.dec.to_string(unit="deg", sep=":", pad=True)
 
     @property
     def obs_date(self) -> str:

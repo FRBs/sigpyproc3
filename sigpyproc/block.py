@@ -199,8 +199,8 @@ class FilterbankBlock(np.ndarray):
         """        
         dm_arr = dm + np.linspace(-dm, dm, dmsteps)
         new_ar = np.empty((dmsteps, self.shape[1]), dtype=self.dtype)
-        for idm, dm in enumerate(dm_arr):
-            new_ar[idm] = self.dedisperse(dm, ref_freq=ref_freq).get_tim()
+        for idm, dm_val in enumerate(dm_arr):
+            new_ar[idm] = self.dedisperse(dm_val, ref_freq=ref_freq).get_tim()
         return FilterbankBlock(new_ar, self.header.new_header({"nchans": 1}), dm=dm)
 
     def to_file(self, filename: str = None) -> str:
