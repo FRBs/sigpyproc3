@@ -197,7 +197,7 @@ class FilterbankBlock(np.ndarray):
         FilterbankBlock
             2 dimensional array of DM-time transform
         """        
-        dm_arr = np.linspace(-dm, dm, dmsteps)
+        dm_arr = dm + np.linspace(-dm, dm, dmsteps)
         new_ar = np.empty((dmsteps, self.shape[1]), dtype=self.dtype)
         for idm, dm in enumerate(dm_arr):
             new_ar[idm] = self.dedisperse(dm, ref_freq=ref_freq).get_tim()
