@@ -296,7 +296,7 @@ class FoldedData(np.ndarray):
             self._fph_shifts.fill(0)
             return drifts
         chan_width = self.header.foff * self.header.nchans / self.nbands
-        freqs = np.arange(self.nbands, dtype="float128") * chan_width + self.header.fch1
+        freqs = np.arange(self.nbands, dtype=np.float64) * chan_width + self.header.fch1
         drifts = (
             delta_dm
             * DM_CONSTANT_LK

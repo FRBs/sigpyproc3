@@ -156,7 +156,7 @@ class Header(object):
     @property
     def chan_freqs(self) -> np.ndarray:
         """Frequency (center) of each channel(:py:obj:`~numpy.ndarray`, read-only)."""
-        return np.arange(self.nchans, dtype="float128") * self.foff + self.fch1
+        return np.arange(self.nchans, dtype=np.float64) * self.foff + self.fch1
 
     @property
     def dtype(self) -> np.dtype:
