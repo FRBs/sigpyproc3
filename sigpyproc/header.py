@@ -159,6 +159,16 @@ class Header(object):
         return np.arange(self.nchans, dtype=np.float64) * self.foff + self.fch1
 
     @property
+    def fmax(self) -> float:
+        """Highest (center) frequency channel (`float`, read-only)."""
+        return self.chan_freqs.max()
+    
+    @property
+    def fmin(self) -> float:
+        """Lowest (center) frequency channel (`float`, read-only)."""
+        return self.chan_freqs.min()
+
+    @property
     def dtype(self) -> np.dtype:
         """Type of the data (`np.dtype`, read-only)."""
         return BitsInfo(self.nbits).dtype
@@ -198,7 +208,9 @@ class Header(object):
         """
         return time_after_nsamps(self.tstart, self.tsamp, nsamps).mjd
 
-    def get_dmdelays(self, dm: float, in_samples: bool = True) -> np.ndarray:
+    def get_dmdelays(
+        self, dm: float, in_samples: bool = True, ref_freq: str = "ch1"
+    ) -> np.ndarray:
         """For a given dispersion measure get the dispersive ISM delay for middle of each frequency channel.
 
         Parameters
@@ -207,15 +219,19 @@ class Header(object):
             dispersion measure to calculate delays for
         in_samples : bool, optional
             flag to return delays as numbers of samples, by default True
+        ref_freq : str, optional
+            reference frequency to calculate delays from, by default "ch1"
 
         Returns
         -------
         :py:obj:`~numpy.ndarray`
-            delays for middle of each channel (highest frequency first)
+            delays for middle of each channel with respect to reference frequency
         """
-        delays = (
-            dm * params.DM_CONSTANT_LK * ((self.chan_freqs**-2) - (self.fch1**-2))
-        )
+        if ref_freq not in ["max", "min", "center", "ch1"]:
+            raise ValueError(f"reference frequency {ref_freq} not defined")
+
+        fch_ref = getattr(self, f"f{ref_freq}")
+        delays = dm * params.DM_CONSTANT_LK * ((self.chan_freqs**-2) - (fch_ref**-2))
         if in_samples:
             return (delays / self.tsamp).round().astype(np.int32)
         return delays

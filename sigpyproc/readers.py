@@ -293,10 +293,17 @@ class PulseExtractor(object):
         self.pulse_dm = pulse_dm
         self.min_nsamps = min_nsamps
 
-        self._disp_delay = max(
-            np.abs(self.header.get_dmdelays(pulse_dm, in_samples=True))
+        # Just to be safe, add 5 times the pulse width
+        self._disp_delay = (
+            max(np.abs(self.header.get_dmdelays(pulse_dm, in_samples=True)))
+            + self.pulse_width * 5
         )
         self._configure_logger(quiet=quiet)
+
+    @property
+    def decimation_factor(self) -> int:
+        """int: Decimation factor to consider."""
+        return max(1, self.pulse_width // 2)
 
     @property
     def disp_delay(self) -> int:
@@ -306,17 +313,12 @@ class PulseExtractor(object):
     @property
     def block_delay(self) -> int:
         """int: Dispersion Block size in samples."""
-        return self.disp_delay + self.pulse_width * 5  # Just to be safe
-
-    @property
-    def min_nsamps_out(self) -> int:
-        """int: Minimum number of samples in the output block."""
-        return max(self.min_nsamps, self.min_nsamps * (self.pulse_width // 2))
+        return ((self.disp_delay // self.decimation_factor) + 1) * self.decimation_factor
 
     @property
     def nsamps(self) -> int:
         """int: Number of samples in the output block."""
-        return max(2 * self.block_delay, self.min_nsamps_out)
+        return max(2 * self.block_delay, self.min_nsamps * self.decimation_factor)
 
     @property
     def nstart(self) -> int:

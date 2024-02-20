@@ -5,6 +5,7 @@ from numpy import typing as npt
 from sigpyproc.header import Header
 from sigpyproc.timeseries import TimeSeries
 from sigpyproc.core import kernels
+from sigpyproc.utils import roll_array
 
 
 class FilterbankBlock(np.ndarray):
@@ -63,9 +64,13 @@ class FilterbankBlock(np.ndarray):
         ------
         ValueError
             If number of channels is not divisible by `ffactor`.
+        ValueError
+            If number of time samples is not divisible by `tfactor`.
         """
         if self.shape[0] % ffactor != 0:
             raise ValueError("Bad frequency factor given")
+        if self.shape[1] % tfactor != 0:
+            raise ValueError("Bad time factor given")
         ar = self.transpose().ravel().copy()
         new_ar = kernels.downsample_2d(ar, tfactor, ffactor, self.shape[0], self.shape[1])
         new_ar = new_ar.reshape(
@@ -126,7 +131,9 @@ class FilterbankBlock(np.ndarray):
         """
         return self.sum(axis=1)
 
-    def dedisperse(self, dm: float, only_valid_samples: bool = False) -> FilterbankBlock:
+    def dedisperse(
+        self, dm: float, only_valid_samples: bool = False, ref_freq: str = "ch1"
+    ) -> FilterbankBlock:
         """Dedisperse the block.
 
         Parameters
@@ -136,6 +143,8 @@ class FilterbankBlock(np.ndarray):
         only_valid_samples : bool, optional
             return a FilterbankBlock with only time samples that
             contain the full bandwidth, by default False
+        ref_freq : str, optional
+            reference frequency to dedisperse to, by default "ch1"
 
         Returns
         -------
@@ -150,9 +159,9 @@ class FilterbankBlock(np.ndarray):
         Notes
         -----
         Frequency dependent delays are applied as rotations to each
-        channel in the block.
+        channel in the block with respect to the reference frequency.
         """
-        delays = self.header.get_dmdelays(dm)
+        delays = self.header.get_dmdelays(dm, ref_freq=ref_freq)
         if only_valid_samples:
             valid_samps = self.shape[1] - delays[-1]
             if valid_samps < 0:
@@ -166,8 +175,33 @@ class FilterbankBlock(np.ndarray):
         else:
             new_ar = np.empty(self.shape, dtype=self.dtype)
             for ichan in range(self.shape[0]):
-                new_ar[ichan] = np.roll(self[ichan], -delays[ichan])
+                new_ar[ichan] = roll_array(self[ichan], delays[ichan])
         return FilterbankBlock(new_ar, self.header.new_header(), dm=dm)
+
+    def dmt_transform(
+        self, dm: float, dmsteps: int = 512, ref_freq: str = "ch1"
+    ) -> FilterbankBlock:
+        """Generate a DM-time transform of the data block by dedispersing at adjacent DM values.
+
+        Parameters
+        ----------
+        dm : float
+            Central DM to dedisperse to
+        dmsteps : int, optional
+            Number of adjacent DMs to dedisperse to, by default 512
+        ref_freq : str, optional
+            Reference frequency to dedisperse to, by default "ch1"
+
+        Returns
+        -------
+        FilterbankBlock
+            2 dimensional array of DM-time transform
+        """        
+        dm_arr = dm + np.linspace(-dm, dm, dmsteps)
+        new_ar = np.empty((dmsteps, self.shape[1]), dtype=self.dtype)
+        for idm, dm_val in enumerate(dm_arr):
+            new_ar[idm] = self.dedisperse(dm_val, ref_freq=ref_freq).get_tim()
+        return FilterbankBlock(new_ar, self.header.new_header({"nchans": 1}), dm=dm)
 
     def to_file(self, filename: str = None) -> str:
         """Write the data to file.
@@ -185,7 +219,7 @@ class FilterbankBlock(np.ndarray):
         if filename is None:
             mjd_after = self.header.mjd_after_nsamps(self.shape[1])
             filename = (
-                f"{self.header.basename}_{self.header.tstart:d}_to_{mjd_after:d}.fil"
+                f"{self.header.basename}_{self.header.tstart:.12f}_to_{mjd_after:.12f}.fil"
             )
         changes = {"nbits": 32}
         out_file = self.header.prep_outfile(filename, changes, nbits=32)

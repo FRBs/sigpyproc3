@@ -30,6 +30,12 @@ class TestHeader(object):
         delays_sample = header.get_dmdelays(dm=dm, in_samples=True)
         np.testing.assert_equal(delays_sample.dtype, np.int32)
 
+    def test_get_dmdelays_wrong_ref(self, filfile_4bit):
+        dm = 100
+        header = Header.from_sigproc(filfile_4bit)
+        with np.testing.assert_raises(ValueError):
+            header.get_dmdelays(dm=dm, in_samples=False, ref_freq="top")
+
     def test_new_header(self, filfile_4bit):
         nchans = 15
         header = Header.from_sigproc(filfile_4bit)

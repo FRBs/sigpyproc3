@@ -21,6 +21,9 @@ class AttrDict(dict):  # noqa:WPS600
 def roll_array(arr: npt.ArrayLike, shift: int, axis: int = 0) -> np.ndarray:
     """Roll the elements in the array by `shift` positions along the given axis.
 
+    The shift direction is from the end towards the beginning of the axis, opposite to the
+    shift direction of :py:func:`~numpy.roll`.
+
     Parameters
     ----------
     arr : :py:obj:`~numpy.typing.ArrayLike`
