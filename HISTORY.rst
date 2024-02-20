@@ -1,3 +1,12 @@
+1.1.0 (2024-02-20)
+++++++++++++++++++
+
+- Adds a pulse extractor class. (`#28 <https://github.com/FRBs/sigpyproc3/pull/28>`_)
+- Adds RFI masking module, PSRFITS reading module. (`#23 <https://github.com/FRBs/sigpyproc3/pull/23>`_)
+- Adds DMT transform.
+- Fixes bugs related to tfactor, types and apps.
+
+
 1.0.0 (2022-02-01)
 ++++++++++++++++++
 
@@ -8,7 +17,7 @@
 - Adds Packaging structure as for the new API. (`#16 <https://github.com/FRBs/sigpyproc3/pull/16>`_)
 - Adds ``io`` module for reading and writing of ``SIGPROC`` files.
 - Adds fast median and mean filter (`bottleneck <https://github.com/pydata/bottleneck>`_) and Higher-Order running stats.
-- Support for command-line utilities
+- Support for command-line utilities.
 - Adds CHIME telescope code to ``params``.
 
 
