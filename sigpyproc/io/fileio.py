@@ -7,9 +7,8 @@ import numpy as np
 try:
     from collections.abc import Buffer
 except ImportError:
-    from typing import Any
-    class Buffer(Any):
-        pass
+    from typing import Any, NewType
+    Buffer = NewType("Buffer", Any)
 
 
 from sigpyproc.io.bits import BitsInfo, unpack, pack

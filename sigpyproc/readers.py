@@ -6,9 +6,8 @@ from collections.abc import Iterator, Callable
 try:
     from collections.abc import Buffer
 except ImportError:
-    from typing import Any
-    class Buffer(Any):
-        pass
+    from typing import Any, NewType
+    Buffer = NewType("Buffer", Any)
 
 from rich.progress import track
 
