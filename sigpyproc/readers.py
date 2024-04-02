@@ -2,7 +2,14 @@ from __future__ import annotations
 import numpy as np
 import inspect
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Callable
+try:
+    from collections.abc import Buffer
+except ImportError:
+    from typing import Any
+    class Buffer(Any):
+        pass
+
 from rich.progress import track
 
 from sigpyproc.io import pfits
@@ -119,7 +126,7 @@ class FilReader(Filterbank):
         nsamps: int | None = None,
         skipback: int = 0,
         description: str | None = None,
-        quiet: bool = False,
+        quiet: bool = False
     ) -> Iterator[tuple[int, int, np.ndarray]]:
         if nsamps is None:
             nsamps = self.header.nsamples - start
@@ -151,6 +158,79 @@ class FilReader(Filterbank):
                     skip * self.bitsinfo.itemsize // self.bitsinfo.bitfact, whence=1
                 )
             yield block // self.header.nchans, ii, data
+
+    def _safe_allocate(self, allocator, nbytes):
+        buffer = allocator(nbytes)
+        if len(buffer) != nbytes:
+            raise ValueError(f"Allocated buffer is not the expected size {len(buffer)} (actual) != {nbytes} (expected)")
+        return buffer
+
+    def read_plan_buffered(
+        self,
+        gulp: int = 16384,
+        start: int = 0,
+        nsamps: int | None = None,
+        skipback: int = 0,
+        description: str | None = None,
+        quiet: bool = False,
+        allocator: Callable[[int], Buffer] = None,
+    ) -> Iterator[tuple[int, int, np.ndarray]]:
+        """
+        Iterate over the file, reading into a pre-allocated buffer
+        
+        Parameters
+        ----------
+        ...
+        """ 
+        if nsamps is None:
+            nsamps = self.header.nsamples - start
+        if description is None:
+            description = f"{inspect.stack()[1][3]} : "
+
+        gulp = min(nsamps, gulp)
+        skipback = abs(skipback)
+        if skipback >= gulp:
+            raise ValueError(f"readsamps ({gulp}) must be > skipback ({skipback})")
+        
+        # Here we set the allocator
+        allocator = allocator if allocator is not None else bytearray
+
+        # Here we allocate the buffer that will be readinto from file
+        read_buffer = self._safe_allocate(allocator, gulp * self.sampsize)
+        # Here we allocate (if needed) a buffer for unpacking the data
+        if self.bitsinfo.unpack:
+            # The unpacking always unpacks up to 8-bits, so the size should be nsamps * nchans
+            # Is there a way to guarantee that the behaviour is correct here?
+            unpack_buffer =  self._safe_allocate(allocator, gulp * self.header.nchans)
+            data = np.frombuffer(unpack_buffer, dtype=self._file.bitsinfo.dtype)
+        else:
+            unpack_buffer = None
+            data = np.frombuffer(read_buffer, dtype=self._file.bitsinfo.dtype)        
+
+        self._file.seek(start * self.sampsize)
+        nreads, lastread = divmod(nsamps, (gulp - skipback))
+        if lastread < skipback:
+            nreads -= 1
+            lastread = nsamps - (nreads * (gulp - skipback))
+        blocks = [
+            (ii, gulp * self.header.nchans, -skipback * self.header.nchans)
+            for ii in range(nreads)
+        ]
+        if lastread != 0:
+            blocks.append((nreads, lastread * self.header.nchans, 0))
+
+        # / self.logger.debug(f"Reading plan: nsamps = {nsamps}, nreads = {nreads}")
+        # / self.logger.debug(f"Reading plan: gulp = {gulp}, lastread = {lastread}, skipback = {skipback}")
+        for ii, block, skip in track(blocks, description=description, disable=quiet):
+            nbytes = self._file.creadinto(read_buffer, unpack_buffer)
+            expected_nbytes = block * self.sampsize / self.header.nchans
+            if nbytes != expected_nbytes :
+                raise ValueError(f"Unexpected number of bytes read from file {nbytes} (actual) != {expected_nbytes} (expected)")
+            if skip != 0:
+                self._file.seek(
+                    skip * self.bitsinfo.itemsize // self.bitsinfo.bitfact, whence=1
+                )
+            yield block // self.header.nchans, ii, data[:block]        
 
 
 class PFITSReader(Filterbank):

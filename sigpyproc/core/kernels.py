@@ -5,10 +5,9 @@ from numba.experimental import jitclass
 from scipy import constants
 
 
-@njit("u1[:](u1[:])", cache=True, parallel=True)
-def unpack1_8(array):
+@njit("u1[:](u1[:], u1[:])", cache=True, parallel=True)
+def unpack1_8(array, unpacked):
     bitfact = 8
-    unpacked = np.zeros(shape=array.size * bitfact, dtype=np.uint8)
     for ii in prange(array.size):
         unpacked[ii * bitfact + 0] = (array[ii] >> 7) & 1
         unpacked[ii * bitfact + 1] = (array[ii] >> 6) & 1
@@ -21,10 +20,9 @@ def unpack1_8(array):
     return unpacked
 
 
-@njit("u1[:](u1[:])", cache=True, parallel=True)
-def unpack2_8(array):
+@njit("u1[:](u1[:], u1[:])", cache=True, parallel=True)
+def unpack2_8(array, unpacked):
     bitfact = 8 // 2
-    unpacked = np.zeros(shape=array.size * bitfact, dtype=np.uint8)
     for ii in prange(array.size):
         unpacked[ii * bitfact + 0] = (array[ii] & 0xC0) >> 6
         unpacked[ii * bitfact + 1] = (array[ii] & 0x30) >> 4
@@ -33,10 +31,9 @@ def unpack2_8(array):
     return unpacked
 
 
-@njit("u1[:](u1[:])", cache=True, parallel=True)
-def unpack4_8(array):
+@njit("u1[:](u1[:], u1[:])", cache=True, parallel=True)
+def unpack4_8(array, unpacked):
     bitfact = 8 // 4
-    unpacked = np.zeros(shape=array.size * bitfact, dtype=np.uint8)
     for ii in prange(array.size):
         unpacked[ii * bitfact + 0] = (array[ii] & 0xF0) >> 4
         unpacked[ii * bitfact + 1] = (array[ii] & 0x0F) >> 0

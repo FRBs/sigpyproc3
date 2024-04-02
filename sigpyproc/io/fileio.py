@@ -4,6 +4,14 @@ import os
 import warnings
 import numpy as np
 
+try:
+    from collections.abc import Buffer
+except ImportError:
+    from typing import Any
+    class Buffer(Any):
+        pass
+
+
 from sigpyproc.io.bits import BitsInfo, unpack, pack
 from sigpyproc.utils import get_logger
 
@@ -32,7 +40,15 @@ class _FileBase(object):
             self._close_current()
             self.file_obj = file_obj
             self.ifile_cur = ifile
-
+            
+    def eos(self):
+        """Check if the end of the file stream has been reached"""
+        # First check if we are at the end of the current file
+        eof = self.file_obj.tell() == os.fstat(self.file_obj.fileno()).st_size
+        # Now check if we are at the end of the list of files
+        eol = self.ifile_cur == len(self.files) - 1
+        return eof & eol
+        
     def _close_current(self):
         """Close the currently open local file, and therewith the set."""
         if self.ifile_cur is not None:
@@ -118,6 +134,48 @@ class FileReader(_FileBase):
         if self.bitsinfo.unpack:
             return unpack(data_ar, self.nbits)
         return data_ar
+    
+    def creadinto(self, read_buffer: Buffer, unpack_buffer: Buffer = None) -> int:
+        """Read from file stream into a buffer of pre-defined length
+        
+        Parameters
+        ----------
+        buffer : Buffer
+            An object exposing the Python Buffer Protocol interface [PEP 3118]
+
+        Returns
+        -------
+        int
+            The number of bytes readinto the buffer
+
+        Raises
+        ------
+        IOError
+            if file is closed.
+            
+        Detail
+        ------
+        It is the responsibility of the caller to handle the case than fewer bytes
+        than requested are read into the buffer. When at the end of the file stream
+        the number of bytes returned will be zero.
+        """
+        if self.file_obj.closed:
+            raise IOError("Cannot read closed file.")       
+        nbytes = 0
+        view = memoryview(read_buffer)
+        while True:
+            nbytes += self.file_obj.readinto(view[nbytes:])
+            if nbytes == len(read_buffer) or self.eos():
+                # We have either filled the buffer or reached the end of the stream
+                break
+            else:
+                 self._seek2hdr(self.ifile_cur + 1)
+        if self.bitsinfo.unpack:
+            unpack_ar = np.frombuffer(unpack_buffer, dtype=np.uint8)
+            read_ar = np.frombuffer(read_buffer, dtype=np.uint8)
+            unpack(read_ar, self.nbits, unpack_ar)
+        return nbytes    
+    
 
     def seek(self, offset: int, whence: int = 0) -> None:
         """Change the multifile stream position to the given data offset.
