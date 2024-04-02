@@ -179,7 +179,26 @@ class FilReader(Filterbank):
         
         Parameters
         ----------
-        ...
+        gulp: int
+            The number of samples (spectra) to read in each iteration
+        start: int
+            The starting sample (spectrum) to read from
+        nsamps: int
+            The total number of samples (spectra) to read
+        skipback: int = 0
+            The number of samples (spectra) to seek back after each read
+        description: str
+            Annotation for progress bar
+        quiet: bool
+            Disable/Enable progress bar
+        allocator: Callable[[int], Buffer]
+            An allocator callback that returns an object implementing
+            the Python Buffer Protocol interface (PEP 3118)
+        
+        Yields
+        -------
+        Tuple[int, int, np.ndarray]
+            The number of samples read, the index of the read and the unpacked data
         """ 
         if nsamps is None:
             nsamps = self.header.nsamples - start
