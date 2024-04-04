@@ -1,3 +1,4 @@
+import pytest
 import numpy as np
 from sigpyproc.readers import FilReader, PFITSReader, PulseExtractor
 from sigpyproc.header import Header
@@ -51,6 +52,60 @@ class TestFilReader(object):
         fil = FilReader(filfile_8bit_1)
         with np.testing.assert_raises(ValueError):
             fil.read_dedisp_block(0, 100, 10000)
+            
+    def test_read_plan(self, filfile_8bit_1):
+        fil = FilReader(filfile_8bit_1)
+        for nsamps, ii, data in fil.read_plan(gulp=512, nsamps=1024):
+            assert isinstance(data, np.ndarray)
+            
+    def test_read_plan(self, filterbank_files):
+        for filfile in filterbank_files:
+            fil = FilReader(filfile)
+            for nsamps, ii, data in fil.read_plan(gulp=512, nsamps=1024):
+                assert isinstance(data, np.ndarray)
+    
+    def test_read_plan_buffered(self, filterbank_files):
+        for filfile in filterbank_files:
+            fil = FilReader(filfile)
+            for nsamps, ii, data in fil.read_plan_buffered(gulp=512, nsamps=1024):
+                assert isinstance(data, np.ndarray)
+                
+    def test_compare_buffered_and_nonbuffered(self, filterbank_files):
+        def allocator(nbytes):
+            buffer = np.zeros(nbytes, dtype="ubyte")
+            return memoryview(buffer)
+        
+        for filfile in filterbank_files:
+            fil0 = FilReader(filfile)
+            plan0 = fil0.read_plan(quiet=True)            
+            fil1 = FilReader(filfile)
+            plan1 = fil1.read_plan_buffered(quiet=True, allocator=allocator)
+            for (nsamps0, ii0, data0), (nsamps1, ii1, data1) in zip(plan0, plan1):
+                assert nsamps0 == nsamps1   
+                assert ii0 == ii1
+                assert np.array_equal(data0, data1)
+                
+    def test_nsamps_eq_skipback(self, filfile_8bit_1):
+        fil = FilReader(filfile_8bit_1)
+        with pytest.raises(ValueError):
+            for nsamps, ii, data in fil.read_plan_buffered(gulp=512, nsamps=1024, skipback=1024):
+                pass
+
+    def test_read_plan_custom_allocator(self, filfile_8bit_1):
+        fil = FilReader(filfile_8bit_1)
+        def allocator(nbytes):
+            buffer = np.zeros(nbytes, dtype="ubyte")
+            return memoryview(buffer)
+        for nsamps, ii, data in fil.read_plan_buffered(allocator=allocator):
+            pass
+            
+    def test_read_plan_invalid_custom_allocator(self, filfile_8bit_1):
+        fil = FilReader(filfile_8bit_1)
+        def allocator():
+            pass
+        with pytest.raises(TypeError):
+            for nsamps, ii, data in fil.read_plan_buffered(allocator=allocator):
+                pass
 
 
 class TestPFITSReader(object):

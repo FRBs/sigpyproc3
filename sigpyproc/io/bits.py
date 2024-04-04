@@ -9,7 +9,7 @@ from sigpyproc.core import kernels
 nbits_to_dtype = {1: "<u1", 2: "<u1", 4: "<u1", 8: "<u1", 16: "<u2", 32: "<f4"}
 
 
-def unpack(array: np.ndarray, nbits: int) -> np.ndarray:
+def unpack(array: np.ndarray, nbits: int, unpacked: np.ndarray = None) -> np.ndarray:
     """Unpack 1, 2 and 4 bit array. Only unpacks in big endian bit ordering.
 
     Parameters
@@ -30,12 +30,18 @@ def unpack(array: np.ndarray, nbits: int) -> np.ndarray:
         if nbits is not 1, 2, or 4
     """
     assert array.dtype == np.uint8, "Array must be uint8"
+    bitfact = 8//nbits
+    if unpacked is None:
+        unpacked = np.zeros(shape=array.size * bitfact, dtype=np.uint8)
+    else:
+        if unpacked.size != array.size * bitfact:
+            raise ValueError(f"Unpacking array must be {bitfact}x input size")
     if nbits == 1:
-        unpacked = np.unpackbits(array, bitorder="big")
+        unpacked = kernels.unpack1_8(array, unpacked)
     elif nbits == 2:
-        unpacked = kernels.unpack2_8(array)
+        unpacked = kernels.unpack2_8(array, unpacked)
     elif nbits == 4:
-        unpacked = kernels.unpack4_8(array)
+        unpacked = kernels.unpack4_8(array, unpacked)
     else:
         raise ValueError("nbits must be 1, 2, or 4")
     return unpacked
