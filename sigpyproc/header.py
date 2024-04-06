@@ -69,16 +69,6 @@ class Header(object):
         if the data is signed
     rawdatafile: str
         Original file name
-    hdrlens: list of int
-        List of header length of files
-    datalens: list of int
-        List of data length of files
-    filenames: list of str
-        List of filenames
-    nsamples_files: list of int
-        List of samples in each file
-    tstart_files: list of float
-        List of start MJD in each file
     """
 
     filename: str
@@ -107,11 +97,7 @@ class Header(object):
     signed: bool = False
     rawdatafile: str = ""
 
-    hdrlens: list[int] = attrs.Factory(list)
-    datalens: list[int] = attrs.Factory(list)
-    filenames: list[str] = attrs.Factory(list)
-    nsamples_files: list[int] = attrs.Factory(list)
-    tstart_files: list[float] = attrs.Factory(list)
+    stream_info: sigproc.StreamInfo = sigproc.StreamInfo()
 
     @property
     def basename(self) -> str:
@@ -162,7 +148,7 @@ class Header(object):
     def fmax(self) -> float:
         """Highest (center) frequency channel (`float`, read-only)."""
         return self.chan_freqs.max()
-    
+
     @property
     def fmin(self) -> float:
         """Lowest (center) frequency channel (`float`, read-only)."""
@@ -227,7 +213,7 @@ class Header(object):
         :py:obj:`~numpy.ndarray`
             delays for middle of each channel with respect to reference frequency
         """
-        if ref_freq not in ["max", "min", "center", "ch1"]:
+        if ref_freq not in {"max", "min", "center", "ch1"}:
             raise ValueError(f"reference frequency {ref_freq} not defined")
 
         fch_ref = getattr(self, f"f{ref_freq}")
@@ -292,13 +278,13 @@ class Header(object):
             attributes.update(prop)
         return attributes
 
-    def to_sigproc(self, as_dict=False) -> dict | bytes:
-        """Get sigproc format header binary header.
+    def to_sigproc(self) -> dict:
+        """Get a dictionary of header values in Sigproc format.
 
         Returns
         -------
-        str
-            header in binary format
+        dict
+            header values in Sigproc format
         """
         header = self.to_dict()
         sig_header = {
@@ -316,10 +302,7 @@ class Header(object):
             "az_start": self.azimuth.deg,
         }
         sig_header.update(hdr_update)
-        if as_dict:
-            return sig_header
-
-        return sigproc.encode_header(sig_header)
+        return sig_header
 
     def to_string(self) -> str:
         hdr = []
@@ -327,8 +310,12 @@ class Header(object):
         hdr.extend(
             [
                 temp.format("Data file", self.filename),
-                temp.format("Header size (bytes)", self.hdrlens[0]),
-                temp.format("Data size (bytes)", self.datalens[0]),
+                temp.format(
+                    "Header size (bytes)", self.stream_info.get_combined("hdrlen")
+                ),
+                temp.format(
+                    "Data size (bytes)", self.stream_info.get_combined("datalen")
+                ),
                 temp.format("Data type", f"{self.data_type} ({self.frame})"),
                 temp.format("Telescope", self.telescope),
                 temp.format("Datataking Machine", self.backend),
@@ -416,7 +403,8 @@ class Header(object):
             constant_offset_scale=constant_offset_scale,
             **kwargs,
         )
-        out_file.write(new_hdr.to_sigproc())
+        new_hdr_binary = sigproc.encode_header(new_hdr.to_sigproc())
+        out_file.write(new_hdr_binary)
         return out_file
 
     def make_inf(self, outfile=None):
@@ -517,7 +505,9 @@ class Header(object):
         frame = "barycentric" if header.get("barycentric") else "topocentric"
         hdr_update = {
             "data_type": params.data_types[header.get("data_type", 1)],
-            "telescope": sigproc.telescope_ids.inv.get(header.get("telescope_id", 0), "Fake"),
+            "telescope": sigproc.telescope_ids.inv.get(
+                header.get("telescope_id", 0), "Fake"
+            ),
             "backend": sigproc.machine_ids.inv.get(header.get("machine_id", 0), "FAKE"),
             "source": header.get("source_name", "Fake"),
             "dm": header.get("refdm", 0),

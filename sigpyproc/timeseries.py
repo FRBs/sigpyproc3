@@ -369,5 +369,7 @@ class TimeSeries(np.ndarray):
             a new TimeSeries object
         """
         header = Header.from_sigproc(timfile)
-        data = np.fromfile(timfile, dtype=header.dtype, offset=header.hdrlens[0])
+        data = np.fromfile(
+            timfile, dtype=header.dtype, offset=header.stream_info.entries[0].hdrlen
+        )
         return cls(data, header)

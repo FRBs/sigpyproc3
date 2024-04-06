@@ -1,106 +1,159 @@
 from __future__ import annotations
+from typing_extensions import Buffer
+from typing import Callable
 import io
 import os
 import warnings
 import numpy as np
 
-try:
-    from collections.abc import Buffer
-except ImportError:
-    from typing import Any, NewType
-    Buffer = NewType("Buffer", Any)
-
-
 from sigpyproc.io.bits import BitsInfo, unpack, pack
+from sigpyproc.io.sigproc import StreamInfo
 from sigpyproc.utils import get_logger
 
 
-class _FileBase(object):
+def allocate_buffer(allocator: Callable[[int], Buffer], nbytes: int) -> Buffer:
+    """Allocate a buffer of the given size safely using the given allocator.
+
+    Parameters
+    ----------
+    allocator : Callable[[int], Buffer]
+        A callable that takes an integer argument and returns a buffer object.
+    nbytes : int
+        Number of bytes to allocate.
+
+    Returns
+    -------
+    Buffer
+        A buffer object of the given size. collections.abc.Buffer, PEP 688.
+
+    Raises
+    ------
+    ValueError
+        if nbytes is less than or equal to zero.
+    RuntimeError
+        if the buffer allocation fails.
+    TypeError
+        if the allocator does not return a buffer object.
+    ValueError
+        if the allocated buffer is not of the expected size.
+    """
+    if nbytes <= 0:
+        raise ValueError(f"Requested buffer size is invalid {nbytes}")
+    try:
+        buffer = allocator(nbytes)
+    except Exception as exc:
+        raise RuntimeError(f"Failed to allocate buffer of size {nbytes}") from exc
+
+    if not isinstance(buffer, Buffer):
+        raise TypeError(f"Allocator did not return a buffer object {type(buffer)}")
+
+    allocated_nbytes = len(buffer)  # type: ignore
+    if allocated_nbytes != nbytes:
+        raise ValueError(
+            f"Allocated buffer is not the expected size {allocated_nbytes} (actual) != {nbytes} (expected)"
+        )
+    return buffer
+
+
+class FileBase(object):
     """File I/O base class."""
 
-    def __init__(self, files, mode, opener=None):
+    def __init__(self, files: list[str], mode: str) -> None:
         self.files = files
         self.mode = mode
-        self.opener = io.FileIO if opener is None else opener
-        # TODO cHECK IF THE FILE EXISTS, otherwise raise OSError('ran out of files.')
-        self.file_obj = None
-        self.ifile_cur = None
+        self.opener = io.FileIO
+        self.ifile_cur = -1
         self._open(ifile=0)
 
-    def __enter__(self):
+    def __enter__(self) -> FileBase:
         return self
 
-    def __exit__(self, exc_type, exc_value, traceback):
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
         self._close_current()
 
-    def _open(self, ifile):
+    def _open(self, ifile: int) -> None:
+        """Open a file from the list of files.
+
+        If a file is already open, it will be closed before opening the new file.
+
+        Parameters
+        ----------
+        ifile : int
+            index of the file to be opened
+
+        Raises
+        ------
+        ValueError
+            if ifile is out of bounds
+        """
+        if ifile < 0 or ifile >= len(self.files):
+            raise ValueError(
+                f"ifile should be between 0 and {len(self.files) - 1}, got {ifile}"
+            )
+
         if ifile != self.ifile_cur:
             file_obj = self.opener(self.files[ifile], mode=self.mode)
             self._close_current()
             self.file_obj = file_obj
             self.ifile_cur = ifile
-            
-    def eos(self):
-        """Check if the end of the file stream has been reached"""
+
+    def eos(self) -> bool:
+        """Check if the end of the file stream has been reached."""
         # First check if we are at the end of the current file
         eof = self.file_obj.tell() == os.fstat(self.file_obj.fileno()).st_size
         # Now check if we are at the end of the list of files
         eol = self.ifile_cur == len(self.files) - 1
         return eof & eol
-        
-    def _close_current(self):
-        """Close the currently open local file, and therewith the set."""
-        if self.ifile_cur is not None:
+
+    def _close_current(self) -> None:
+        """Close the currently open file object."""
+        if self.ifile_cur != -1:
             self.file_obj.close()
 
 
-class FileReader(_FileBase):
+class FileReader(FileBase):
     """A file reader class that can read from multiple files.
 
     Files should have format similar to ``sigproc``.
 
     Parameters
     ----------
-    files : list[str]
-        list of files to be read from
-    hdrlens : list[int]
-        list of header lengths for each file
-    datalens : list[int]
-        list of data lengths for each file
+    stream_info : StreamInfo
+        stream information object containing header and data lengths
     mode : str, optional
         file opening mode, by default "r"
     nbits : int, optional
         number of bits per sample in the files, by default 8
     """
 
-    def __init__(
-        self,
-        files: list[str],
-        hdrlens: list[int],
-        datalens: list[int],
-        mode: str = "r",
-        nbits: int = 8,
-    ) -> None:
-        self.hdrlens = hdrlens
-        self.datalens = datalens
+    def __init__(self, stream_info: StreamInfo, mode: str = "r", nbits: int = 8) -> None:
+        self.sinfo = stream_info
         self.nbits = nbits
         self.bitsinfo = BitsInfo(nbits)
         self._configure_logger()
 
-        super().__init__(files, mode)
+        filenames = self.sinfo.get_info_list("filename")
+        super().__init__(filenames, mode)
 
     @property
-    def cur_data_pos(self) -> int:
-        """int: Current position in the data stream."""
-        return self.file_obj.tell() - self.hdrlens[self.ifile_cur]
+    def cur_data_pos_file(self) -> int:
+        """int: Current data position in the current file."""
+        return self.file_obj.tell() - self.sinfo.entries[self.ifile_cur].hdrlen
+
+    @property
+    def cur_data_pos_stream(self) -> int:
+        """int: Current data position in the data stream."""
+        if self.ifile_cur == 0:
+            return self.cur_data_pos_file
+        return self.cur_data_pos_file + self.sinfo.cumsum_datalens[self.ifile_cur - 1]
 
     def cread(self, nunits: int) -> np.ndarray:
-        """Read nunits (nbytes) of data from the file.
+        """Read nunits data of the given number of bits from the file stream.
 
         Parameters
         ----------
         nunits : int
-            number of units (nbytes) to be read from the file
+            number of units to read
 
         Returns
         -------
@@ -118,7 +171,7 @@ class FileReader(_FileBase):
         count = nunits // self.bitsinfo.bitfact
         data = []
         while count >= 0:
-            count_read = min(self.datalens[self.ifile_cur], count)
+            count_read = min(self.sinfo.entries[self.ifile_cur].datalen, count)
             data_read = np.fromfile(
                 self.file_obj, count=count_read, dtype=self.bitsinfo.dtype
             )
@@ -133,61 +186,74 @@ class FileReader(_FileBase):
         if self.bitsinfo.unpack:
             return unpack(data_ar, self.nbits)
         return data_ar
-    
-    def creadinto(self, read_buffer: Buffer, unpack_buffer: Buffer = None) -> int:
-        """Read from file stream into a buffer of pre-defined length
-        
+
+    def creadinto(self, read_buffer: Buffer, unpack_buffer: Buffer | None = None) -> int:
+        """Read from file stream into a buffer of pre-defined length.
+
         Parameters
         ----------
-        buffer : Buffer
+        read_buffer : Buffer
             An object exposing the Python Buffer Protocol interface [PEP 3118]
+
+        unpack_buffer : Buffer, optional
+            An object exposing the Python Buffer Protocol interface [PEP 3118], by default None
 
         Returns
         -------
         int
-            The number of bytes readinto the buffer
+            Number of bytes readinto the buffer
 
         Raises
         ------
         IOError
             if file is closed.
-            
-        Detail
-        ------
+
+        Notes
+        -----
         It is the responsibility of the caller to handle the case than fewer bytes
         than requested are read into the buffer. When at the end of the file stream
         the number of bytes returned will be zero.
         """
         if self.file_obj.closed:
-            raise IOError("Cannot read closed file.")       
+            raise IOError("Cannot read closed file.")
+
         nbytes = 0
-        view = memoryview(read_buffer)
+        read_buffer_view = memoryview(read_buffer)
         while True:
-            nbytes += self.file_obj.readinto(view[nbytes:])
-            if nbytes == len(read_buffer) or self.eos():
-                # We have either filled the buffer or reached the end of the stream
-                break
+            nbytes_read = self.file_obj.readinto(read_buffer_view[nbytes:])
+            if nbytes_read is None:
+                if self.eos():
+                    # We have reached the end of the stream
+                    break
+                # Might be non-blocking IO, so maybe try again
+                raise IOError("file might in non-blocking mode")
             else:
-                 self._seek2hdr(self.ifile_cur + 1)
+                nbytes += nbytes_read
+                if nbytes == read_buffer_view.nbytes or self.eos():
+                    break
+                self._seek2hdr(self.ifile_cur + 1)
+        if nbytes < read_buffer_view.nbytes:
+            warnings.warn("End of file reached before buffer was filled", stacklevel=2)
+
         if self.bitsinfo.unpack:
-            unpack_ar = np.frombuffer(unpack_buffer, dtype=np.uint8)
-            read_ar = np.frombuffer(read_buffer, dtype=np.uint8)
+            read_ar = np.frombuffer(read_buffer_view, dtype=np.uint8)
+            if unpack_buffer is not None:
+                unpack_ar = np.frombuffer(memoryview(unpack_buffer), dtype=np.uint8)
             unpack(read_ar, self.nbits, unpack_ar)
-        return nbytes    
-    
+        return nbytes
 
     def seek(self, offset: int, whence: int = 0) -> None:
-        """Change the multifile stream position to the given data offset.
+        """Change the file stream position to the given offset relative to the whence.
 
-        offset is always interpreted for a headerless file and is
-        relative to start of the first file.
+        offset is the number of bytes (in the data stream) to move from the reference
+        position given by whence.
 
         Parameters
         ----------
         offset : int
-            Absolute position to seek in the data stream
+            number of bytes to move from the reference position
         whence : int
-            0 (SEEK_SET) 1 (SEEK_CUR)
+            0 (SEEK_SET) 1 (SEEK_CUR), by default 0
 
         Raises
         ------
@@ -200,37 +266,27 @@ class FileReader(_FileBase):
         if whence == 0:
             self._seek_set(offset)
         elif whence == 1:
-            self._seek_cur(offset)
+            offset_start = offset + self.cur_data_pos_stream
+            self._seek_set(offset_start)
         else:
             raise ValueError("whence should be either 0 (SEEK_SET) or 1 (SEEK_CUR)")
 
     def _seek2hdr(self, fileid: int) -> None:
+        """Go to the header end position of the file with the given fileid."""
         self._open(fileid)
-        self.file_obj.seek(self.hdrlens[fileid])
+        self.file_obj.seek(self.sinfo.entries[fileid].hdrlen)
 
     def _seek_set(self, offset: int) -> None:
-        if offset < 0:
-            raise ValueError("offset should be zero or positive when SEEK_SET")
+        if offset < 0 or offset >= self.sinfo.get_combined("datalen"):
+            raise ValueError(f"offset out of bounds: {offset}")
 
-        cumsum_data_bytes = np.cumsum(self.datalens)
-        fileid = np.where(offset < cumsum_data_bytes)[0][0]
+        fileid = np.where(offset < self.sinfo.cumsum_datalens)[0][0]
         self._seek2hdr(fileid)
 
         if fileid == 0:
             self.file_obj.seek(offset, os.SEEK_CUR)
         else:
-            file_offset = offset - cumsum_data_bytes[fileid - 1]
-            self.file_obj.seek(file_offset, os.SEEK_CUR)
-
-    def _seek_cur(self, offset: int) -> None:
-        cumsum_data_bytes = np.cumsum(self.datalens) - self.cur_data_pos
-        fileid = np.where(offset <= cumsum_data_bytes)[0][0]
-
-        if fileid == self.ifile_cur:
-            self.file_obj.seek(offset, os.SEEK_CUR)
-        else:
-            self._seek2hdr(fileid)
-            file_offset = offset - cumsum_data_bytes[fileid - 1]
+            file_offset = offset - self.sinfo.cumsum_datalens[fileid - 1]
             self.file_obj.seek(file_offset, os.SEEK_CUR)
 
     def _configure_logger(self, **kwargs) -> None:
@@ -238,7 +294,7 @@ class FileReader(_FileBase):
         self.logger = get_logger(logger_name, **kwargs)
 
 
-class FileWriter(_FileBase):
+class FileWriter(FileBase):
     """A file writer class that can write to a ``sigproc`` format file.
 
     Parameters
@@ -430,7 +486,7 @@ class Transform(object):
 
     def _compute_stats(self, data: np.ndarray) -> None:
         self.sum_ar += np.sum(data, axis=0)
-        self.sumsq_ar += np.sum(data ** 2, axis=0)
+        self.sumsq_ar += np.sum(data**2, axis=0)
         self.isample += data.shape[0]
 
         if self.isample >= self.interval_samples or self.first_call:

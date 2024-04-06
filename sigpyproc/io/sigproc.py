@@ -1,11 +1,13 @@
 from __future__ import annotations
 import struct
+import attrs
 import numpy as np
 
 from bidict import bidict
 from astropy.time import Time, TimeDelta
 from astropy.coordinates import SkyCoord
 from astropy import units
+
 
 header_keys = {
     "signed": "b",
@@ -67,6 +69,66 @@ machine_ids = bidict(
 )
 
 
+@attrs.define(frozen=True, kw_only=True)
+class FileInfo(object):
+    """Class to handle individual file information."""
+
+    filename: str
+    hdrlen: int
+    datalen: int
+    nsamples: int
+    tstart: float
+
+    @classmethod
+    def from_dict(cls, info: dict) -> FileInfo:
+        """Create FileInfo object from a dictionary."""
+        info_filtered = {key: info[key] for key in attrs.fields_dict(cls).keys()}
+        return cls(**info_filtered)
+
+
+@attrs.define(frozen=True)
+class StreamInfo(object):
+    """Class to handle stream information as a list of FileInfo objects."""
+
+    entries: list[FileInfo] = attrs.Factory(list)
+
+    @property
+    def cumsum_datalens(self) -> np.ndarray:
+        """Get the cumulative sum of datalen for all entries."""
+        return np.cumsum(self.get_info_list("datalen"))
+
+    def add_entry(self, finfo: FileInfo) -> None:
+        """Add a FileInfo entry to the StreamInfo object."""
+        if not isinstance(finfo, FileInfo):
+            raise ValueError("Input must be a FileInfo object")
+        self.entries.append(finfo)
+
+    def get_combined(self, key: str) -> int:
+        """Get the combined value of a key for all entries."""
+        return sum(self.get_info_list(key))
+
+    def get_info_list(self, key: str) -> list:
+        """Get list of values for a given key for all entries."""
+        return [getattr(entry, key) for entry in self.entries]
+
+    def check_contiguity(self, tsamp: float) -> bool:
+        """Check if the files in the stream are contiguous/sequential."""
+        for ientry, entry in enumerate(self.entries[:-1]):
+            precision = int(np.ceil(abs(np.log10(tsamp))))
+            tstart = Time(entry.tstart, format="mjd", scale="utc", precision=precision)
+            end_time = tstart + TimeDelta(entry.nsamples * tsamp, format="sec")
+            end_mjd = end_time.mjd
+            difference = self.entries[ientry + 1].tstart - end_mjd
+            if abs(difference) > tsamp:
+                samp_diff = int(abs(difference) / tsamp)
+                print(
+                    f"files {entry.filename} and {self.entries[ientry + 1].filename} "
+                    f"are off by at least {samp_diff} samples."
+                )
+                return False
+        return True
+
+
 def edit_header(filename: str, key: str, value: int | float | str) -> None:
     """Edit a sigproc style header directly in place for the given file.
 
@@ -126,28 +188,18 @@ def parse_header_multi(filenames: str | list[str], check_contiguity: bool = True
         filenames = [filenames]
 
     header = parse_header(filenames[0])
-    # Set multifile header values
-    header["hdrlens"] = [header["hdrlen"]]
-    header["datalens"] = [header["datalen"]]
-    header["nsamples_files"] = [header["nsamples"]]
-    header["tstart_files"] = [header["tstart"]]
-    header["filenames"] = [header["filename"]]
-
+    sinfo = StreamInfo([FileInfo.from_dict(header)])
     if len(filenames) > 1:
         for filename in filenames[1:]:
             hdr = parse_header(filename)
             match_header(header, hdr)
+            sinfo.add_entry(FileInfo.from_dict(hdr))
 
-            header["hdrlens"].append(hdr["hdrlen"])
-            header["datalens"].append(hdr["datalen"])
-            header["nsamples_files"].append(hdr["nsamples"])
-            header["tstart_files"].append(hdr["tstart"])
-            header["filenames"].append(hdr["filename"])
+        if check_contiguity and not sinfo.check_contiguity(header["tsamp"]):
+            raise ValueError("Files are not contiguous")
 
-        if check_contiguity:
-            ensure_contiguity(header)
-
-    header["nsamples"] = sum(header["nsamples_files"])
+    header["stream_info"] = sinfo
+    header["nsamples"] = header["stream_info"].get_combined("nsamples")
     return header
 
 
@@ -221,37 +273,6 @@ def match_header(header1: dict, header2: dict) -> None:
             raise ValueError(
                 f'Header key "{key} = {value} and {header2[key]}"'
                 + f'do not match for file {header2["filename"]}'
-            )
-
-
-def ensure_contiguity(header: dict) -> None:
-    """Check if list of sigproc files are contiguous/sequential.
-
-    Parameters
-    ----------
-    header : dict
-        parsed header of sigproc files
-
-    Raises
-    ------
-    ValueError
-        if files are not contiguous
-    """
-    for ifile, _file in enumerate(header["filenames"][:-1]):
-        precision = int(np.ceil(abs(np.log10(header["tsamp"]))))
-        tstart = Time(
-            header["tstart_files"][ifile], format="mjd", scale="utc", precision=precision
-        )
-        end_time = tstart + TimeDelta(
-            header["nsamples_files"][ifile] * header["tsamp"], format="sec"
-        )
-        end_mjd = end_time.mjd
-        difference = header["tstart_files"][ifile + 1] - end_mjd
-        if abs(difference) > header["tsamp"]:
-            samp_diff = int(abs(difference) / header["tsamp"])
-            raise ValueError(
-                f"files {header['filenames'][ifile]} and {header['filenames'][ifile + 1]} "
-                + f"are off by at least {samp_diff} samples."
             )
 
 

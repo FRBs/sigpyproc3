@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing_extensions import Buffer
 import warnings
 import numpy as np
 
@@ -92,28 +93,33 @@ class Filterbank(ABC):
         skipback: int = 0,
         description: str | None = None,
         quiet: bool = False,
+        allocator: Callable[[int], Buffer] | None = None,
     ) -> Iterator[tuple[int, int, np.ndarray]]:
-        """A generator used to perform filterbank reading.
+        """Read sequential filterbank data in gulps and yield the data.
 
         Parameters
         ----------
         gulp : int, optional
-            number of samples in each read, by default 16384
+            Number of time samples in each read, by default 16384
         start : int, optional
-            first sample to read from filterbank, by default 0 (start of file)
+            Starting sample to read from, by default 0 (start of file)
         nsamps : int, optional
-            total number of samples to read, by default None (end of the file)
+            Total number of samples to read, by default None (end of the file)
         skipback : int, optional
-            number of samples to skip back after each read, by default 0
+            Number of samples to skip back after each read, by default 0
         description : str, optional
-            description of task show next to progress bar (rich), by default Calling Stack
+            Annotation for progress bar (rich), by default Calling Stack
         quiet : bool, optional
-            suppress progress bar and logging, by default False
+            Disable progress bar and logging, by default False
+        allocator : Callable[[int], Buffer], optional
+            An allocator callback that returns an object implementing
+            the Python Buffer Protocol interface (PEP 3118) for the
+            data to be read into, by default None
 
         Yields
         -------
         :py:obj:`~collections.abc.Iterator` (tuple(int, int, :py:obj:`~numpy.ndarray`))
-            An iterable of the values in the sequence.
+            Tuple of number of samples read, index of read, and the unpacked data read
 
         Raises
         ------

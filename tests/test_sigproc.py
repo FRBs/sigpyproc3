@@ -95,3 +95,57 @@ class TestSigproc(object):
             sigproc.parse_header_multi(
                 [filfile_8bit_1, filfile_4bit], check_contiguity=True
             )
+
+
+class TestStreamInfo(object):
+    def test_file_info_from_dict(self, filfile_8bit_1):
+        header = sigproc.parse_header(filfile_8bit_1)
+        file_info = sigproc.FileInfo.from_dict(header)
+        assert file_info.hdrlen + file_info.datalen == header["filelen"]
+
+    def test_stream_info_add_entry(self):
+        stream_info = sigproc.StreamInfo()
+        file_info = sigproc.FileInfo(
+            filename="file.txt", hdrlen=100, datalen=1000, nsamples=500, tstart=10.0
+        )
+
+        stream_info.add_entry(file_info)
+        assert len(stream_info.entries) == 1
+        assert stream_info.entries[0] == file_info
+
+    def test_stream_info_add_entry_invalid(self):
+        stream_info = sigproc.StreamInfo()
+        with pytest.raises(ValueError):
+            stream_info.add_entry("invalid")
+
+    def test_stream_info_check_contiguity_valid(self):
+        file_info1 = sigproc.FileInfo(
+            filename="file1.txt", hdrlen=100, datalen=1000, nsamples=500, tstart=50000.0
+        )
+        tsamp = 0.001
+        tstart_valid = file_info1.tstart + file_info1.nsamples * tsamp / 86400
+        file_info2 = sigproc.FileInfo(
+            filename="file2.txt",
+            hdrlen=200,
+            datalen=2000,
+            nsamples=1000,
+            tstart=tstart_valid,
+        )
+        stream_info = sigproc.StreamInfo(entries=[file_info1, file_info2])
+        assert stream_info.check_contiguity(tsamp) is True
+
+    def test_stream_info_check_contiguity_invalid(self):
+        file_info1 = sigproc.FileInfo(
+            filename="file1.txt", hdrlen=100, datalen=1000, nsamples=500, tstart=50000.0
+        )
+        tsamp = 0.001
+        tstart_invalid = file_info1.tstart + file_info1.nsamples * tsamp + 0.1
+        file_info2 = sigproc.FileInfo(
+            filename="file2.txt",
+            hdrlen=200,
+            datalen=2000,
+            nsamples=1000,
+            tstart=tstart_invalid,
+        )
+        stream_info = sigproc.StreamInfo(entries=[file_info1, file_info2])
+        assert stream_info.check_contiguity(tsamp) is False

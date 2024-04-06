@@ -1,6 +1,7 @@
 import pytest
 import numpy as np
 from sigpyproc.header import Header
+from sigpyproc.io import sigproc
 
 
 class TestHeader(object):
@@ -57,8 +58,9 @@ class TestHeader(object):
     def test_to_sigproc(self, filfile_4bit):
         header = Header.from_sigproc(filfile_4bit)
         spphdr = header.to_sigproc()
-        assert len(spphdr) >= header.hdrlens[0]
-        assert isinstance(spphdr, bytes)
+        np.testing.assert_equal(spphdr["nchans"], header.nchans)
+        for key in sigproc.header_keys.keys():
+            assert key in spphdr
 
     def test_to_string(self, filfile_4bit):
         header = Header.from_sigproc(filfile_4bit)

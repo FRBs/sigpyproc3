@@ -12,6 +12,7 @@ def tmpfile(tmp_path_factory, content=""):
     fn.write_text(content)
     return fn.as_posix()
 
+
 @pytest.fixture(scope="session", autouse=True)
 def filfile_1bit():
     return Path(_datadir / "parkes_1bit.fil").as_posix()
@@ -36,17 +37,21 @@ def filfile_8bit_1():
 def filfile_8bit_2():
     return Path(_datadir / "parkes_8bit_2.fil").as_posix()
 
+
 @pytest.fixture(scope="session", autouse=True)
-def filterbank_files():
+def filfiles():
     return [
         Path(_datadir / "parkes_1bit.fil").as_posix(),
         Path(_datadir / "parkes_2bit.fil").as_posix(),
         Path(_datadir / "parkes_4bit.fil").as_posix(),
-        [Path(_datadir / "parkes_8bit_1.fil").as_posix(),
-         Path(_datadir / "parkes_8bit_2.fil").as_posix()],
+        [
+            Path(_datadir / "parkes_8bit_1.fil").as_posix(),
+            Path(_datadir / "parkes_8bit_2.fil").as_posix(),
+        ],
         Path(_datadir / "tutorial.fil").as_posix(),
         Path(_datadir / "tutorial_2bit.fil").as_posix(),
     ]
+
 
 @pytest.fixture(scope="session", autouse=True)
 def fitsfile_4bit():

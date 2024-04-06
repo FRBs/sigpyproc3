@@ -338,5 +338,7 @@ class FourierSeries(np.ndarray):
         a new header parser for that file format.
         """
         header = Header.from_sigproc(filename)
-        data = np.fromfile(filename, dtype=np.float32, offset=header.hdrlens[0])
+        data = np.fromfile(
+            filename, dtype=np.float32, offset=header.stream_info.entries[0].hdrlen
+        )
         return cls(data.view(np.complex64), header)
