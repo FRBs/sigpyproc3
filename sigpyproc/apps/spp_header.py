@@ -1,18 +1,21 @@
 from __future__ import annotations
+
 import click
 
 from sigpyproc.header import Header
 from sigpyproc.io.sigproc import edit_header
 
 
-@click.group(context_settings=dict(help_option_names=["-h", "--help"], show_default=True))
+@click.group(
+    context_settings={"help_option_names": ["-h", "--help"], "show_default": True},
+)
 def main() -> None:
     pass
 
 
 @main.command()
 @click.argument("filfile", type=click.Path(exists=True))
-def print(filfile: str) -> None:
+def print(filfile: str) -> None:  # noqa: A001
     """Print the header information."""
     header = Header.from_sigproc(filfile)
     click.echo(header.to_string())
@@ -21,7 +24,10 @@ def print(filfile: str) -> None:
 @main.command()
 @click.argument("filfile", type=click.Path(exists=True))
 @click.option(
-    "-k", "--key", type=str, help="A header key to read (e.g. telescope, fch1, nsamples)"
+    "-k",
+    "--key",
+    type=str,
+    help="A header key to read (e.g. telescope, fch1, nsamples)",
 )
 def get(filfile: str, key: str) -> None:
     """Get the value of a header key."""

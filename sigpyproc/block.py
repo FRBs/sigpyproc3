@@ -1,11 +1,17 @@
 from __future__ import annotations
-import numpy as np
-from numpy import typing as npt
 
-from sigpyproc.header import Header
-from sigpyproc.timeseries import TimeSeries
+from typing import TYPE_CHECKING
+
+import numpy as np
+
 from sigpyproc.core import kernels
+from sigpyproc.timeseries import TimeSeries
 from sigpyproc.utils import roll_array
+
+if TYPE_CHECKING:
+    from typing_extensions import Self
+
+    from sigpyproc.header import Header
 
 
 class FilterbankBlock(np.ndarray):
@@ -31,15 +37,18 @@ class FilterbankBlock(np.ndarray):
     """
 
     def __new__(
-        cls, input_array: npt.ArrayLike, header: Header, dm: float = 0
-    ) -> FilterbankBlock:
+        cls,
+        input_array: np.ndarray,
+        header: Header,
+        dm: float = 0,
+    ) -> Self:
         """Create a new block array."""
         obj = np.asarray(input_array).astype(np.float32, copy=False).view(cls)
         obj.header = header
         obj.dm = dm
         return obj
 
-    def __array_finalize__(self, obj):
+    def __array_finalize__(self, obj: Self | None) -> None:
         if obj is None:
             return
         self.header = getattr(obj, "header", None)
@@ -68,13 +77,22 @@ class FilterbankBlock(np.ndarray):
             If number of time samples is not divisible by `tfactor`.
         """
         if self.shape[0] % ffactor != 0:
-            raise ValueError("Bad frequency factor given")
+            msg = f"Bad frequency factor given: {ffactor}"
+            raise ValueError(msg)
         if self.shape[1] % tfactor != 0:
-            raise ValueError("Bad time factor given")
+            msg = f"Bad time factor given: {tfactor}"
+            raise ValueError(msg)
         ar = self.transpose().ravel().copy()
-        new_ar = kernels.downsample_2d(ar, tfactor, ffactor, self.shape[0], self.shape[1])
+        new_ar = kernels.downsample_2d(
+            ar,
+            tfactor,
+            ffactor,
+            self.shape[0],
+            self.shape[1],
+        )
         new_ar = new_ar.reshape(
-            self.shape[1] // tfactor, self.shape[0] // ffactor
+            self.shape[1] // tfactor,
+            self.shape[0] // ffactor,
         ).transpose()
         changes = {
             "tsamp": self.header.tsamp * tfactor,
@@ -84,7 +102,7 @@ class FilterbankBlock(np.ndarray):
         }
         return FilterbankBlock(new_ar, self.header.new_header(changes))
 
-    def normalise(self, by: str = "mean", chans: bool = True) -> FilterbankBlock:
+    def normalise(self, *, by: str = "mean", chans: bool = True) -> FilterbankBlock:
         """Normalise the data block (Subtract mean/median, divide by std).
 
         Parameters
@@ -98,7 +116,15 @@ class FilterbankBlock(np.ndarray):
         -------
         FilterbankBlock
             A normalised version of the data block
+
+        Raises
+        ------
+        ValueError
+            If `by` is not "mean" or "median".
         """
+        if by not in {"mean", "median"}:
+            msg = f"Unknown normalisation method: {by}"
+            raise ValueError(msg)
         np_op = getattr(np, by)
         if chans:
             norm_block = self - np_op(self, axis=1)[:, np.newaxis]
@@ -121,7 +147,7 @@ class FilterbankBlock(np.ndarray):
         ts = self.sum(axis=0)
         return TimeSeries(ts, self.header.dedispersed_header(dm=self.dm))
 
-    def get_bandpass(self) -> npt.ArrayLike:
+    def get_bandpass(self) -> np.ndarray:
         """Average across each time sample for all frequencies.
 
         Returns
@@ -132,7 +158,11 @@ class FilterbankBlock(np.ndarray):
         return self.sum(axis=1)
 
     def dedisperse(
-        self, dm: float, only_valid_samples: bool = False, ref_freq: str = "ch1"
+        self,
+        dm: float,
+        *,
+        only_valid_samples: bool = False,
+        ref_freq: str = "ch1",
     ) -> FilterbankBlock:
         """Dedisperse the block.
 
@@ -165,10 +195,11 @@ class FilterbankBlock(np.ndarray):
         if only_valid_samples:
             valid_samps = self.shape[1] - delays[-1]
             if valid_samps < 0:
-                raise ValueError(
-                    f"Insufficient time samples to dedisperse to {dm} (requires "
-                    + f"at least {delays[-1]} samples, given {self.shape[1]})."
+                msg = (
+                    f"Insufficient time samples to dedisperse to {dm} (requires at "
+                    f"least {delays[-1]} samples, given {self.shape[1]})."
                 )
+                raise ValueError(msg)
             new_ar = np.empty((self.shape[0], valid_samps), dtype=self.dtype)
             for ichan in range(self.shape[0]):
                 new_ar[ichan] = self[ichan, delays[ichan] : delays[ichan] + valid_samps]
@@ -179,9 +210,12 @@ class FilterbankBlock(np.ndarray):
         return FilterbankBlock(new_ar, self.header.new_header(), dm=dm)
 
     def dmt_transform(
-        self, dm: float, dmsteps: int = 512, ref_freq: str = "ch1"
+        self,
+        dm: float,
+        dmsteps: int = 512,
+        ref_freq: str = "ch1",
     ) -> FilterbankBlock:
-        """Generate a DM-time transform of the data block by dedispersing at adjacent DM values.
+        """Generate a DM-time transform by dedispersing data block at adjacent DMs.
 
         Parameters
         ----------
@@ -196,14 +230,14 @@ class FilterbankBlock(np.ndarray):
         -------
         FilterbankBlock
             2 dimensional array of DM-time transform
-        """        
+        """
         dm_arr = dm + np.linspace(-dm, dm, dmsteps)
         new_ar = np.empty((dmsteps, self.shape[1]), dtype=self.dtype)
         for idm, dm_val in enumerate(dm_arr):
             new_ar[idm] = self.dedisperse(dm_val, ref_freq=ref_freq).get_tim()
         return FilterbankBlock(new_ar, self.header.new_header({"nchans": 1}), dm=dm)
 
-    def to_file(self, filename: str = None) -> str:
+    def to_file(self, filename: str | None = None) -> str:
         """Write the data to file.
 
         Parameters
@@ -218,9 +252,7 @@ class FilterbankBlock(np.ndarray):
         """
         if filename is None:
             mjd_after = self.header.mjd_after_nsamps(self.shape[1])
-            filename = (
-                f"{self.header.basename}_{self.header.tstart:.12f}_to_{mjd_after:.12f}.fil"
-            )
+            filename = f"{self.header.basename}_{self.header.tstart:.12f}_to_{mjd_after:.12f}.fil"
         changes = {"nbits": 32}
         out_file = self.header.prep_outfile(filename, changes, nbits=32)
         out_file.cwrite(self.transpose().ravel())

@@ -1,22 +1,24 @@
 from __future__ import annotations
-import numpy as np
+
+from typing import TYPE_CHECKING
+
 import attrs
 import h5py
+import numpy as np
 
-from numpy import typing as npt
-from typing import Callable
-
-from iqrm import iqrm_mask
+from sigpyproc.core import stats
 from sigpyproc.header import Header
-from sigpyproc.core.stats import zscore_double_mad
+
+if TYPE_CHECKING:
+    from typing import Callable
 
 
-def double_mad_mask(array: npt.ArrayLike, threshold: float = 3) -> np.ndarray:
+def double_mad_mask(array: np.ndarray, threshold: float = 3) -> np.ndarray:
     """Calculate the mask of an array using the double MAD (Modified z-score).
 
     Parameters
     ----------
-    array : :py:obj:`~numpy.typing.ArrayLike`
+    array : :py:obj:`~numpy.ndarray`
         The array to calculate the mask of.
     threshold : float, optional
         Threshold in sigmas, by default 3.0
@@ -31,14 +33,53 @@ def double_mad_mask(array: npt.ArrayLike, threshold: float = 3) -> np.ndarray:
     ValueError
         If the threshold is not positive.
     """
-    array = np.asarray(array)
     if threshold <= 0:
-        raise ValueError("threshold must be positive")
-    return np.abs(zscore_double_mad(array)) > threshold
+        msg = f"threshold must be positive, got {threshold}"
+        raise ValueError(msg)
+    return np.abs(stats.zscore_double_mad(array)) > threshold
+
+
+def iqrm_mask(array: np.ndarray, threshold: float = 3, radius: int = 5) -> np.ndarray:
+    """Calculate the mask of an array using the IQRM (Interquartile Range Method).
+
+    Parameters
+    ----------
+    array : :py:obj:`~numpy.ndarray`
+        The array to calculate the mask of.
+    threshold : float, optional
+        Threshold in sigmas, by default 3.0
+    radius : int, optional
+        Radius to calculate the IQRM, by default 5
+
+    Returns
+    -------
+    :py:obj:`~numpy.ndarray`
+        The mask for the array.
+
+    Raises
+    ------
+    ValueError
+        If the threshold is not positive.
+    """
+    if threshold <= 0:
+        msg = f"threshold must be positive, got {threshold}"
+        raise ValueError(msg)
+    mask = np.zeros_like(array, dtype="bool")
+    lags = np.concatenate([np.arange(-radius, 0), np.arange(1, radius + 1)])
+    shifted_x = np.lib.stride_tricks.as_strided(
+        np.pad(array, radius, mode="edge"),
+        shape=(len(array), 2 * radius + 1),
+        strides=array.strides * 2,
+    )
+    lagged_diffs = array[:, np.newaxis] - shifted_x[:, lags + radius]
+    lagged_diffs = lagged_diffs.T
+    for lagged_diff in lagged_diffs:
+        mask = np.logical_or(mask, np.abs(stats.zscore_iqr(lagged_diff)) > threshold)
+    return mask
 
 
 @attrs.define(auto_attribs=True, slots=True)
-class RFIMask(object):
+class RFIMask:
     threshold: float
     header: Header
     chan_mean: np.ndarray
@@ -51,7 +92,7 @@ class RFIMask(object):
     chan_mask: np.ndarray = attrs.field()
 
     @chan_mask.default
-    def _set_chan_mask(self):
+    def _set_chan_mask(self) -> np.ndarray:
         return np.zeros(self.header.nchans, dtype="bool")
 
     @property
@@ -64,7 +105,7 @@ class RFIMask(object):
         """float: Fraction of channels masked."""
         return self.num_masked * 100 / self.header.nchans
 
-    def apply_mask(self, chanmask: npt.ArrayLike) -> None:
+    def apply_mask(self, chanmask: np.ndarray) -> None:
         """Apply a channel mask to the current mask.
 
         Parameters
@@ -79,12 +120,11 @@ class RFIMask(object):
         """
         chanmask = np.asarray(chanmask, dtype="bool")
         if chanmask.size != self.header.nchans:
-            raise ValueError(
-                f"chanmask len {chanmask.size} does not match nchans {self.header.nchans}"
-            )
+            msg = f"chanmask ({chanmask.size}) not equal nchans ({self.header.nchans})"
+            raise ValueError(msg)
         self.chan_mask = np.logical_or(self.chan_mask, chanmask)
 
-    def apply_method(self, method: str) -> None:
+    def apply_method(self, method: str = "mad") -> None:
         """Apply a mask method using channel statistics.
 
         Parameters
@@ -97,21 +137,20 @@ class RFIMask(object):
         ValueError
             If the method is not supported.
         """
-        if method == "iqrm":
-            method_funcn = lambda arr, thres: iqrm_mask(  # noqa: E731
-                arr, radius=0.1 * self.header.nchans, threshold=thres
-            )
-        elif method == "mad":
+        if method == "mad":
             method_funcn = double_mad_mask
+        elif method == "iqrm":
+            method_funcn = iqrm_mask
         else:
-            raise ValueError(f"Unknown method {method}")
+            msg = f"method {method} not supported"
+            raise ValueError(msg)
         mask_var = method_funcn(self.chan_var, self.threshold)
         mask_skew = method_funcn(self.chan_skew, self.threshold)
         mask_kurtosis = method_funcn(self.chan_kurtosis, self.threshold)
         mask_stats = np.logical_or.reduce((mask_var, mask_skew, mask_kurtosis))
         self.chan_mask = np.logical_or(self.chan_mask, mask_stats)
 
-    def apply_funcn(self, custom_funcn: Callable[[npt.ArrayLike], np.ndarray]) -> None:
+    def apply_funcn(self, custom_funcn: Callable[[np.ndarray], np.ndarray]) -> None:
         """Apply a custom function to the channel mask.
 
         Parameters
@@ -125,7 +164,8 @@ class RFIMask(object):
             If the custom_funcn is not callable.
         """
         if not callable(custom_funcn):
-            raise ValueError(f"{custom_funcn} is not callable")
+            msg = f"{custom_funcn} is not callable"
+            raise TypeError(msg)
         self.chan_mask = custom_funcn(self.chan_mask)
 
     def to_file(self, filename: str | None = None) -> str:
@@ -168,12 +208,12 @@ class RFIMask(object):
             The loaded mask.
         """
         with h5py.File(filename, "r") as fp:
-            fp_attrs = {key: val for key, val in fp.attrs.items()}
+            fp_attrs = dict(fp.attrs.items())
             fp_stats = {key: np.array(val) for key, val in fp.items()}
         hdr_checked = {
             key: value
             for key, value in fp_attrs.items()
-            if key in attrs.fields_dict(Header).keys()
+            if key in attrs.fields_dict(Header)
         }
         kws = {
             "header": Header(**hdr_checked),

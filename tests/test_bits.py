@@ -1,30 +1,106 @@
-import pytest
 import numpy as np
+import pytest
+
 from sigpyproc.io import bits
 
 
-class TestUnpacking(object):
+class TestUnpacking:
     @pytest.mark.parametrize("nbits", [1, 2, 4])
-    def test_unpack_empty(self, nbits):
+    def test_unpack_empty(self, nbits: int) -> None:
         input_arr = np.empty((0,), dtype=np.uint8)
         output = bits.unpack(input_arr, nbits=nbits)
         np.testing.assert_array_equal(input_arr, output)
 
-    @pytest.mark.parametrize("nbits", [1, 2, 4])
-    def test_packunpack(self, nbits):
-        input_arr = np.arange(255, dtype=np.uint8)
-        output = bits.pack(bits.unpack(input_arr, nbits=nbits), nbits=nbits)
-        np.testing.assert_array_equal(input_arr, output)
+    @pytest.mark.parametrize("nbits", [1])
+    @pytest.mark.parametrize("bitorder", ["big", "little"])
+    @pytest.mark.parametrize("parallel", [False, True])
+    def test_unpack_1bit(self, nbits: int, bitorder: str, parallel: bool) -> None:  # noqa: FBT001
+        rng = np.random.default_rng()
+        arr = rng.integers(255, size=2**10, dtype=np.uint8)
+        expected = np.unpackbits(arr, bitorder=bitorder)  # type: ignore [arg-type]
+        output_buff = np.zeros(arr.size * 8 // nbits, dtype=np.uint8)
+        output_buff = bits.unpack(
+            arr,
+            nbits,
+            unpacked=output_buff,
+            bitorder=bitorder,
+            parallel=parallel,
+        )
+        output_return = bits.unpack(
+            arr,
+            nbits,
+            unpacked=None,
+            bitorder=bitorder,
+            parallel=parallel,
+        )
+        np.testing.assert_array_equal(output_buff, expected, strict=True)
+        np.testing.assert_array_equal(output_return, expected, strict=True)
 
-    def test_unpack_fail(self):
+    @pytest.mark.parametrize("nbits", [1])
+    @pytest.mark.parametrize("bitorder", ["big", "little"])
+    @pytest.mark.parametrize("parallel", [False, True])
+    def test_pack_1bit(self, nbits: int, bitorder: str, parallel: bool) -> None:  # noqa: FBT001
+        rng = np.random.default_rng()
+        arr = rng.integers((1 << nbits) - 1, size=2**10, dtype=np.uint8)
+        expected = np.packbits(arr, bitorder=bitorder)  # type: ignore [arg-type]
+        output_buff = np.zeros(arr.size // 8, dtype=np.uint8)
+        output_buff = bits.pack(
+            arr,
+            nbits,
+            packed=output_buff,
+            bitorder=bitorder,
+            parallel=parallel,
+        )
+        output_return = bits.pack(
+            arr,
+            nbits,
+            packed=None,
+            bitorder=bitorder,
+            parallel=parallel,
+        )
+        np.testing.assert_array_equal(output_buff, expected, strict=True)
+        np.testing.assert_array_equal(output_return, expected, strict=True)
+
+    @pytest.mark.parametrize("nbits", [1, 2, 4])
+    @pytest.mark.parametrize("bitorder", ["big", "little"])
+    @pytest.mark.parametrize("parallel", [False, True])
+    def test_packunpack(self, nbits: int, bitorder: str, parallel: bool) -> None:  # noqa: FBT001
+        rng = np.random.default_rng()
+        arr = rng.integers(255, size=2**10, dtype=np.uint8)
+        tmp_unpack = np.zeros(arr.size * 8 // nbits, dtype=np.uint8)
+        tmp_unpack = bits.unpack(
+            arr,
+            nbits=nbits,
+            unpacked=tmp_unpack,
+            bitorder=bitorder,
+            parallel=parallel,
+        )
+        output_buff = np.zeros_like(arr)
+        output_buff = bits.pack(
+            tmp_unpack,
+            nbits=nbits,
+            packed=output_buff,
+            bitorder=bitorder,
+            parallel=parallel,
+        )
+        output_return = bits.pack(
+            bits.unpack(arr, nbits=nbits, bitorder=bitorder, parallel=parallel),
+            nbits=nbits,
+            bitorder=bitorder,
+            parallel=parallel,
+        )
+        np.testing.assert_array_equal(output_buff, arr, strict=True)
+        np.testing.assert_array_equal(output_return, arr, strict=True)
+
+    def test_unpack_fail(self) -> None:
         nbits = 10
         input_arr = np.arange(255, dtype=np.uint8)
         with np.testing.assert_raises(ValueError):
             bits.unpack(input_arr, nbits=nbits)
 
 
-class TestBitsInfo(object):
-    def test_nbits_4(self):
+class TestBitsInfo:
+    def test_nbits_4(self) -> None:
         bitsinfo = bits.BitsInfo(4)
         np.testing.assert_equal(bitsinfo.nbits, 4)
         np.testing.assert_equal(bitsinfo.dtype, np.uint8)

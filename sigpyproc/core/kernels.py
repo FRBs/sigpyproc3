@@ -1,75 +1,181 @@
+from collections.abc import Callable
+
 import numpy as np
 from numba import njit, prange, types
-from numba.extending import overload
 from numba.experimental import jitclass
-from scipy import constants
+from numba.extending import overload
+
+CONST_C_VAL = 299792458.0  # Speed of light in m/s (astropy.constants.c.value)
 
 
-@njit("u1[:](u1[:], u1[:])", cache=True, parallel=True)
-def unpack1_8(array, unpacked):
-    bitfact = 8
+def packunpack_njit(func: types.FunctionType) -> types.FunctionType:
+    return njit(
+        "void(u1[::1], u1[::1])",
+        cache=True,
+        parallel=True,
+        fastmath=True,
+        locals={"pos": types.i8},
+    )(func)
+
+
+def packunpack_njit_serial(func: types.FunctionType) -> types.FunctionType:
+    return njit(
+        "void(u1[::1], u1[::1])",
+        cache=True,
+        parallel=False,
+        fastmath=True,
+        locals={"pos": types.i8},
+    )(func)
+
+
+@packunpack_njit
+def unpack1_8_big(array: np.ndarray, unpacked: np.ndarray) -> None:
     for ii in prange(array.size):
-        unpacked[ii * bitfact + 0] = (array[ii] >> 7) & 1
-        unpacked[ii * bitfact + 1] = (array[ii] >> 6) & 1
-        unpacked[ii * bitfact + 2] = (array[ii] >> 5) & 1
-        unpacked[ii * bitfact + 3] = (array[ii] >> 4) & 1
-        unpacked[ii * bitfact + 4] = (array[ii] >> 3) & 1
-        unpacked[ii * bitfact + 5] = (array[ii] >> 2) & 1
-        unpacked[ii * bitfact + 6] = (array[ii] >> 1) & 1
-        unpacked[ii * bitfact + 7] = (array[ii] >> 0) & 1
-    return unpacked
+        pos = ii * 8
+        for jj in range(8):
+            unpacked[pos + (7 - jj)] = (array[ii] >> jj) & 1
 
 
-@njit("u1[:](u1[:], u1[:])", cache=True, parallel=True)
-def unpack2_8(array, unpacked):
-    bitfact = 8 // 2
+@packunpack_njit
+def unpack1_8_little(array: np.ndarray, unpacked: np.ndarray) -> None:
     for ii in prange(array.size):
-        unpacked[ii * bitfact + 0] = (array[ii] & 0xC0) >> 6
-        unpacked[ii * bitfact + 1] = (array[ii] & 0x30) >> 4
-        unpacked[ii * bitfact + 2] = (array[ii] & 0x0C) >> 2
-        unpacked[ii * bitfact + 3] = (array[ii] & 0x03) >> 0
-    return unpacked
+        pos = ii * 8
+        for jj in range(8):
+            unpacked[pos + jj] = (array[ii] >> jj) & 1
 
 
-@njit("u1[:](u1[:], u1[:])", cache=True, parallel=True)
-def unpack4_8(array, unpacked):
-    bitfact = 8 // 4
+@packunpack_njit
+def unpack2_8_big(array: np.ndarray, unpacked: np.ndarray) -> None:
     for ii in prange(array.size):
-        unpacked[ii * bitfact + 0] = (array[ii] & 0xF0) >> 4
-        unpacked[ii * bitfact + 1] = (array[ii] & 0x0F) >> 0
+        pos = ii * 4
+        unpacked[pos + 3] = (array[ii] & 0x03) >> 0
+        unpacked[pos + 2] = (array[ii] & 0x0C) >> 2
+        unpacked[pos + 1] = (array[ii] & 0x30) >> 4
+        unpacked[pos + 0] = (array[ii] & 0xC0) >> 6
 
-    return unpacked
+
+@packunpack_njit
+def unpack2_8_little(array: np.ndarray, unpacked: np.ndarray) -> None:
+    for ii in prange(array.size):
+        pos = ii * 4
+        unpacked[pos + 0] = (array[ii] & 0x03) >> 0
+        unpacked[pos + 1] = (array[ii] & 0x0C) >> 2
+        unpacked[pos + 2] = (array[ii] & 0x30) >> 4
+        unpacked[pos + 3] = (array[ii] & 0xC0) >> 6
 
 
-@njit("u1[:](u1[:])", cache=True, parallel=True)
-def pack2_8(array):
-    bitfact = 8 // 2
-    packed = np.zeros(shape=array.size // bitfact, dtype=np.uint8)
-    for ii in prange(array.size // bitfact):
+@packunpack_njit
+def unpack4_8_big(array: np.ndarray, unpacked: np.ndarray) -> None:
+    for ii in prange(array.size):
+        pos = ii * 2
+        unpacked[pos + 1] = (array[ii] & 0x0F) >> 0
+        unpacked[pos + 0] = (array[ii] & 0xF0) >> 4
+
+
+@packunpack_njit
+def unpack4_8_little(array: np.ndarray, unpacked: np.ndarray) -> None:
+    for ii in prange(array.size):
+        pos = ii * 2
+        unpacked[pos + 0] = (array[ii] & 0x0F) >> 0
+        unpacked[pos + 1] = (array[ii] & 0xF0) >> 4
+
+
+@packunpack_njit
+def pack1_8_big(array: np.ndarray, packed: np.ndarray) -> None:
+    for ii in prange(packed.size):
+        pos = ii * 8
         packed[ii] = (
-            (array[ii * 4] << 6)
-            | (array[ii * 4 + 1] << 4)
-            | (array[ii * 4 + 2] << 2)
-            | array[ii * 4 + 3]
+            (array[pos + 0] << 7)
+            | (array[pos + 1] << 6)
+            | (array[pos + 2] << 5)
+            | (array[pos + 3] << 4)
+            | (array[pos + 4] << 3)
+            | (array[pos + 5] << 2)
+            | (array[pos + 6] << 1)
+            | array[pos + 7]
         )
 
-    return packed
+
+@packunpack_njit
+def pack1_8_little(array: np.ndarray, packed: np.ndarray) -> None:
+    for ii in prange(packed.size):
+        pos = ii * 8
+        packed[ii] = (
+            (array[pos + 7] << 7)
+            | (array[pos + 6] << 6)
+            | (array[pos + 5] << 5)
+            | (array[pos + 4] << 4)
+            | (array[pos + 3] << 3)
+            | (array[pos + 2] << 2)
+            | (array[pos + 1] << 1)
+            | array[pos + 0]
+        )
 
 
-@njit("u1[:](u1[:])", cache=True, parallel=True)
-def pack4_8(array):
-    bitfact = 8 // 4
-    packed = np.zeros(shape=array.size // bitfact, dtype=np.uint8)
-    for ii in prange(array.size // bitfact):
-        packed[ii] = (array[ii * 2] << 4) | array[ii * 2 + 1]
+@packunpack_njit
+def pack2_8_big(array: np.ndarray, packed: np.ndarray) -> None:
+    for ii in prange(packed.size):
+        pos = ii * 4
+        packed[ii] = (
+            (array[pos + 0] << 6)
+            | (array[pos + 1] << 4)
+            | (array[pos + 2] << 2)
+            | array[pos + 3]
+        )
 
-    return packed
+
+@packunpack_njit
+def pack2_8_little(array: np.ndarray, packed: np.ndarray) -> None:
+    for ii in prange(packed.size):
+        pos = ii * 4
+        packed[ii] = (
+            (array[pos + 3] << 6)
+            | (array[pos + 2] << 4)
+            | (array[pos + 1] << 2)
+            | array[pos + 0]
+        )
+
+
+@packunpack_njit
+def pack4_8_big(array: np.ndarray, packed: np.ndarray) -> None:
+    for ii in prange(packed.size):
+        pos = ii * 2
+        packed[ii] = (array[pos + 0] << 4) | array[pos + 1]
+
+
+@packunpack_njit
+def pack4_8_little(array: np.ndarray, packed: np.ndarray) -> None:
+    for ii in prange(packed.size):
+        pos = ii * 2
+        packed[ii] = (array[pos + 1] << 4) | array[pos + 0]
+
+
+unpack1_8_big_serial = packunpack_njit_serial(unpack1_8_big.py_func)
+unpack1_8_little_serial = packunpack_njit_serial(unpack1_8_little.py_func)
+unpack2_8_big_serial = packunpack_njit_serial(unpack2_8_big.py_func)
+unpack2_8_little_serial = packunpack_njit_serial(unpack2_8_little.py_func)
+unpack4_8_big_serial = packunpack_njit_serial(unpack4_8_big.py_func)
+unpack4_8_little_serial = packunpack_njit_serial(unpack4_8_little.py_func)
+pack1_8_big_serial = packunpack_njit_serial(pack1_8_big.py_func)
+pack1_8_little_serial = packunpack_njit_serial(pack1_8_little.py_func)
+pack2_8_big_serial = packunpack_njit_serial(pack2_8_big.py_func)
+pack2_8_little_serial = packunpack_njit_serial(pack2_8_little.py_func)
+pack4_8_big_serial = packunpack_njit_serial(pack4_8_big.py_func)
+pack4_8_little_serial = packunpack_njit_serial(pack4_8_little.py_func)
 
 
 @njit(cache=True)
-def np_apply_along_axis(func1d, axis, arr):
-    assert arr.ndim == 2
-    assert axis in {0, 1}
+def np_apply_along_axis(
+    func1d: Callable[[np.ndarray], np.ndarray],
+    axis: int,
+    arr: np.ndarray,
+) -> np.ndarray:
+    if arr.ndim != 2:
+        msg = f"np_apply_along_axis only works on 2D arrays, got {arr.ndim}"
+        raise ValueError(msg)
+    if axis not in {0, 1}:
+        msg = f"axis should be 0 or 1, got {axis}"
+        raise ValueError(msg)
     if axis == 0:
         result = np.empty(arr.shape[1], dtype=arr.dtype)
         for ii in range(arr.shape[1]):
@@ -82,7 +188,7 @@ def np_apply_along_axis(func1d, axis, arr):
 
 
 @njit(cache=True)
-def np_mean(array, axis):
+def np_mean(array: np.ndarray, axis: int) -> np.ndarray:
     return np_apply_along_axis(np.mean, axis, array)
 
 
@@ -100,7 +206,7 @@ def ol_downcast(intype, result):
 
 
 @njit(cache=True)
-def downsample_1d(array, factor):
+def downsample_1d(array: np.ndarray, factor: int) -> np.ndarray:
     reshaped_ar = np.reshape(array, (array.size // factor, factor))
     return np_mean(reshaped_ar, 1)
 
@@ -111,7 +217,13 @@ def downsample_1d(array, factor):
     parallel=True,
     locals={"temp": types.f8},
 )
-def downsample_2d(array, tfactor, ffactor, nchans, nsamps):
+def downsample_2d(
+    array: np.ndarray,
+    tfactor: int,
+    ffactor: int,
+    nchans: int,
+    nsamps: int,
+) -> np.ndarray:
     nsamps_new = nsamps // tfactor
     nchans_new = nchans // ffactor
     totfactor = ffactor * tfactor
@@ -133,7 +245,13 @@ def downsample_2d(array, tfactor, ffactor, nchans, nsamps):
     cache=True,
     parallel=True,
 )
-def extract_tim(inarray, outarray, nchans, nsamps, index):
+def extract_tim(
+    inarray: np.ndarray,
+    outarray: np.ndarray,
+    nchans: int,
+    nsamps: int,
+    index: int,
+) -> None:
     for isamp in prange(nsamps):
         for ichan in range(nchans):
             outarray[index + isamp] += inarray[nchans * isamp + ichan]
@@ -236,7 +354,9 @@ def fold(
     tobs = total_nsamps * tsamp
     for isamp in range(nsamps - maxdelay):
         tj = (isamp + index) * tsamp
-        phase = nbins * tj * (1 + accel * (tj - tobs) / (2 * constants.c)) / period + 0.5
+        phase = (
+            nbins * tj * (1 + accel * (tj - tobs) / (2 * CONST_C_VAL)) / period + 0.5
+        )
         phasebin = abs(int(phase)) % nbins
         subint = (isamp + index) // factor1
         pos1 = (subint * nbins * nsubs) + phasebin
@@ -254,7 +374,7 @@ def resample_tim(array, accel, tsamp):
     nsamps = len(array) - 1 if accel > 0 else len(array)
     resampled = np.zeros(nsamps, dtype=array.dtype)
 
-    partial_calc = (accel * tsamp) / (2 * constants.c)
+    partial_calc = (accel * tsamp) / (2 * CONST_C_VAL)
     tot_drift = partial_calc * (nsamps // 2) ** 2
     last_bin = 0
     for ii in range(nsamps):
@@ -297,7 +417,7 @@ def form_spec(fft_ar, interpolated=False):
         for ispec in range(specsize):
             rr = fft_ar[2 * ispec]
             ii = fft_ar[2 * ispec + 1]
-            aa = rr ** 2 + ii ** 2
+            aa = rr**2 + ii**2
             bb = ((rr - rl) ** 2 + (ii - il) ** 2) / 2
             spec_arr[ispec] = np.sqrt(max(aa, bb))
 
@@ -305,7 +425,9 @@ def form_spec(fft_ar, interpolated=False):
             il = ii
     else:
         for ispec in range(specsize):
-            spec_arr[ispec] = np.sqrt(fft_ar[2 * ispec] ** 2 + fft_ar[2 * ispec + 1] ** 2)
+            spec_arr[ispec] = np.sqrt(
+                fft_ar[2 * ispec] ** 2 + fft_ar[2 * ispec + 1] ** 2
+            )
     return spec_arr
 
 
@@ -367,9 +489,9 @@ def remove_rednoise(fftbuffer, startwidth, endwidth, endfreq, tsamp):
 
         oldinbuf[: 2 * numread_new] = newinbuf[: 2 * numread_new]
 
-    outbuffer[windex : windex + 2 * numread_old] = oldinbuf[: 2 * numread_old] / np.sqrt(
-        mean_old
-    )
+    outbuffer[windex : windex + 2 * numread_old] = oldinbuf[
+        : 2 * numread_old
+    ] / np.sqrt(mean_old)
     return outbuffer
 
 
@@ -385,21 +507,20 @@ def sum_harms(spec_arr, sum_arr, harm_arr, fact_arr, nharms, nsamps, nfold):
             fact_arr[kk] += 2 * kk + 1
 
 
-MomentsBagSpec = [
-    ("nchans", types.i4),
-    ("m1", types.f4[:]),
-    ("m2", types.f4[:]),
-    ("m3", types.f4[:]),
-    ("m4", types.f4[:]),
-    ("min", types.f4[:]),
-    ("max", types.f4[:]),
-    ("count", types.i4[:]),
-]
-
-
-@jitclass(MomentsBagSpec)
-class MomentsBag(object):
-    def __init__(self, nchans):
+@jitclass(
+    [
+        ("nchans", types.i4),
+        ("m1", types.f4[:]),
+        ("m2", types.f4[:]),
+        ("m3", types.f4[:]),
+        ("m4", types.f4[:]),
+        ("min", types.f4[:]),
+        ("max", types.f4[:]),
+        ("count", types.i4[:]),
+    ],
+)
+class MomentsBag:
+    def __init__(self, nchans: int) -> None:
         self.nchans = nchans
         self.m1 = np.zeros(nchans, dtype=np.float32)
         self.m2 = np.zeros(nchans, dtype=np.float32)
@@ -411,7 +532,12 @@ class MomentsBag(object):
 
 
 @njit(cache=True, parallel=True, locals={"val": types.f8})
-def compute_online_moments_basic(array, bag, nsamps, startflag):
+def compute_online_moments_basic(
+    array: np.ndarray,
+    bag: MomentsBag,
+    nsamps: int,
+    startflag: int,
+) -> None:
     if startflag == 0:
         for ii in range(bag.nchans):
             bag.max[ii] = array[ii]
@@ -433,8 +559,13 @@ def compute_online_moments_basic(array, bag, nsamps, startflag):
 
 
 @njit(cache=True, parallel=True, locals={"val": types.f8})
-def compute_online_moments(array, bag, nsamps, startflag):
-    """Computing central moments in one pass through the data."""
+def compute_online_moments(
+    array: np.ndarray,
+    bag: MomentsBag,
+    nsamps: int,
+    startflag: int,
+) -> None:
+    """Compute central moments in one pass through the data."""
     if startflag == 0:
         for ii in range(bag.nchans):
             bag.max[ii] = array[ii]
@@ -464,14 +595,16 @@ def compute_online_moments(array, bag, nsamps, startflag):
 
 
 @njit(cache=True, parallel=False, locals={"val": types.f8})
-def add_online_moments(bag_a, bag_b, bag_c):
+def add_online_moments(bag_a: MomentsBag, bag_b: MomentsBag, bag_c: MomentsBag) -> None:
     bag_c.count = bag_a.count + bag_b.count
     delta = bag_b.m1 - bag_a.m1
     delta2 = delta * delta
     delta3 = delta * delta2
     delta4 = delta2 * delta2
 
-    bag_c.m1 = (bag_a.count * bag_a.m1 + bag_b.count * bag_b.m1) / bag_c.count
+    bag_c.m1 = (
+        bag_a.count * bag_a.m1 / bag_c.count + bag_b.count * bag_b.m1 / bag_c.count
+    )
     bag_c.m2 = bag_a.m2 + bag_b.m2 + delta2 * bag_a.count * bag_b.count / bag_c.count
 
     bag_c.m3 = (
@@ -481,7 +614,7 @@ def add_online_moments(bag_a, bag_b, bag_c):
         * bag_a.count
         * bag_b.count
         * (bag_a.count - bag_b.count)
-        / (bag_c.count ** 2)
+        / (bag_c.count**2)
     )
     bag_c.m3 += (
         3 * delta * (bag_a.count * bag_b.m2 - bag_b.count * bag_a.m2) / bag_c.count
@@ -493,14 +626,14 @@ def add_online_moments(bag_a, bag_b, bag_c):
         + delta4
         * bag_a.count
         * bag_b.count
-        * (bag_a.count ** 2 - bag_a.count * bag_b.count + bag_b.count ** 2)
-        / (bag_c.count ** 3)
+        * (bag_a.count**2 - bag_a.count * bag_b.count + bag_b.count**2)
+        / (bag_c.count**3)
     )
     bag_c.m4 += (
         6
         * delta2
         * (bag_a.count * bag_a.count * bag_b.m2 + bag_b.count * bag_b.count * bag_a.m2)
-        / (bag_c.count ** 2)
+        / (bag_c.count**2)
     )
     bag_c.m4 += (
         4 * delta * (bag_a.count * bag_b.m3 - bag_b.count * bag_a.m3) / bag_c.count

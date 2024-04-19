@@ -1,15 +1,19 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import numpy as np
-
+from astropy import constants, units
 from bidict import bidict
-from astropy import units, constants
-from typing import Dict, Tuple, Callable
 
+if TYPE_CHECKING:
+    from typing import Callable
 
 DM_CONSTANT_LK = 4.148808e3  # L&K Handbook of Pulsar Astronomy
-DM_CONSTANT_MT = 1 / 0.000241  # TEMPO2 Manchester & Taylor (1972)  # noqa: WPS432
+DM_CONSTANT_MT = 1 / 0.000241  # TEMPO2 Manchester & Taylor (1972)
 DM_CONSTANT_SI = (
-    (constants.e.esu ** 2 / (2 * np.pi * constants.m_e * constants.c)).to(
-        units.s * units.MHz ** 2 * units.cm ** 3 / units.pc
+    (constants.e.esu**2 / (2 * np.pi * constants.m_e * constants.c)).to(
+        units.s * units.MHz**2 * units.cm**3 / units.pc,
     )
 ).value  # Precise SI constants
 
@@ -104,7 +108,7 @@ data_types = bidict(
         5: "complex spectrum",
         6: "dedispersed subbands",
         10: "PSRFITS",
-    }
+    },
 )
 
 # convert between types from the struct module and numpy
@@ -115,7 +119,7 @@ struct_to_numpy = {"I": "uint", "d": "float", "str": "S256"}
 telescope_lats_longs = {"Effelsberg": (50.52485, 6.883593)}
 
 # useful for creating inf files
-presto_inf: Dict[str, Tuple[str, Callable, str]] = {
+presto_inf: dict[str, tuple[str, Callable, str]] = {
     "Data file name without suffix": ("basename", str, "s"),
     "Telescope used": ("telescope", str, "s"),
     "Instrument used": ("backend", str, "s"),
@@ -148,7 +152,7 @@ psrfits_to_sigpyproc = {
 }
 
 sigpyproc_to_psrfits = dict(
-    zip(psrfits_to_sigpyproc.values(), psrfits_to_sigpyproc.keys())
+    zip(psrfits_to_sigpyproc.values(), psrfits_to_sigpyproc.keys()),
 )
 
 sigproc_to_tempo = {0: "g", 1: "3", 3: "f", 4: "7", 6: "1", 8: "g", 5: "8"}

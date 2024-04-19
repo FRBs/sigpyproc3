@@ -1,5 +1,7 @@
 from __future__ import annotations
-from typing import ClassVar, Any
+
+from typing import Any, ClassVar
+
 import attrs
 import numpy as np
 
@@ -9,18 +11,27 @@ nbits_to_dtype = {1: "<u1", 2: "<u1", 4: "<u1", 8: "<u1", 16: "<u2", 32: "<f4"}
 
 
 def unpack(
-    array: np.ndarray, nbits: int, unpacked: np.ndarray | None = None
+    array: np.ndarray,
+    nbits: int,
+    unpacked: np.ndarray | None = None,
+    *,
+    bitorder: str = "big",
+    parallel: bool = False,
 ) -> np.ndarray:
-    """Unpack 1, 2 and 4 bit array. Only unpacks in big endian bit ordering.
+    """Unpack 1, 2 and 4-bit data packed as 8-bit numpy array.
 
     Parameters
     ----------
     array : numpy.ndarray
         Array to unpack.
     nbits : int
-        Number of bits to unpack.
+        Number of bits of the packed data.
     unpacked : numpy.ndarray, optional
         Array to unpack into.
+    bitorder : str, optional
+        Bit order of the packed data.
+    parallel : bool, optional
+        Whether to use parallel unpacking.
 
     Returns
     -------
@@ -30,37 +41,55 @@ def unpack(
     Raises
     ------
     ValueError
+        if input array is not uint8 type
         if nbits is not 1, 2, or 4
+        if bitorder is not 'big' or 'little'
+        if unpacked array is not of the correct size
     """
     if array.dtype != np.uint8:
-        raise ValueError(f"Input array must be uint8, got {array.dtype}")
+        msg = f"Input array must be uint8, got {array.dtype}"
+        raise ValueError(msg)
+    if nbits not in {1, 2, 4}:
+        msg = f"nbits must be 1, 2, or 4, got {nbits}"
+        raise ValueError(msg)
+    if (not bitorder) or (bitorder[0] not in {"b", "l"}):
+        msg = f"bitorder must be 'big' or 'little', got {bitorder}"
+        raise ValueError(msg)
+    bitorder_str = "big" if bitorder[0] == "b" else "little"
+    parallel_str = "" if parallel else "_serial"
     bitfact = 8 // nbits
     if unpacked is None:
         unpacked = np.zeros(shape=array.size * bitfact, dtype=np.uint8)
     elif unpacked.size != array.size * bitfact:
-        raise ValueError(
-            f"Unpacking array must be {bitfact} x input size, got {unpacked.size}"
-        )
-    if nbits == 1:
-        kernels.unpack1_8(array, unpacked)
-    elif nbits == 2:
-        kernels.unpack2_8(array, unpacked)
-    elif nbits == 4:
-        kernels.unpack4_8(array, unpacked)
-    else:
-        raise ValueError(f"nbits must be 1, 2, or 4, got {nbits}")
+        msg = f"Unpacking array must be {bitfact} x input size, got {unpacked.size}"
+        raise ValueError(msg)
+    unpack_func = getattr(kernels, f"unpack{nbits:d}_8_{bitorder_str}{parallel_str}")
+    unpack_func(array, unpacked)
     return unpacked
 
 
-def pack(array, nbits):
-    """Pack 1, 2 and 4 bit array. Only packs in big endian bit ordering.
+def pack(
+    array: np.ndarray,
+    nbits: int,
+    packed: np.ndarray | None = None,
+    *,
+    bitorder: str = "big",
+    parallel: bool = False,
+) -> np.ndarray:
+    """Pack 1, 2 and 4-bit data into 8-bit numpy array.
 
     Parameters
     ----------
     array : numpy.ndarray
         Array to pack.
     nbits : int
-        Number of bits to pack.
+        Number of bits of the unpacked data.
+    packed : numpy.ndarray, optional
+        Array to pack into.
+    bitorder : str, optional
+        Bit order in which to pack the data.
+    parallel : bool, optional
+        Whether to use parallel packing.
 
     Returns
     -------
@@ -70,22 +99,35 @@ def pack(array, nbits):
     Raises
     ------
     ValueError
+        if input array is not uint8 type
         if nbits is not 1, 2, or 4
+        if bitorder is not 'big' or 'little'
+        if unpacked array is not of the correct size
     """
-    assert array.dtype == np.uint8, "Array must be uint8"
-    if nbits == 1:
-        packed = np.packbits(array, bitorder="big")
-    elif nbits == 2:
-        packed = kernels.pack2_8(array)
-    elif nbits == 4:
-        packed = kernels.pack4_8(array)
-    else:
-        raise ValueError("nbits must be 1, 2, or 4")
+    if array.dtype != np.uint8:
+        msg = f"Input array must be uint8, got {array.dtype}"
+        raise ValueError(msg)
+    if nbits not in {1, 2, 4}:
+        msg = f"nbits must be 1, 2, or 4, got {nbits}"
+        raise ValueError(msg)
+    if (not bitorder) or (bitorder[0] not in {"b", "l"}):
+        msg = f"bitorder must be 'big' or 'little', got {bitorder}"
+        raise ValueError(msg)
+    bitorder_str = "big" if bitorder[0] == "b" else "little"
+    parallel_str = "" if parallel else "_serial"
+    bitfact = 8 // nbits
+    if packed is None:
+        packed = np.zeros(shape=array.size // bitfact, dtype=np.uint8)
+    elif packed.size != array.size // bitfact:
+        msg = f"packing array must be input size // {bitfact}, got {packed.size}"
+        raise ValueError(msg)
+    pack_func = getattr(kernels, f"pack{nbits:d}_8_{bitorder_str}{parallel_str}")
+    pack_func(array, packed)
     return packed
 
 
 @attrs.define(auto_attribs=True, frozen=True, slots=True)
-class BitsInfo(object):
+class BitsInfo:
     """Class to handle bits info.
 
     Raises
@@ -157,12 +199,12 @@ class BitsInfo(object):
         attributes = attrs.asdict(self)
         prop = {
             key: getattr(self, key)
-            for key, value in vars(type(self)).items()  # noqa: WPS421
+            for key, value in vars(type(self)).items()
             if isinstance(value, property)
         }
         attributes.update(prop)
         return attributes
 
     @digi_sigma.default
-    def _set_digi_sigma(self):
+    def _set_digi_sigma(self) -> float:
         return self.default_sigma[self.nbits]

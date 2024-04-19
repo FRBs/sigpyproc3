@@ -1,43 +1,70 @@
 import numpy as np
-from sigpyproc.core import kernels, stats, rfi
+import pytest
+
+from sigpyproc.core import kernels, rfi, stats
 from sigpyproc.header import Header
 
 
-class TestKernels(object):
-    def test_unpack1_8(self):
-        input_arr = np.array([0, 2, 7, 23], dtype=np.uint8)
-        expected_bit1 = np.array(
-            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0,
-             0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 0, 1, 1, 1], dtype=np.uint8
+class TestKernels:
+    def test_unpack1_8(self) -> None:
+        input_arr = np.array([7, 23], dtype=np.uint8)
+        expected_big = np.array(
+            [0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 0, 1, 1, 1],
+            dtype=np.uint8,
         )
-        unpacked = np.empty_like(expected_bit1)
-        np.testing.assert_array_equal(expected_bit1, kernels.unpack1_8(input_arr, unpacked))
-
-    def test_unpack2_8(self):
-        input_arr = np.array([0, 2, 7, 23], dtype=np.uint8)
-        expected_bit2 = np.array(
-            [0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 1, 3, 0, 1, 1, 3], dtype=np.uint8
+        expected_little = np.array(
+            [1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1, 0, 0, 0],
+            dtype=np.uint8,
         )
-        unpacked = np.empty_like(expected_bit2)
-        np.testing.assert_array_equal(expected_bit2, kernels.unpack2_8(input_arr, unpacked))
+        unpacked_big = np.empty_like(expected_big)
+        unpacked_little = np.empty_like(expected_little)
+        kernels.unpack1_8_big(input_arr, unpacked_big)
+        kernels.unpack1_8_little(input_arr, unpacked_little)
+        np.testing.assert_array_equal(unpacked_big, expected_big, strict=True)
+        np.testing.assert_array_equal(unpacked_little, expected_little, strict=True)
 
-    def test_unpack4_8(self):
-        input_arr = np.array([0, 2, 7, 23], dtype=np.uint8)
-        expected_bit4 = np.array([0, 0, 0, 2, 0, 7, 1, 7], dtype=np.uint8)
-        unpacked = np.empty_like(expected_bit4)
-        np.testing.assert_array_equal(expected_bit4, kernels.unpack4_8(input_arr, unpacked))
+    def test_unpack2_8(self) -> None:
+        input_arr = np.array([7, 23], dtype=np.uint8)
+        expected_big = np.array(
+            [0, 0, 1, 3, 0, 1, 1, 3],
+            dtype=np.uint8,
+        )
+        expected_little = np.array(
+            [3, 1, 0, 0, 3, 1, 1, 0],
+            dtype=np.uint8,
+        )
+        unpacked_big = np.empty_like(expected_big)
+        unpacked_little = np.empty_like(expected_little)
+        kernels.unpack2_8_big(input_arr, unpacked_big)
+        kernels.unpack2_8_little(input_arr, unpacked_little)
+        np.testing.assert_array_equal(unpacked_big, expected_big, strict=True)
+        np.testing.assert_array_equal(unpacked_little, expected_little, strict=True)
 
-    def test_pack2_8(self):
-        input_arr = np.arange(255, dtype=np.uint8)
-        unpacked = np.empty(input_arr.size * 4, dtype="ubyte")
-        output = kernels.pack2_8(kernels.unpack2_8(input_arr, unpacked))
-        np.testing.assert_array_equal(input_arr, output)
+    def test_unpack4_8(self) -> None:
+        input_arr = np.array([7, 23], dtype=np.uint8)
+        expected_big = np.array([0, 7, 1, 7], dtype=np.uint8)
+        expected_little = np.array([7, 0, 7, 1], dtype=np.uint8)
+        unpacked_big = np.empty_like(expected_big)
+        unpacked_little = np.empty_like(expected_little)
+        kernels.unpack4_8_big(input_arr, unpacked_big)
+        kernels.unpack4_8_little(input_arr, unpacked_little)
+        np.testing.assert_array_equal(unpacked_big, expected_big, strict=True)
+        np.testing.assert_array_equal(unpacked_little, expected_little, strict=True)
 
-    def test_pack4_8(self):
-        input_arr = np.arange(255, dtype=np.uint8)
-        unpacked = np.empty(input_arr.size * 2, dtype="ubyte")
-        output = kernels.pack4_8(kernels.unpack4_8(input_arr, unpacked))
-        np.testing.assert_array_equal(input_arr, output)
+    @pytest.mark.parametrize("nbits", [1, 2, 4])
+    @pytest.mark.parametrize("bitorder", ["big", "little"])
+    @pytest.mark.parametrize("parallel", [False, True])
+    def test_pack(self, nbits: int, bitorder: str, parallel: bool) -> None:  # noqa: FBT001
+        rng = np.random.default_rng()
+        arr = rng.integers(255, size=2**10, dtype=np.uint8)
+        parallel_str = "" if parallel else "_serial"
+        unpack_func = getattr(kernels, f"unpack{nbits:d}_8_{bitorder}{parallel_str}")
+        pack_func = getattr(kernels, f"pack{nbits:d}_8_{bitorder}{parallel_str}")
+        unpacked = np.zeros(arr.size * 8 // nbits, dtype=np.uint8)
+        unpack_func(arr, unpacked)
+        packed = np.empty_like(arr)
+        pack_func(unpacked, packed)
+        np.testing.assert_array_equal(packed, arr, strict=True)
 
 
 class TestStats(object):

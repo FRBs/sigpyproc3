@@ -1,14 +1,22 @@
 from __future__ import annotations
-from typing_extensions import Buffer
-from typing import Callable
+
 import io
 import os
 import warnings
-import numpy as np
+from typing import TYPE_CHECKING
 
-from sigpyproc.io.bits import BitsInfo, unpack, pack
-from sigpyproc.io.sigproc import StreamInfo
+import numpy as np
+from typing_extensions import Buffer
+
+from sigpyproc.io.bits import BitsInfo, pack, unpack
 from sigpyproc.utils import get_logger
+
+if TYPE_CHECKING:
+    from typing import Callable
+
+    from typing_extensions import Self
+
+    from sigpyproc.io.sigproc import StreamInfo
 
 
 def allocate_buffer(allocator: Callable[[int], Buffer], nbytes: int) -> Buffer:
@@ -38,24 +46,29 @@ def allocate_buffer(allocator: Callable[[int], Buffer], nbytes: int) -> Buffer:
         if the allocated buffer is not of the expected size.
     """
     if nbytes <= 0:
-        raise ValueError(f"Requested buffer size is invalid {nbytes}")
+        msg = f"Requested buffer size is invalid {nbytes}"
+        raise ValueError(msg)
     try:
         buffer = allocator(nbytes)
-    except Exception as exc:
-        raise RuntimeError(f"Failed to allocate buffer of size {nbytes}") from exc
+    except Exception as exc:  # noqa: BLE001
+        msg = f"Failed to allocate buffer of size {nbytes}"
+        raise RuntimeError(msg) from exc
 
     if not isinstance(buffer, Buffer):
-        raise TypeError(f"Allocator did not return a buffer object {type(buffer)}")
+        msg = f"Allocator did not return a buffer object {type(buffer)}"
+        raise TypeError(msg)
 
-    allocated_nbytes = len(buffer)  # type: ignore
+    allocated_nbytes = len(buffer)  # type: ignore [arg-type]
     if allocated_nbytes != nbytes:
-        raise ValueError(
-            f"Allocated buffer is not the expected size {allocated_nbytes} (actual) != {nbytes} (expected)"
+        msg = (
+            f"Allocated buffer is not the expected size {allocated_nbytes} "
+            f"(actual) != {nbytes} (expected)"
         )
+        raise ValueError(msg)
     return buffer
 
 
-class FileBase(object):
+class FileBase:
     """File I/O base class."""
 
     def __init__(self, files: list[str], mode: str) -> None:
@@ -65,10 +78,10 @@ class FileBase(object):
         self.ifile_cur = -1
         self._open(ifile=0)
 
-    def __enter__(self) -> FileBase:
+    def __enter__(self) -> Self:
         return self
 
-    def __exit__(self, exc_type, exc_value, traceback) -> None:
+    def __exit__(self, exc_type, exc_value, traceback) -> None:  # noqa: ANN001
         self._close_current()
 
     def _open(self, ifile: int) -> None:
@@ -87,9 +100,8 @@ class FileBase(object):
             if ifile is out of bounds
         """
         if ifile < 0 or ifile >= len(self.files):
-            raise ValueError(
-                f"ifile should be between 0 and {len(self.files) - 1}, got {ifile}"
-            )
+            msg = f"ifile should be between 0 and {len(self.files) - 1}, got {ifile}"
+            raise ValueError(msg)
 
         if ifile != self.ifile_cur:
             file_obj = self.opener(self.files[ifile], mode=self.mode)
@@ -126,7 +138,9 @@ class FileReader(FileBase):
         number of bits per sample in the files, by default 8
     """
 
-    def __init__(self, stream_info: StreamInfo, mode: str = "r", nbits: int = 8) -> None:
+    def __init__(
+        self, stream_info: StreamInfo, mode: str = "r", nbits: int = 8
+    ) -> None:
         self.sinfo = stream_info
         self.nbits = nbits
         self.bitsinfo = BitsInfo(nbits)
@@ -166,7 +180,8 @@ class FileReader(FileBase):
             if file is closed.
         """
         if self.file_obj.closed:
-            raise IOError("Cannot read closed file.")
+            msg = f"Cannot read from closed file {self.files[self.ifile_cur]}"
+            raise OSError(msg)
 
         count = nunits // self.bitsinfo.bitfact
         data = []
@@ -187,7 +202,11 @@ class FileReader(FileBase):
             return unpack(data_ar, self.nbits)
         return data_ar
 
-    def creadinto(self, read_buffer: Buffer, unpack_buffer: Buffer | None = None) -> int:
+    def creadinto(
+        self,
+        read_buffer: Buffer,
+        unpack_buffer: Buffer | None = None,
+    ) -> int:
         """Read from file stream into a buffer of pre-defined length.
 
         Parameters
@@ -196,7 +215,8 @@ class FileReader(FileBase):
             An object exposing the Python Buffer Protocol interface [PEP 3118]
 
         unpack_buffer : Buffer, optional
-            An object exposing the Python Buffer Protocol interface [PEP 3118], by default None
+            An object exposing the Python Buffer Protocol interface [PEP 3118],
+            by default None
 
         Returns
         -------
@@ -215,7 +235,8 @@ class FileReader(FileBase):
         the number of bytes returned will be zero.
         """
         if self.file_obj.closed:
-            raise IOError("Cannot read closed file.")
+            msg = f"Cannot read from closed file {self.files[self.ifile_cur]}"
+            raise OSError(msg)
 
         nbytes = 0
         read_buffer_view = memoryview(read_buffer)
@@ -225,8 +246,10 @@ class FileReader(FileBase):
                 if self.eos():
                     # We have reached the end of the stream
                     break
-                # Might be non-blocking IO, so maybe try again
-                raise IOError("file might in non-blocking mode")
+                else:  # noqa: RET508
+                    # Might be non-blocking IO, so maybe try again
+                    msg = "file might in non-blocking mode"
+                    raise OSError(msg)
             else:
                 nbytes += nbytes_read
                 if nbytes == read_buffer_view.nbytes or self.eos():
@@ -261,7 +284,8 @@ class FileReader(FileBase):
             if whence is not 0 or 1.
         """
         if self.file_obj.closed:
-            raise ValueError("Cannot read closed file.")
+            msg = f"Cannot read from closed file {self.files[self.ifile_cur]}"
+            raise OSError(msg)
 
         if whence == 0:
             self._seek_set(offset)
@@ -269,7 +293,8 @@ class FileReader(FileBase):
             offset_start = offset + self.cur_data_pos_stream
             self._seek_set(offset_start)
         else:
-            raise ValueError("whence should be either 0 (SEEK_SET) or 1 (SEEK_CUR)")
+            msg = "whence should be either 0 (SEEK_SET) or 1 (SEEK_CUR)"
+            raise ValueError(msg)
 
     def _seek2hdr(self, fileid: int) -> None:
         """Go to the header end position of the file with the given fileid."""
@@ -278,7 +303,8 @@ class FileReader(FileBase):
 
     def _seek_set(self, offset: int) -> None:
         if offset < 0 or offset >= self.sinfo.get_combined("datalen"):
-            raise ValueError(f"offset out of bounds: {offset}")
+            msg = f"offset out of bounds: {offset}"
+            raise ValueError(msg)
 
         fileid = np.where(offset < self.sinfo.cumsum_datalens)[0][0]
         self._seek2hdr(fileid)
@@ -415,7 +441,7 @@ class FileWriter(FileBase):
         self._close_current()
 
 
-class Transform(object):
+class Transform:
     """A class to transform data to the quantized format.
 
     Parameters
@@ -448,7 +474,7 @@ class Transform(object):
         digi_max: float,
         interval_seconds: float = 10,
         constant_offset_scale: bool = False,
-    ):
+    ) -> None:
         self.tsamp = tsamp
         self.nchans = nchans
         self.interval_seconds = interval_seconds

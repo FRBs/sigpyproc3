@@ -135,7 +135,7 @@ class TimeSeries(np.ndarray):
         """
         if window < 1:
             raise ValueError("incorrect window size")
-        tim_ar = stats.running_mean(self, window)
+        tim_ar = stats.running_filter(self, window, filter_func="mean")
         return tim_ar.view(TimeSeries)
 
     def running_median(self, window: int = 10001) -> TimeSeries:
@@ -155,7 +155,7 @@ class TimeSeries(np.ndarray):
         -----
         Window edges is dealt by reflecting about the edges of the time series.
         """
-        tim_ar = stats.running_median(self, window)
+        tim_ar = stats.running_filter(self, window, filter_func="median")
         return tim_ar.view(TimeSeries)
 
     def apply_boxcar(self, width: int) -> TimeSeries:
@@ -182,7 +182,7 @@ class TimeSeries(np.ndarray):
         """
         if width < 1:
             raise ValueError("incorrect boxcar window size")
-        mean_ar = stats.running_mean(self, width) * np.sqrt(width)
+        mean_ar = stats.running_filter(self, width, filter_func="mean") * np.sqrt(width)
         ref_bin = -width // 2 + 1 if width % 2 else -width // 2
         boxcar_ar = np.roll(mean_ar, ref_bin)
         return boxcar_ar.view(TimeSeries)

@@ -1,7 +1,8 @@
-import pytest
-import struct
 import shutil
+import struct
+
 import numpy as np
+import pytest
 from astropy.coordinates import SkyCoord
 
 from sigpyproc.io import sigproc
@@ -113,10 +114,10 @@ class TestStreamInfo(object):
         assert len(stream_info.entries) == 1
         assert stream_info.entries[0] == file_info
 
-    def test_stream_info_add_entry_invalid(self):
+    def test_stream_info_add_entry_invalid(self) -> None:
         stream_info = sigproc.StreamInfo()
-        with pytest.raises(ValueError):
-            stream_info.add_entry("invalid")
+        with pytest.raises(TypeError):
+            stream_info.add_entry("invalid") # type: ignore [arg-type]
 
     def test_stream_info_check_contiguity_valid(self):
         file_info1 = sigproc.FileInfo(

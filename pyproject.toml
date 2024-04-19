@@ -1,35 +1,99 @@
 [build-system]
-requires = [
-    "setuptools>=47",
-    "wheel",
-]
-
+requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[project]
+name = "sigpyproc"
+version = "1.1.0"
+description = "Python FRB/pulsar data toolbox"
+readme = "README.md"
+authors = [{ name = "Ewan Barr", email = "ewan.d.barr@gmail.com" }]
+maintainers = [{ name = "Pravir Kumar", email = "pravirka@gmail.com" }]
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Operating System :: MacOS :: MacOS X",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "License :: OSI Approved :: MIT License",
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Astronomy",
+]
+dependencies = [
+    "numpy",
+    "numba",
+    "astropy",
+    "h5py",
+    "bottleneck",
+    "attrs",
+    "click",
+    "rich",
+    "bidict",
+    "typing_extensions",
+]
 
-[tool.black]
-line-length = 90
-target_version = ['py38', 'py39', 'py310']
+[project.urls]
+Repository = "https://github.com/FRBs/sigpyproc3"
+
+[project.optional-dependencies]
+tests = [
+    "pytest",
+    "pytest-cov",
+    "pytest-randomly",
+    "pytest-sugar",
+    "pytest-benchmark",
+    "mypy",
+]
+docs = ["sphinx", "sphinx-book-theme", "sphinx-click", "myst-nb"]
+develop = ["ruff"]
+
+[project.scripts]
+spp_header = "sigpyproc.apps.spp_header:main"
+spp_decimate = "sigpyproc.apps.spp_decimate:main"
+spp_extract = "sigpyproc.apps.spp_extract:main"
+spp_clean = "sigpyproc.apps.spp_clean:main"
+
+
+[tool.ruff]
+include = ["pyproject.toml", "sigpyproc/**/*.py"]
+line-length = 88
+indent-width = 4
+target-version = "py39"
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = ["D1", "ANN1", "PLR2004"]
+
+[tool.ruff.lint.pylint]
+max-args = 10
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
 
 
 [tool.pytest.ini_options]
-minversion = "6.0"
-testpaths = [
-    "tests",
-]
-
+minversion = "8.0"
+testpaths = "tests"
 
 [tool.coverage.paths]
 source = ["./sigpyproc/"]
 
 [tool.coverage.run]
 omit = [
-    '*tests*',
-    '*docs*',
-    '*apps*',
-    '*setup.py',
-    '*__init__.py',
-    '*sigpyproc/core/kernels.py',
+    "tests/*",
+    "docs/*",
+    "apps/*",
+    "*__init__.py",
+    "sigpyproc/core/kernels.py",
 ]
 
 [tool.coverage.report]
@@ -37,7 +101,6 @@ show_missing = true
 #fail_under = 85
 ignore_errors = true
 exclude_lines = ['raise AssertionError', 'raise NotImplementedError']
-
 
 [tool.mypy]
 ignore_missing_imports = true

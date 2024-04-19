@@ -69,6 +69,9 @@ docs/jupyter_execute/
 .dmypy.json
 dmypy.json
 
+# ruff
+.ruff_cache/
+
 # Mr Developer
 .mr.developer.cfg
 .project

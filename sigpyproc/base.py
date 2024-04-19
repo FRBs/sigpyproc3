@@ -1,23 +1,36 @@
 from __future__ import annotations
-from typing_extensions import Buffer
-import warnings
+
+from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING
+
 import numpy as np
 
-from typing import Callable
-from numpy import typing as npt
-from abc import ABC, abstractmethod
-from collections.abc import Iterator
-
+from sigpyproc.core import kernels
+from sigpyproc.core.rfi import RFIMask
+from sigpyproc.core.stats import ChannelStats
 from sigpyproc.foldedcube import FoldedData
 from sigpyproc.timeseries import TimeSeries
-from sigpyproc.header import Header
-from sigpyproc.block import FilterbankBlock
-from sigpyproc.core import stats, kernels
-from sigpyproc.core.rfi import RFIMask
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterator
+
+    from typing_extensions import Buffer, TypedDict, Unpack
+
+    from sigpyproc.block import FilterbankBlock
+    from sigpyproc.header import Header
+
+    class PlanKwargs(TypedDict, total=False):
+        gulp: int
+        start: int
+        nsamps: int | None
+        skipback: int
+        description: str | None
+        quiet: bool
+        allocator: Callable[[int], Buffer] | None
 
 
 class Filterbank(ABC):
-    """Base class exporting methods for the manipulation of frequency-major order pulsar data.
+    """Base class for manipulating frequency-major order pulsar data.
 
     Notes
     -----
@@ -26,17 +39,16 @@ class Filterbank(ABC):
     """
 
     def __init__(self) -> None:
-        self._chan_stats: stats.ChannelStats | None = None
+        self._chan_stats: ChannelStats | None = None
 
     @property
     @abstractmethod
     def header(self) -> Header:
         """:class:`~sigpyproc.header.Header`: Header metadata of input file."""
-        pass
 
     @abstractmethod
     def read_block(self, start: int, nsamps: int) -> FilterbankBlock:
-        """Read a block of filterbank data.
+        """Read a data block from the filterbank file stream.
 
         Parameters
         ----------
@@ -55,7 +67,6 @@ class Filterbank(ABC):
         ValueError
             if requested samples are out of range
         """
-        pass
 
     @abstractmethod
     def read_dedisp_block(self, start: int, nsamps: int, dm: float) -> FilterbankBlock:
@@ -82,11 +93,11 @@ class Filterbank(ABC):
         ValueError
             if requested dedispersed samples are out of range
         """
-        pass
 
     @abstractmethod
     def read_plan(
         self,
+        *,
         gulp: int = 16384,
         start: int = 0,
         nsamps: int | None = None,
@@ -117,7 +128,7 @@ class Filterbank(ABC):
             data to be read into, by default None
 
         Yields
-        -------
+        ------
         :py:obj:`~collections.abc.Iterator` (tuple(int, int, :py:obj:`~numpy.ndarray`))
             Tuple of number of samples read, index of read, and the unpacked data read
 
@@ -142,41 +153,44 @@ class Filterbank(ABC):
                 # do something
         where data always has contains ``nchans*nsamps`` points.
         """
-        pass
 
     @property
-    def chan_stats(self) -> stats.ChannelStats | None:
-        """:class:`~sigpyproc.core.stats.ChannelStats`: Channel statistics of input data."""
+    def chan_stats(self) -> ChannelStats | None:
+        """:class:`~sigpyproc.core.stats.ChannelStats`: Channel statistics."""
         return self._chan_stats
 
-    def compute_stats(self, **plan_kwargs) -> None:
+    def compute_stats(self, **plan_kwargs: Unpack[PlanKwargs]) -> None:
         """Compute channelwise statistics of data (upto kurtosis).
 
         Parameters
         ----------
-        **plan_kwargs : dict
+        **plan_kwargs : Unpack[PlanKwargs]
             Keyword arguments for :func:`read_plan`.
         """
-        bag = stats.ChannelStats(self.header.nchans, self.header.nsamples)
+        bag = ChannelStats(self.header.nchans, self.header.nsamples)
         for nsamps, ii, data in self.read_plan(**plan_kwargs):
             bag.push_data(data, nsamps, ii, mode="full")
         self._chan_stats = bag
 
-    def compute_stats_basic(self, **plan_kwargs) -> None:
+    def compute_stats_basic(self, **plan_kwargs: Unpack[PlanKwargs]) -> None:
         """Compute channelwise statistics of data (only mean and rms).
 
         Parameters
         ----------
-        **plan_kwargs : dict
+        **plan_kwargs : Unpack[PlanKwargs]
             Keyword arguments for :func:`read_plan`.
         """
-        bag = stats.ChannelStats(self.header.nchans, self.header.nsamples)
+        bag = ChannelStats(self.header.nchans, self.header.nsamples)
         for nsamps, ii, data in self.read_plan(**plan_kwargs):
             bag.push_data(data, nsamps, ii, mode="basic")
         self._chan_stats = bag
 
     def collapse(
-        self, gulp: int = 16384, start: int = 0, nsamps: int | None = None, **plan_kwargs
+        self,
+        gulp: int = 16384,
+        start: int = 0,
+        nsamps: int | None = None,
+        **plan_kwargs: Unpack[PlanKwargs],
     ) -> TimeSeries:
         """Sum across all frequencies for each time sample.
 
@@ -199,12 +213,15 @@ class Filterbank(ABC):
         tim_len = (self.header.nsamples - start) if nsamps is None else nsamps
         tim_ar = np.zeros(tim_len, dtype=np.float32)
         for nsamp, ii, data in self.read_plan(
-            gulp=gulp, start=start, nsamps=nsamps, **plan_kwargs
+            gulp=gulp,
+            start=start,
+            nsamps=nsamps,
+            **plan_kwargs,
         ):
             kernels.extract_tim(data, tim_ar, self.header.nchans, nsamp, ii * gulp)
         return TimeSeries(tim_ar, self.header.new_header({"nchans": 1, "dm": 0}))
 
-    def bandpass(self, **plan_kwargs) -> TimeSeries:
+    def bandpass(self, **plan_kwargs: Unpack[PlanKwargs]) -> TimeSeries:
         """Average across each time sample for all frequencies.
 
         Parameters
@@ -225,7 +242,12 @@ class Filterbank(ABC):
         bpass_ar /= num_samples
         return TimeSeries(bpass_ar, self.header.new_header({"nchans": 1}))
 
-    def dedisperse(self, dm: float, gulp: int = 16384, **plan_kwargs) -> TimeSeries:
+    def dedisperse(
+        self,
+        dm: float,
+        gulp: int = 16384,
+        **plan_kwargs: Unpack[PlanKwargs],
+    ) -> TimeSeries:
         """Dedisperse the data and collapse to a time series.
 
         Parameters
@@ -253,7 +275,9 @@ class Filterbank(ABC):
         tim_len = self.header.nsamples - max_delay
         tim_ar = np.zeros(tim_len, dtype=np.float32)
         for nsamps, ii, data in self.read_plan(
-            gulp=gulp, skipback=max_delay, **plan_kwargs
+            gulp=gulp,
+            skipback=max_delay,
+            **plan_kwargs,
         ):
             kernels.dedisperse(
                 data,
@@ -266,13 +290,18 @@ class Filterbank(ABC):
             )
         return TimeSeries(tim_ar, self.header.new_header({"nchans": 1, "dm": dm}))
 
-    def read_chan(self, chan: int, gulp: int = 16384, **plan_kwargs) -> TimeSeries:
+    def read_chan(
+        self,
+        ichan: int,
+        gulp: int = 16384,
+        **plan_kwargs: Unpack[PlanKwargs],
+    ) -> TimeSeries:
         """Read a single frequency channel from the data as a time series.
 
         Parameters
         ----------
-        chan : int
-            channel to retrieve (0 is the highest frequency channel)
+        ichan : int
+            channel index to retrieve (0 is the highest frequency channel)
         gulp : int, optional
             number of samples in each read, by default 16384
         **plan_kwargs : dict
@@ -286,17 +315,22 @@ class Filterbank(ABC):
         Raises
         ------
         ValueError
-            If chan is out of range (chan < 0 or chan > total channels).
+            If ichan is out of range (ichan < 0 or ichan > nchans).
         """
-        if chan >= self.header.nchans or chan < 0:
-            raise ValueError("Selected channel out of range.")
+        if ichan >= self.header.nchans or ichan < 0:
+            msg = f"Selected channel {ichan} out of range."
+            raise ValueError(msg)
         tim_ar = np.empty(self.header.nsamples, dtype=np.float32)
         for nsamps, ii, data in self.read_plan(gulp=gulp, **plan_kwargs):
-            data = data.reshape(nsamps, self.header.nchans)
-            tim_ar[ii * gulp : (ii + 1) * gulp] = data[:, chan]
+            data_2d = data.reshape(nsamps, self.header.nchans)
+            tim_ar[ii * gulp : (ii + 1) * gulp] = data_2d[:, ichan]
         return TimeSeries(tim_ar, self.header.new_header({"dm": 0, "nchans": 1}))
 
-    def invert_freq(self, filename: str = None, **plan_kwargs) -> str:
+    def invert_freq(
+        self,
+        filename: str | None = None,
+        **plan_kwargs: Unpack[PlanKwargs],
+    ) -> str:
         """Invert the frequency ordering of the data and write to a new file.
 
         Parameters
@@ -328,10 +362,10 @@ class Filterbank(ABC):
 
     def apply_channel_mask(
         self,
-        chanmask: npt.ArrayLike,
-        maskvalue: int | float = 0,
+        chanmask: np.ndarray,
+        maskvalue: float = 0,
         filename: str | None = None,
-        **plan_kwargs,
+        **plan_kwargs: Unpack[PlanKwargs],
     ) -> str:
         """Apply a channel mask to the data and write to a new file.
 
@@ -339,7 +373,7 @@ class Filterbank(ABC):
         ----------
         chanmask : :py:obj:`~numpy.typing.ArrayLike`
             boolean array of channel mask (1 or True for bad channel)
-        maskvalue : int or float, optional
+        maskvalue : float, optional
             value to set the masked data to, by default 0
         filename : str, optional
             name of the output filterbank file, by default ``basename_masked.fil``
@@ -368,7 +402,7 @@ class Filterbank(ABC):
         ffactor: int = 1,
         gulp: int = 16384,
         filename: str | None = None,
-        **plan_kwargs,
+        **plan_kwargs: Unpack[PlanKwargs],
     ) -> str:
         """Downsample data in time and/or frequency and write to file.
 
@@ -398,7 +432,8 @@ class Filterbank(ABC):
         if filename is None:
             filename = f"{self.header.basename}_f{ffactor:d}_t{tfactor:d}.fil"
         if self.header.nchans % ffactor != 0:
-            raise ValueError("Bad frequency factor given")
+            msg = f"Bad frequency factor given: {ffactor:d}"
+            raise ValueError(msg)
 
         # Gulp must be a multiple of tfactor
         gulp = int(np.ceil(gulp / tfactor) * tfactor)
@@ -412,13 +447,21 @@ class Filterbank(ABC):
 
         for nsamps, _ii, data in self.read_plan(gulp=gulp, **plan_kwargs):
             write_ar = kernels.downsample_2d(
-                data, tfactor, ffactor, self.header.nchans, nsamps
+                data,
+                tfactor,
+                ffactor,
+                self.header.nchans,
+                nsamps,
             )
             out_file.cwrite(write_ar)
         return out_file.name
 
     def extract_samps(
-        self, start: int, nsamps: int, filename: str | None = None, **plan_kwargs
+        self,
+        start: int,
+        nsamps: int,
+        filename: str | None = None,
+        **plan_kwargs: Unpack[PlanKwargs],
     ) -> str:
         """Extract a subset of time samples from the data and write to file.
 
@@ -444,7 +487,8 @@ class Filterbank(ABC):
             If `start` or `nsamps` are out of bounds.
         """
         if start < 0 or start + nsamps > self.header.nsamples:
-            raise ValueError("Selected samples out of range")
+            msg = f"Selected samples out of range: {start:d} to {start+nsamps:d}"
+            raise ValueError(msg)
         if filename is None:
             filename = f"{self.header.basename}_samps_{start:d}_{start+nsamps:d}.fil"
         out_file = self.header.prep_outfile(
@@ -452,15 +496,19 @@ class Filterbank(ABC):
             updates={"tstart": self.header.mjd_after_nsamps(start)},
             nbits=self.header.nbits,
         )
-        for _count, _ii, data in self.read_plan(
-            start=start, nsamps=nsamps, **plan_kwargs
+        for _, _, data in self.read_plan(
+            start=start,
+            nsamps=nsamps,
+            **plan_kwargs,
         ):
             out_file.cwrite(data)
         out_file.close()
         return out_file.name
 
     def extract_chans(
-        self, chans: npt.ArrayLike | None = None, **plan_kwargs
+        self,
+        chans: np.ndarray | None = None,
+        **plan_kwargs: Unpack[PlanKwargs],
     ) -> list[str]:
         """Extract a subset of channels from the data and write each to file.
 
@@ -489,7 +537,8 @@ class Filterbank(ABC):
             chans = np.arange(self.header.nchans)
         chans = np.array(chans).astype("int")
         if np.all(np.logical_or(chans >= self.header.nchans, chans < 0)):
-            raise ValueError("Selected channel out of range.")
+            msg = f"Selected channels out of range: {chans.min()} to {chans.max()}"
+            raise ValueError(msg)
 
         out_files = [
             self.header.prep_outfile(
@@ -500,9 +549,9 @@ class Filterbank(ABC):
             for chan in chans
         ]
         for nsamps, _ii, data in self.read_plan(**plan_kwargs):
-            data = data.reshape(nsamps, self.header.nchans)
+            data_2d = data.reshape(nsamps, self.header.nchans)
             for ifile, out_file in enumerate(out_files):
-                out_file.cwrite(data[:, chans[ifile]])
+                out_file.cwrite(data_2d[:, chans[ifile]])
 
         for out_file in out_files:
             out_file.close()
@@ -510,7 +559,11 @@ class Filterbank(ABC):
         return [out_file.name for out_file in out_files]
 
     def extract_bands(
-        self, chanstart: int, nchans: int, chanpersub: int | None = None, **plan_kwargs
+        self,
+        chanstart: int,
+        nchans: int,
+        chanpersub: int | None = None,
+        **plan_kwargs: Unpack[PlanKwargs],
     ) -> list[str]:
         """Extract a subset of Sub-bands from the data and write each to file.
 
@@ -537,7 +590,8 @@ class Filterbank(ABC):
         ValueError
             If ``nchans`` is not divisible by ``chanpersub``.
         ValueError
-            If ``chanstart`` is out of range (``chanstart`` < 0 or ``chanstart`` > total channels).
+            If ``chanstart`` is out of range (``chanstart`` < 0
+            or ``chanstart`` > total channels).
 
         Notes
         -----
@@ -546,11 +600,14 @@ class Filterbank(ABC):
         if chanpersub is None:
             chanpersub = nchans
         if chanpersub <= 1 or chanpersub > nchans:
-            raise ValueError("chanpersub must be > 1 and <= nchans")
+            msg = f"chanpersub must be > 1 and <= nchans. Got {chanpersub}"
+            raise ValueError(msg)
         if chanstart + nchans > self.header.nchans or chanstart < 0:
-            raise ValueError("Selected channel out of range.")
+            msg = f"Selected channels out of range: {chanstart} to {chanstart+nchans}"
+            raise ValueError(msg)
         if nchans % chanpersub != 0:
-            raise ValueError("Number of channels must be divisible by sub-band size.")
+            msg = f"Number of channels must be divisible by sub-band size. Got {nchans}"
+            raise ValueError(msg)
 
         nsub = (self.header.nchans - chanstart) // chanpersub
         fstart = self.header.fch1 + chanstart * self.header.foff
@@ -568,10 +625,10 @@ class Filterbank(ABC):
         ]
 
         for nsamps, _ii, data in self.read_plan(**plan_kwargs):
-            data = data.reshape(nsamps, self.header.nchans)
+            data_2d = data.reshape(nsamps, self.header.nchans)
             for ifile, out_file in enumerate(out_files):
                 iband_chanstart = chanstart + ifile * chanpersub
-                subband_ar = data[:, iband_chanstart : iband_chanstart + chanpersub]
+                subband_ar = data_2d[:, iband_chanstart : iband_chanstart + chanpersub]
                 out_file.cwrite(subband_ar.ravel())
 
         for out_file in out_files:
@@ -582,20 +639,21 @@ class Filterbank(ABC):
     def requantize(
         self,
         nbits_out: int,
-        remove_bandpass: bool = False,
         filename: str | None = None,
-        **plan_kwargs,
+        *,
+        remove_bandpass: bool = False,  # noqa: ARG002
+        **plan_kwargs: Unpack[PlanKwargs],
     ) -> str:
-        """Eequantize the data and write to a new file.
+        """Requantize the data and write to a new file.
 
         Parameters
         ----------
         nbits_out : int
             number of bits into requantize the data
-        remove_bandpass : bool, optional
-            remove the bandpass from the data, by default False
         filename : str, optional
             name of output file, by default ``basename_digi.fil``
+        remove_bandpass : bool, optional
+            remove the bandpass from the data, by default False
         **plan_kwargs : dict
             Keyword arguments for :func:`read_plan`.
 
@@ -610,7 +668,8 @@ class Filterbank(ABC):
             If ``nbits_out`` is less than 1 or greater than 32.
         """
         if nbits_out not in {1, 2, 4, 8, 16, 32}:
-            raise ValueError("nbits_out must be one of {1, 2, 4, 8, 16, 32}")
+            msg = f"nbits_out must be one of {1, 2, 4, 8, 16, 32}, got {nbits_out}"
+            raise ValueError(msg)
         if filename is None:
             filename = f"{self.header.basename}_digi.fil"
 
@@ -620,7 +679,11 @@ class Filterbank(ABC):
         out_file.close()
         return out_file.name
 
-    def remove_zerodm(self, filename: str | None = None, **plan_kwargs):
+    def remove_zerodm(
+        self,
+        filename: str | None = None,
+        **plan_kwargs: Unpack[PlanKwargs],
+    ) -> str:
         """Remove the channel-weighted zero-DM from the data and write to disk.
 
         Parameters
@@ -641,7 +704,8 @@ class Filterbank(ABC):
 
         References
         ----------
-        .. [1] R. P. Eatough, E. F. Keane, A. G. Lyne, An interference removal technique for radio pulsar searches,
+        .. [1] R. P. Eatough, E. F. Keane, A. G. Lyne, An interference removal
+            technique for radio pulsar searches,
             MNRAS, Volume 395, Issue 1, May 2009, Pages 410-415.
         """
         if filename is None:
@@ -650,19 +714,30 @@ class Filterbank(ABC):
         bpass = self.bandpass(**plan_kwargs)
         chanwts = bpass / bpass.sum()
         out_ar = np.empty(
-            self.header.nsamples * self.header.nchans, dtype=self.header.dtype
+            self.header.nsamples * self.header.nchans,
+            dtype=self.header.dtype,
         )
         out_file = self.header.prep_outfile(filename, nbits=self.header.nbits)
         for nsamps, _ii, data in self.read_plan(**plan_kwargs):
             kernels.remove_zerodm(
-                data, out_ar, bpass, chanwts, self.header.nchans, nsamps
+                data,
+                out_ar,
+                bpass,
+                chanwts,
+                self.header.nchans,
+                nsamps,
             )
             out_file.cwrite(out_ar[: nsamps * self.header.nchans])
         out_file.close()
         return out_file.name
 
     def subband(
-        self, dm: float, nsub: int, filename: str = None, gulp: int = 16384, **plan_kwargs
+        self,
+        dm: float,
+        nsub: int,
+        filename: str | None = None,
+        gulp: int = 16384,
+        **plan_kwargs: Unpack[PlanKwargs],
     ) -> str:
         """Produce a set of dedispersed subbands from the data.
 
@@ -705,7 +780,9 @@ class Filterbank(ABC):
         out_file = self.header.prep_outfile(filename, changes, nbits=32)
 
         for nsamps, _ii, data in self.read_plan(
-            gulp=gulp, skipback=max_delay, **plan_kwargs
+            gulp=gulp,
+            skipback=max_delay,
+            **plan_kwargs,
         ):
             kernels.subband(
                 data,
@@ -729,7 +806,7 @@ class Filterbank(ABC):
         nints: int = 32,
         nbands: int = 32,
         gulp: int = 16384,
-        **plan_kwargs,
+        **plan_kwargs: Unpack[PlanKwargs],
     ) -> FoldedData:
         """Fold data into discrete phase, subintegration and subband bins.
 
@@ -772,14 +849,19 @@ class Filterbank(ABC):
         if nbins > period / self.header.tsamp:
             warnings.warn("Number of phase bins is greater than period/sampling time")
         if (self.header.nsamples * self.header.nchans) // (nbands * nints * nbins) < 10:
-            raise ValueError("nbands x nints x nbins is too large.")
+            msg = f"nbands x nints x nbins is too large: {nbands*nints*nbins}"
+            raise ValueError(msg)
         nbands = min(nbands, self.header.nchans)
         chan_delays = self.header.get_dmdelays(dm)
         max_delay = int(chan_delays.max())
         gulp = max(2 * max_delay, gulp)
         fold_ar = np.zeros(nbins * nints * nbands, dtype="float32")
         count_ar = np.zeros(nbins * nints * nbands, dtype="int32")
-        for nsamps, ii, data in self.read_plan(gulp, skipback=max_delay, **plan_kwargs):
+        for nsamps, ii, data in self.read_plan(
+            gulp=gulp,
+            skipback=max_delay,
+            **plan_kwargs,
+        ):
             kernels.fold(
                 data,
                 fold_ar,
@@ -805,10 +887,10 @@ class Filterbank(ABC):
         self,
         method: str = "mad",
         threshold: float = 3,
-        chanmask: npt.ArrayLike | None = None,
-        custom_funcn: Callable[[npt.ArrayLike], np.ndarray] | None = None,
+        chanmask: np.ndarray | None = None,
+        custom_funcn: Callable[[np.ndarray], np.ndarray] | None = None,
         filename: str | None = None,
-        **plan_kwargs,
+        **plan_kwargs: Unpack[PlanKwargs],
     ) -> tuple[str, RFIMask]:
         """Clean RFI from the data.
 
@@ -840,13 +922,16 @@ class Filterbank(ABC):
         if chanmask is None:
             chanmask = np.zeros(self.header.nchans, dtype="bool")
         if method not in {"mad", "iqrm"}:
-            raise ValueError("Clean method must be 'mad' or 'iqrm'")
+            msg = f"Clean method must be 'mad' or 'iqrm', got {method}"
+            raise ValueError(msg)
 
         if self.chan_stats is None:
             # 1st pass to compute channel statistics (upto kurtosis)
             self.compute_stats(**plan_kwargs)
 
-        assert isinstance(self.chan_stats, stats.ChannelStats)
+        if not isinstance(self.chan_stats, ChannelStats):
+            msg = "Channel statistics not computed properly"
+            raise TypeError(msg)
         # Initialise mask
         rfimask = RFIMask(
             threshold,
@@ -866,6 +951,9 @@ class Filterbank(ABC):
         maskvalue = 0
         # Apply the channel mask
         out_file = self.apply_channel_mask(
-            rfimask.chan_mask, maskvalue, filename=filename, **plan_kwargs
+            rfimask.chan_mask,
+            maskvalue,
+            filename=filename,
+            **plan_kwargs,
         )
         return out_file, rfimask
