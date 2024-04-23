@@ -12,10 +12,10 @@ maintainers = [{ name = "Pravir Kumar", email = "pravirka@gmail.com" }]
 requires-python = ">=3.8"
 classifiers = [
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Operating System :: MacOS :: MacOS X",
     "Operating System :: Microsoft :: Windows",
     "Operating System :: POSIX :: Linux",
@@ -57,7 +57,6 @@ spp_header = "sigpyproc.apps.spp_header:main"
 spp_decimate = "sigpyproc.apps.spp_decimate:main"
 spp_extract = "sigpyproc.apps.spp_extract:main"
 spp_clean = "sigpyproc.apps.spp_clean:main"
-
 
 [tool.ruff]
 include = ["pyproject.toml", "sigpyproc/**/*.py"]

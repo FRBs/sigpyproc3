@@ -1,18 +1,17 @@
 from __future__ import annotations
+
 import pathlib
+
 import numpy as np
 
-from numpy import typing as npt
-
 try:
-    from pyfftw.interfaces import numpy_fft  # noqa: WPS433
+    from pyfftw.interfaces import numpy_fft
 except ModuleNotFoundError:
-    from numpy import fft as numpy_fft  # noqa: WPS433
+    from numpy import fft as numpy_fft
 
-from sigpyproc import foldedcube
-from sigpyproc import fourierseries
+from sigpyproc import foldedcube, fourierseries
+from sigpyproc.core import kernels, stats
 from sigpyproc.header import Header
-from sigpyproc.core import stats, kernels
 
 
 class TimeSeries(np.ndarray):
@@ -35,7 +34,7 @@ class TimeSeries(np.ndarray):
     Data is converted to 32-bit floats regardless of original type.
     """
 
-    def __new__(cls, input_array: npt.ArrayLike, header: Header) -> TimeSeries:
+    def __new__(cls, input_array: np.ndarray, header: Header) -> TimeSeries:
         obj = np.asarray(input_array).astype(np.float32, copy=False).view(cls)
         obj.header = header
         return obj
@@ -249,7 +248,7 @@ class TimeSeries(np.ndarray):
         changes = {"nsamples": tim_ar.size, "accel": accel}
         return TimeSeries(tim_ar, self.header.new_header(changes))
 
-    def correlate(self, other: TimeSeries | npt.ArrayLike) -> TimeSeries:
+    def correlate(self, other: TimeSeries | np.ndarray) -> TimeSeries:
         """Cross correlate with another time series of the same length.
 
         Parameters

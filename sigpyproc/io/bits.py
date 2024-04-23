@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, ClassVar
+from typing import ClassVar
 
 import attrs
 import numpy as np
@@ -188,7 +188,7 @@ class BitsInfo:
         """Scale used to quantize data (`float`, read-only)."""
         return self.digi_mean / self.digi_sigma
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, int | float | np.dtype]:
         """Get a dict of all property attributes.
 
         Returns

@@ -253,7 +253,7 @@ class FilterbankBlock(np.ndarray):
         if filename is None:
             mjd_after = self.header.mjd_after_nsamps(self.shape[1])
             filename = f"{self.header.basename}_{self.header.tstart:.12f}_to_{mjd_after:.12f}.fil"
-        changes = {"nbits": 32}
-        out_file = self.header.prep_outfile(filename, changes, nbits=32)
+        updates = {"nbits": 32}
+        out_file = self.header.prep_outfile(filename, updates=updates, nbits=32)
         out_file.cwrite(self.transpose().ravel())
         return filename

@@ -369,7 +369,7 @@ def fold(
             count_ar[pos2] += 1
 
 
-@njit("f4[:](f4[:], f4, f4)")
+@njit("f4[:](f4[:], f4, f4)", cache=True)
 def resample_tim(array, accel, tsamp):
     nsamps = len(array) - 1 if accel > 0 else len(array)
     resampled = np.zeros(nsamps, dtype=array.dtype)
@@ -505,7 +505,6 @@ def sum_harms(spec_arr, sum_arr, harm_arr, fact_arr, nharms, nsamps, nfold):
                 ]
         for kk in range(nharms // 2):
             fact_arr[kk] += 2 * kk + 1
-
 
 @jitclass(
     [

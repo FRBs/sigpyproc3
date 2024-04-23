@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import io
 import os
-import warnings
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -84,6 +83,11 @@ class FileBase:
     def __exit__(self, exc_type, exc_value, traceback) -> None:  # noqa: ANN001
         self._close_current()
 
+    @property
+    def file_cur(self) -> str:
+        """str: Name of the currently open file."""
+        return self.files[self.ifile_cur]
+
     def _open(self, ifile: int) -> None:
         """Open a file from the list of files.
 
@@ -139,12 +143,15 @@ class FileReader(FileBase):
     """
 
     def __init__(
-        self, stream_info: StreamInfo, mode: str = "r", nbits: int = 8
+        self,
+        stream_info: StreamInfo,
+        mode: str = "r",
+        nbits: int = 8,
     ) -> None:
         self.sinfo = stream_info
         self.nbits = nbits
         self.bitsinfo = BitsInfo(nbits)
-        self._configure_logger()
+        self.logger = get_logger("FileReader")
 
         filenames = self.sinfo.get_info_list("filename")
         super().__init__(filenames, mode)
@@ -180,7 +187,7 @@ class FileReader(FileBase):
             if file is closed.
         """
         if self.file_obj.closed:
-            msg = f"Cannot read from closed file {self.files[self.ifile_cur]}"
+            msg = f"Cannot read from closed file {self.file_cur}"
             raise OSError(msg)
 
         count = nunits // self.bitsinfo.bitfact
@@ -188,7 +195,9 @@ class FileReader(FileBase):
         while count >= 0:
             count_read = min(self.sinfo.entries[self.ifile_cur].datalen, count)
             data_read = np.fromfile(
-                self.file_obj, count=count_read, dtype=self.bitsinfo.dtype
+                self.file_obj,
+                count=count_read,
+                dtype=self.bitsinfo.dtype,
             )
             count -= data_read.shape[0]
             data.append(data_read)
@@ -235,7 +244,7 @@ class FileReader(FileBase):
         the number of bytes returned will be zero.
         """
         if self.file_obj.closed:
-            msg = f"Cannot read from closed file {self.files[self.ifile_cur]}"
+            msg = f"Cannot read from closed file {self.file_cur}"
             raise OSError(msg)
 
         nbytes = 0
@@ -256,7 +265,7 @@ class FileReader(FileBase):
                     break
                 self._seek2hdr(self.ifile_cur + 1)
         if nbytes < read_buffer_view.nbytes:
-            warnings.warn("End of file reached before buffer was filled", stacklevel=2)
+            self.logger.warning("End of file reached before buffer was filled")
 
         if self.bitsinfo.unpack:
             read_ar = np.frombuffer(read_buffer_view, dtype=np.uint8)
@@ -284,7 +293,7 @@ class FileReader(FileBase):
             if whence is not 0 or 1.
         """
         if self.file_obj.closed:
-            msg = f"Cannot read from closed file {self.files[self.ifile_cur]}"
+            msg = f"Cannot read from closed file {self.file_cur}"
             raise OSError(msg)
 
         if whence == 0:
@@ -315,10 +324,6 @@ class FileReader(FileBase):
             file_offset = offset - self.sinfo.cumsum_datalens[fileid - 1]
             self.file_obj.seek(file_offset, os.SEEK_CUR)
 
-    def _configure_logger(self, **kwargs) -> None:
-        logger_name = "FileReader"
-        self.logger = get_logger(logger_name, **kwargs)
-
 
 class FileWriter(FileBase):
     """A file writer class that can write to a ``sigproc`` format file.
@@ -326,23 +331,16 @@ class FileWriter(FileBase):
     Parameters
     ----------
     file : str
-        file to be written to
+        file name to write to
     mode : str, optional
         file writing mode, by default "w"
     nbits : int, optional
         number of bits per sample in the file, by default 8
-    quantize : bool, optional
-        whether to quantize the data, by default False
-    tsamp : float, optional
-        sampling time, by default None
-    nchans : int, optional
-        number of channels, by default None
-    interval_seconds : float, optional
-        sample interval used for quantization in seconds, by default 10
-    constant_offset_scale : bool, optional
-        whether to use constant offset and scale, by default False
-    **digi_kwargs : dict
-        keyword arguments for the digitizer: ``digi_mean``, ``digi_scale``, ``digi_min``, ``digi_max``
+    scale_fac : float, optional
+        Additional scale factor to apply to data, by default 1.0
+    rescale : bool, optional
+        whether to rescale the data using the nbit-dependent values,
+        by default True
 
     Raises
     ------
@@ -353,76 +351,36 @@ class FileWriter(FileBase):
     def __init__(
         self,
         file: str,
-        tsamp: float,
-        nchans: int,
+        *,
         mode: str = "w",
         nbits: int = 8,
-        quantize: bool = False,
-        interval_seconds: float = 10,
-        constant_offset_scale: bool = False,
-        **digi_kwargs,
-    ):
+        scale_fac: float = 1.0,
+        rescale: bool = True,
+    ) -> None:
         super().__init__([file], mode)
-        self.name = file
-        self.nbits = nbits
         self.bitsinfo = BitsInfo(nbits)
-        self.quantize = quantize
+        self.scale_fac = scale_fac
+        self.rescale = rescale
 
-        if self.quantize:
-            if self.nbits == 32:
-                raise ValueError("Output nbits can not be 32 while quantizing")
-            digi = self.bitsinfo.to_dict()
-            digi.update(
-                (key, value) for key, value in digi_kwargs.items() if key in digi.keys()
-            )
-            self._transform = Transform(
-                tsamp,
-                nchans,
-                digi["digi_mean"],
-                digi["digi_scale"],
-                digi["digi_min"],
-                digi["digi_max"],
-                interval_seconds,
-                constant_offset_scale,
-            )
-
-    def cwrite(self, ar: np.ndarray) -> None:
+    def cwrite(self, arr: np.ndarray) -> None:
         """Write an array to file.
 
         Parameters
         ----------
         ar : :py:obj:`~numpy.ndarray`
-            a 1-D numpy array
+            a 1-D numpy array containing the data
 
         Notes
         -----
-        Regardless of the dtype of the array argument, the data will be packed
-        with a bitsize determined by the nbits attribute of the File instance.
-        To change this attribute, use the _setNbits methods.
-        It is the responsibility of the user to ensure that values in the array
-        do not go beyond the maximum and minimum values allowed by the nbits
-        attribute.
+        Input data will be packed with a bitsize determined by the nbits
         """
-        if self.quantize:
-            ar = self._transform.rescale(ar)
-            ar = self._transform.quantize(ar)
-
-        if self.bitsinfo.dtype != ar.dtype:
-            warnings.warn(
-                f"Given data (dtype={ar.dtype}) will be unsafely cast to the"
-                + f"requested dtype={self.bitsinfo.dtype} before being written out to file",
-                stacklevel=2,
-            )
-            ar = ar.astype(self.bitsinfo.dtype, casting="unsafe")
-        # The lib.pack function has an assumption that the given array has 8-bit
-        # data. If the given array was, say 32-bit floats and the requested nbits
-        # is, say 2-bit, then the output will be garbage, hence the casting above is
-        # necessary.
+        if self.bitsinfo.nbits < 32:
+            arr = self._quantize(arr)
         if self.bitsinfo.unpack:
-            packed = pack(ar, self.nbits)
+            packed = pack(arr, self.bitsinfo.nbits)
             packed.tofile(self.file_obj)
         else:
-            ar.tofile(self.file_obj)
+            arr.tofile(self.file_obj)
 
     def write(self, bo: bytes) -> None:
         """Write the given bytes-like object, bo to the file stream.
@@ -440,91 +398,32 @@ class FileWriter(FileBase):
         """Close the currently open file object."""
         self._close_current()
 
+    def _quantize(self, arr: np.ndarray) -> np.ndarray:
+        """Quantize the given array to the nbits = 1, 2, 4, 8, 16.
 
-class Transform:
-    """A class to transform data to the quantized format.
+        Parameters
+        ----------
+        arr : :py:obj:`~numpy.ndarray`
+            a 1-D numpy array containing the data
 
-    Parameters
-    ----------
-    tsamp : float
-        sampling time, by default None
-    nchans : int
-        number of channels, by default None
-    digi_mean : float
-        mean of the quantized data
-    digi_scale : float
-        scale of the quantized data
-    digi_min : float
-        minimum value of the quantized data
-    digi_max : float
-        maximum value of the quantized data
-    interval_seconds : float, optional
-        sample interval used for quantization in seconds, by default 10
-    constant_offset_scale : bool, optional
-        whether to use constant offset and scale, by default False
-    """
+        Returns
+        -------
+        :py:obj:`~numpy.ndarray`
+            a 1-D numpy array containing the quantized data
 
-    def __init__(
-        self,
-        tsamp: float,
-        nchans: int,
-        digi_mean: float,
-        digi_scale: float,
-        digi_min: float,
-        digi_max: float,
-        interval_seconds: float = 10,
-        constant_offset_scale: bool = False,
-    ) -> None:
-        self.tsamp = tsamp
-        self.nchans = nchans
-        self.interval_seconds = interval_seconds
-        self.constant_offset_scale = constant_offset_scale
-
-        self.digi_mean = digi_mean
-        self.digi_scale = digi_scale
-        self.digi_min = digi_min
-        self.digi_max = digi_max
-
-        self.scale = None
-        self.offset = None
-        self.first_call = True
-
-        self._initialize_arr()
-
-    @property
-    def interval_samples(self) -> int:
-        return round(self.interval_seconds / self.tsamp)
-
-    def rescale(self, data: np.ndarray) -> np.ndarray:
-        data = data.reshape(-1, self.nchans)
-
-        if not self.constant_offset_scale or self.first_call:
-            self._compute_stats(data)
-
-        normdata = (data + self.offset) * self.scale
-        self.first_call = False
-        return normdata.ravel()
-
-    def quantize(self, data: np.ndarray) -> np.ndarray:
-        ar = (data * self.digi_scale) + self.digi_mean + 0.5
-        ar = ar.astype(int)
-        return np.clip(ar, self.digi_min, self.digi_max)
-
-    def _compute_stats(self, data: np.ndarray) -> None:
-        self.sum_ar += np.sum(data, axis=0)
-        self.sumsq_ar += np.sum(data**2, axis=0)
-        self.isample += data.shape[0]
-
-        if self.isample >= self.interval_samples or self.first_call:
-            mean = self.sum_ar / self.isample
-            variance = self.sumsq_ar / self.isample - mean * mean
-            self.offset = -mean
-            self.scale = np.where(
-                np.isclose(variance, 0, atol=1e-5), 1, 1.0 / np.sqrt(variance)
-            )
-            self._initialize_arr()
-
-    def _initialize_arr(self) -> None:
-        self.sum_ar = np.zeros(self.nchans, dtype=float)
-        self.sumsq_ar = np.zeros(self.nchans, dtype=float)
-        self.isample = 0
+        Notes
+        -----
+        Values outside the dynamic range of the nbits will be clipped.
+        """
+        if self.rescale:
+            digi_mean = self.bitsinfo.digi_mean
+            digi_scale = self.bitsinfo.digi_scale
+        else:
+            digi_mean = 0
+            digi_scale = 1
+        # Additional scale factor to apply to data
+        digi_scale /= self.scale_fac
+        arr = (arr * digi_scale) + digi_mean + 0.5
+        arr = arr.astype(np.int32)
+        np.clip(arr, self.bitsinfo.digi_min, self.bitsinfo.digi_max, out=arr)
+        return arr.astype(self.bitsinfo.dtype, copy=False)

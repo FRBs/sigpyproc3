@@ -1,11 +1,12 @@
 from __future__ import annotations
+
 import attrs
 import numpy as np
-
 from astropy import units
+from astropy.coordinates import Angle, EarthLocation, SkyCoord
 from astropy.io import fits
 from astropy.time import Time, TimeDelta
-from astropy.coordinates import Angle, EarthLocation, SkyCoord
+from typing_extensions import Self
 
 from sigpyproc.io.bits import BitsInfo, unpack
 from sigpyproc.utils import FrequencyChannels
@@ -26,7 +27,7 @@ npol_to_state = {1: "Intensity", 2: "PPQQ", 4: "Stokes"}
 
 
 @attrs.define(auto_attribs=True, frozen=True, slots=True, kw_only=True)
-class Receiver(object):
+class Receiver:
     """Receiver information.
 
     Attributes
@@ -60,7 +61,7 @@ class Receiver(object):
 
 
 @attrs.define(auto_attribs=True, frozen=True, slots=True, kw_only=True)
-class Backend(object):
+class Backend:
     """Backend information.
 
     Attributes
@@ -87,10 +88,15 @@ class Backend(object):
     configfile: str
 
 
-class PrimaryHdr(object):
+class PrimaryHdr:
     def __init__(self, filename: str) -> None:
         header = fits.getheader(filename, extname="PRIMARY")
-        self._check_header(header)
+        if header["FITSTYPE"] != "PSRFITS":
+            msg = f"File {filename} is not a PSRFITS file."
+            raise ValueError(msg)
+        if header["OBS_MODE"] != "SEARCH":
+            msg = f"File {filename} is not a search-mode file."
+            raise ValueError(msg)
         self._header = header
 
     @property
@@ -117,7 +123,10 @@ class PrimaryHdr(object):
     def location(self) -> EarthLocation:
         """astropy.coordinates.EarthLocation: Antenna location."""
         return EarthLocation.from_geocentric(
-            self.header["ANT_X"], self.header["ANT_Y"], self.header["ANT_Z"], unit=units.m
+            self.header["ANT_X"],
+            self.header["ANT_Y"],
+            self.header["ANT_Z"],
+            unit=units.m,
         )
 
     @property
@@ -160,19 +169,24 @@ class PrimaryHdr(object):
     def date_obs(self) -> Time:
         """astropy.time.Time: Observation start date."""
         return Time(
-            self.header["DATE-OBS"], format="isot", scale="utc", location=self.location
+            self.header["DATE-OBS"],
+            format="isot",
+            scale="utc",
+            location=self.location,
         )
 
     @property
     def freqs(self) -> FrequencyChannels:
         """:class:`~sigpyproc.utils.FrequencyChannels`: Frequency channels."""
         return FrequencyChannels.from_pfits(
-            self.header["OBSFREQ"], self.header["OBSBW"], self.header["OBSNCHAN"]
+            self.header["OBSFREQ"],
+            self.header["OBSBW"],
+            self.header["OBSNCHAN"],
         )
 
     @property
     def chan_dm(self) -> float:
-        """float: Dispersion measure value used for on-line (normally coherent) dedispersion."""
+        """float: On-line (normally coherent) dedispersion measure."""
         return self.header.get("CHAN_DM", 0)
 
     @property
@@ -184,29 +198,35 @@ class PrimaryHdr(object):
     def coord(self) -> SkyCoord:
         """astropy.coordinates.SkyCoord: Source coordinates."""
         return SkyCoord(
-            self.header["RA"], self.header["DEC"], unit=(units.hourangle, units.deg)
+            self.header["RA"],
+            self.header["DEC"],
+            unit=(units.hourangle, units.deg),
         )
 
     @property
-    def tstart(self):
+    def tstart(self) -> Time:
         """astropy.time.Time: Observation start time."""
         return Time(
-            self.header["STT_IMJD"], format="mjd", scale="utc", location=self.location
+            self.header["STT_IMJD"],
+            format="mjd",
+            scale="utc",
+            location=self.location,
         ) + TimeDelta(
-            float(self.header["STT_SMJD"]), float(self.header["STT_OFFS"]), format="sec"
+            float(self.header["STT_SMJD"]),
+            float(self.header["STT_OFFS"]),
+            format="sec",
         )
 
-    def _check_header(self, header):
-        assert header["FITSTYPE"] == "PSRFITS", "Not a PSRFITS file."
-        assert header["OBS_MODE"] == "SEARCH", "Not a search-mode file."
 
-
-class SubintHdr(object):
+class SubintHdr:
     def __init__(self, filename: str) -> None:
         with fits.open(filename) as hdul:
             header = hdul["SUBINT"].header
             sub_data = hdul["SUBINT"].data[0]
-        self._check_header(header)
+
+        if header["EXTNAME"] != "SUBINT":
+            msg = f"File {filename} has no SUBINT table."
+            raise ValueError(msg)
         self._parse_data(sub_data)
         self._header = header
 
@@ -308,7 +328,7 @@ class SubintHdr(object):
 
     @property
     def offs_sub(self) -> float:
-        """float: Time since the observation start at the centre of first sub-integration (seconds)."""
+        """float: Time since the observation start at the centre of first subint (s)."""
         return self.sub_hdr.get("OFFS_SUB", 0)
 
     @property
@@ -332,11 +352,8 @@ class SubintHdr(object):
         self._sub_hdr = {key: sub_data.field(key) for key in wanted_keys}
         self._sub_freqs = sub_data.field("DAT_FREQ")
 
-    def _check_header(self, header: fits.Header) -> None:
-        assert header["EXTNAME"] == "SUBINT", "Not a subint hdu."
 
-
-class PFITSFile(object):
+class PFITSFile:
     """Handle a PSRFITS file.
 
     Parameters
@@ -345,17 +362,16 @@ class PFITSFile(object):
         Filename of the PSRFITS file.
     """
 
-    def __init__(self, filename) -> None:
+    def __init__(self, filename: str) -> None:
         self._filename = filename
         self._fits = fits.open(filename, mode="readonly", memmap=True)
         self._primary_hdr = PrimaryHdr(filename)
         self._subint_hdr = SubintHdr(filename)
 
-    def __enter__(self):
+    def __enter__(self) -> Self:
         return self
 
-    def __exit__(self, exc_type, exc_value, traceback):
-        # del self._fits['SUBINT'].data  # noqa:
+    def __exit__(self, exc_type, exc_value, traceback) -> None:  # noqa: ANN001
         self._fits.close()
 
     @property
@@ -382,11 +398,12 @@ class PFITSFile(object):
         self,
         startsub: int,
         nsubs: int,
+        *,
         poln_select: int = 1,
         scloffs: bool = True,
         weights: bool = True,
     ) -> np.ndarray:
-        """Read the digitised data in a given polarization format from a range of PSRFITS SUBINT table.
+        """Read the given polarization format from a range of PSRFITS SUBINT table.
 
         Parameters
         ----------
@@ -410,7 +427,10 @@ class PFITSFile(object):
         data_list = []
         for isub in range(startsub, startsub + nsubs):
             sdata = self.read_subint_pol(
-                isub, poln_select=poln_select, scloffs=scloffs, weights=weights
+                isub,
+                poln_select=poln_select,
+                scloffs=scloffs,
+                weights=weights,
             )
             data_list.append(sdata)
         data = np.concatenate(data_list)
@@ -421,9 +441,14 @@ class PFITSFile(object):
         return data
 
     def read_subint_pol(
-        self, isub: int, poln_select: int = 1, scloffs: bool = True, weights: bool = True
+        self,
+        isub: int,
+        *,
+        poln_select: int = 1,
+        scloffs: bool = True,
+        weights: bool = True,
     ) -> np.ndarray:
-        """Read the digitised data in a given polarization format from the PSRFITS SUBINT table.
+        """Read the given polarization format from the PSRFITS SUBINT table.
 
         Parameters
         ----------
@@ -464,7 +489,11 @@ class PFITSFile(object):
         return data
 
     def read_subint(
-        self, isub: int, scloffs: bool = True, weights: bool = True
+        self,
+        isub: int,
+        *,
+        scloffs: bool = True,
+        weights: bool = True,
     ) -> np.ndarray:
         """Read the digitised data from the PSRFITS SUBINT table.
 
@@ -483,28 +512,32 @@ class PFITSFile(object):
             subint (row) data in float32 if scale_and_offset or weights applied,
             otherwise in uint8 with shape (nsamps, npol, nchan).
         """
-        sdata = self._fits["SUBINT"].data[isub]["DATA"]  # noqa: WPS219
+        sdata = self._fits["SUBINT"].data[isub]["DATA"]
         sdata = sdata.squeeze()
         if self.bitsinfo.unpack:
             data = unpack(sdata.ravel(), self.bitsinfo.nbits)
             data = data.reshape(
-                (sdata.shape[0] * self.bitsinfo.bitfact, sdata.shape[1], sdata.shape[2])
+                (
+                    sdata.shape[0] * self.bitsinfo.bitfact,
+                    sdata.shape[1],
+                    sdata.shape[2],
+                ),
             )
         else:
             data = np.array(sdata)
-        assert (
-            data.shape == self.sub_hdr.subint_shape
-        ), f"DATA column ordering {data.shape} is not TPF"
+        if data.shape != self.sub_hdr.subint_shape:
+            msg = f"DATA column ordering {data.shape} is not TPF"
+            raise ValueError(msg)
 
         if scloffs or weights:
             data = data.astype(np.float32, copy=False)
         if scloffs:
-            data -= self.sub_hdr.zero_off  # TODO This will not work for 2-bit data.
+            data -= self.sub_hdr.zero_off  # This will not work for 2-bit data.
             data = data * self.read_scales(isub) + self.read_offsets(isub)
         if weights:
             data *= self.read_weights(isub)
 
-        # del self._fits['SUBINT'].data  # noqa: Magic happens here
+        # del self._fits['SUBINT'].data  # Magic happens here # noqa: ERA001
         return data
 
     def read_freqs(self, isub: int) -> FrequencyChannels:
@@ -520,7 +553,7 @@ class PFITSFile(object):
         FrequencyChannels
             Centre frequency for each channel in MHz (NCHAN)
         """
-        freqs = self._fits["SUBINT"].data[isub]["DAT_FREQ"]  # noqa: WPS219
+        freqs = self._fits["SUBINT"].data[isub]["DAT_FREQ"]
         return FrequencyChannels(freqs[: self.sub_hdr.nchans])
 
     def read_weights(self, isub: int) -> np.ndarray:
@@ -536,7 +569,7 @@ class PFITSFile(object):
         :py:obj:`numpy.ndarray`
             Weights for each channel in the range 0-1 (NCHAN)
         """
-        weights = self._fits["SUBINT"].data[isub]["DAT_WTS"]  # noqa: WPS219
+        weights = self._fits["SUBINT"].data[isub]["DAT_WTS"]
         return weights[: self.sub_hdr.nchans]
 
     def read_scales(self, isub: int) -> np.ndarray:
@@ -552,7 +585,7 @@ class PFITSFile(object):
         :py:obj:`numpy.ndarray`
             Data scale factor for each channel (NCHAN*NPOL)
         """
-        scales = self._fits["SUBINT"].data[isub]["DAT_SCL"]  # noqa: WPS219
+        scales = self._fits["SUBINT"].data[isub]["DAT_SCL"]
         scales = scales[: self.sub_hdr.npol * self.sub_hdr.nchans]
         return scales.reshape(self.sub_hdr.npol, self.sub_hdr.nchans)
 
@@ -569,6 +602,6 @@ class PFITSFile(object):
         :py:obj:`numpy.ndarray`
             Data offset for each channel (NCHAN*NPOL)
         """
-        offsets = self._fits["SUBINT"].data[isub]["DAT_OFFS"]  # noqa: WPS219
+        offsets = self._fits["SUBINT"].data[isub]["DAT_OFFS"]
         offsets = offsets[: self.sub_hdr.npol * self.sub_hdr.nchans]
         return offsets.reshape(self.sub_hdr.npol, self.sub_hdr.nchans)

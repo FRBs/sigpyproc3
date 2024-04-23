@@ -8,7 +8,6 @@ import attrs
 import numpy as np
 from astropy import units
 from astropy.coordinates import SkyCoord
-from astropy.time import Time, TimeDelta
 from bidict import bidict
 
 header_keys = {
@@ -49,8 +48,10 @@ telescope_ids = bidict(
         "Effelsberg": 8,
         "Effelsberg LOFAR": 9,
         "SRT": 10,
-        "Unknown": 11,
+        "LOFAR": 11,
+        "VLA": 12,
         "CHIME": 20,
+        "MeerKAT": 64,
     },
 )
 
@@ -58,14 +59,17 @@ machine_ids = bidict(
     {
         "FAKE": 0,
         "PSPM": 1,
-        "Wapp": 2,
+        "WAPP": 2,
         "AOFTM": 3,
-        "BCPM1": 4,
+        "BPP": 4,
         "OOTY": 5,
         "SCAMP": 6,
-        "GBT Pulsar Spigot": 7,
-        "PFFTS": 8,
-        "Unknown": 9,
+        "GMRTFB": 7,
+        "PULSAR2000": 8,
+        "PARSPEC": 9,
+        "BPSR": 10,
+        "COBALT": 11,
+        "GMRTNEW": 14,
         "CHIME": 20,
     },
 )
@@ -80,6 +84,12 @@ class FileInfo:
     datalen: int
     nsamples: int
     tstart: float
+    tsamp: float
+
+    @property
+    def tend(self) -> float:
+        """Get the end time of the file."""
+        return self.tstart + ((self.nsamples - 1) * self.tsamp) / 86400
 
     @classmethod
     def from_dict(cls, info: dict) -> FileInfo:
@@ -99,6 +109,15 @@ class StreamInfo:
         """Get the cumulative sum of datalen for all entries."""
         return np.cumsum(self.get_info_list("datalen"))
 
+    @property
+    def time_gaps(self) -> np.ndarray:
+        """Get the time gaps between files."""
+        tstart = np.array(self.get_info_list("tstart"))
+        tend = np.array(self.get_info_list("tend"))
+        if len(tstart) == 1:
+            return np.array([0])
+        return (tstart[1:] - tend[:-1]) * 86400
+
     def add_entry(self, finfo: FileInfo) -> None:
         """Add a FileInfo entry to the StreamInfo object."""
         if not isinstance(finfo, FileInfo):
@@ -114,22 +133,12 @@ class StreamInfo:
         """Get list of values for a given key for all entries."""
         return [getattr(entry, key) for entry in self.entries]
 
-    def check_contiguity(self, tsamp: float) -> bool:
+    def check_contiguity(self) -> bool:
         """Check if the files in the stream are contiguous/sequential."""
-        for ientry, entry in enumerate(self.entries[:-1]):
-            precision = int(np.ceil(abs(np.log10(tsamp))))
-            tstart = Time(entry.tstart, format="mjd", scale="utc", precision=precision)
-            end_time = tstart + TimeDelta(entry.nsamples * tsamp, format="sec")
-            end_mjd = end_time.mjd
-            difference = self.entries[ientry + 1].tstart - end_mjd
-            if abs(difference) > tsamp:
-                samp_diff = int(abs(difference) / tsamp)
-                print(
-                    f"files {entry.filename} and {self.entries[ientry + 1].filename} "
-                    f"are off by at least {samp_diff} samples."
-                )
-                return False
-        return True
+        tsamp_list = self.get_info_list("tsamp")
+        tsamp_check = len(set(tsamp_list)) == 1
+        contiguous = np.allclose(self.time_gaps, tsamp_list[0], rtol=0.1)
+        return tsamp_check and contiguous
 
 
 def edit_header(filename: str, key: str, value: float | str) -> None:
@@ -204,7 +213,7 @@ def parse_header_multi(
             match_header(header, hdr)
             sinfo.add_entry(FileInfo.from_dict(hdr))
 
-        if check_contiguity and not sinfo.check_contiguity(header["tsamp"]):
+        if check_contiguity and not sinfo.check_contiguity():
             msg = f"Files {filenames} are not contiguous"
             raise ValueError(msg)
 

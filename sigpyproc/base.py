@@ -348,17 +348,21 @@ class Filterbank(ABC):
         if filename is None:
             filename = f"{self.header.basename}_inverted.fil"
 
-        changes = {
+        updates = {
             "fch1": self.header.fch1 + (self.header.nchans - 1) * self.header.foff,
             "foff": self.header.foff * -1,
         }
 
-        out_file = self.header.prep_outfile(filename, changes, nbits=self.header.nbits)
+        out_file = self.header.prep_outfile(
+            filename,
+            updates=updates,
+            nbits=self.header.nbits,
+        )
         for nsamp, _ii, data in self.read_plan(**plan_kwargs):
             out_ar = kernels.invert_freq(data, self.header.nchans, nsamp)
             out_file.cwrite(out_ar)
         out_file.close()
-        return out_file.name
+        return out_file.file_cur
 
     def apply_channel_mask(
         self,
@@ -394,7 +398,7 @@ class Filterbank(ABC):
         for nsamps, _ii, data in self.read_plan(**plan_kwargs):
             kernels.mask_channels(data, mask, maskvalue, self.header.nchans, nsamps)
             out_file.cwrite(data)
-        return out_file.name
+        return out_file.file_cur
 
     def downsample(
         self,
@@ -438,12 +442,12 @@ class Filterbank(ABC):
         # Gulp must be a multiple of tfactor
         gulp = int(np.ceil(gulp / tfactor) * tfactor)
 
-        changes = {
+        updates = {
             "tsamp": self.header.tsamp * tfactor,
             "nchans": self.header.nchans // ffactor,
             "foff": self.header.foff * ffactor,
         }
-        out_file = self.header.prep_outfile(filename, changes)
+        out_file = self.header.prep_outfile(filename, updates=updates)
 
         for nsamps, _ii, data in self.read_plan(gulp=gulp, **plan_kwargs):
             write_ar = kernels.downsample_2d(
@@ -454,7 +458,7 @@ class Filterbank(ABC):
                 nsamps,
             )
             out_file.cwrite(write_ar)
-        return out_file.name
+        return out_file.file_cur
 
     def extract_samps(
         self,
@@ -503,7 +507,7 @@ class Filterbank(ABC):
         ):
             out_file.cwrite(data)
         out_file.close()
-        return out_file.name
+        return out_file.file_cur
 
     def extract_chans(
         self,
@@ -543,7 +547,7 @@ class Filterbank(ABC):
         out_files = [
             self.header.prep_outfile(
                 f"{self.header.basename}_chan{chan:04d}.tim",
-                {"nchans": 1, "nbits": 32, "data_type": "time series"},
+                updates={"nchans": 1, "nbits": 32, "data_type": "time series"},
                 nbits=32,
             )
             for chan in chans
@@ -556,7 +560,7 @@ class Filterbank(ABC):
         for out_file in out_files:
             out_file.close()
 
-        return [out_file.name for out_file in out_files]
+        return [out_file.file_cur for out_file in out_files]
 
     def extract_bands(
         self,
@@ -615,7 +619,7 @@ class Filterbank(ABC):
         out_files = [
             self.header.prep_outfile(
                 f"{self.header.basename}_sub{isub:02d}.fil",
-                {
+                updates={
                     "nchans": chanpersub,
                     "fch1": fstart + isub * chanpersub * self.header.foff,
                 },
@@ -634,7 +638,7 @@ class Filterbank(ABC):
         for out_file in out_files:
             out_file.close()
 
-        return [out_file.name for out_file in out_files]
+        return [out_file.file_cur for out_file in out_files]
 
     def requantize(
         self,
@@ -673,11 +677,11 @@ class Filterbank(ABC):
         if filename is None:
             filename = f"{self.header.basename}_digi.fil"
 
-        out_file = self.header.prep_outfile(filename, nbits=nbits_out, quantize=True)
+        out_file = self.header.prep_outfile(filename, nbits=nbits_out)
         for _nsamps, _ii, data in self.read_plan(**plan_kwargs):
             out_file.cwrite(data)
         out_file.close()
-        return out_file.name
+        return out_file.file_cur
 
     def remove_zerodm(
         self,
@@ -729,7 +733,7 @@ class Filterbank(ABC):
             )
             out_file.cwrite(out_ar[: nsamps * self.header.nchans])
         out_file.close()
-        return out_file.name
+        return out_file.file_cur
 
     def subband(
         self,
@@ -768,7 +772,7 @@ class Filterbank(ABC):
         new_foff = self.header.foff * self.header.nchans // nsub
         new_fch1 = self.header.ftop - new_foff / 2
         chan_to_sub = np.arange(self.header.nchans, dtype="int32") // subfactor
-        changes = {
+        updates = {
             "fch1": new_fch1,
             "foff": new_foff,
             "refdm": dm,
@@ -777,7 +781,7 @@ class Filterbank(ABC):
         }
         if filename is None:
             filename = f"{self.header.basename}_DM{dm:06.2f}.subbands"
-        out_file = self.header.prep_outfile(filename, changes, nbits=32)
+        out_file = self.header.prep_outfile(filename, updates=updates, nbits=32)
 
         for nsamps, _ii, data in self.read_plan(
             gulp=gulp,

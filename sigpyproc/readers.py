@@ -1,17 +1,23 @@
 from __future__ import annotations
-from typing import Iterator, Callable
-from typing_extensions import Buffer
-import numpy as np
-import inspect
-from rich.progress import track
 
-from sigpyproc.io import pfits
-from sigpyproc.io.fileio import FileReader, allocate_buffer
-from sigpyproc.io.bits import BitsInfo
-from sigpyproc.header import Header
+import inspect
+from typing import TYPE_CHECKING
+
+import numpy as np
+from rich.progress import track
+from typing_extensions import Buffer
+
 from sigpyproc.base import Filterbank
 from sigpyproc.block import FilterbankBlock
+from sigpyproc.header import Header
+from sigpyproc.io.fileio import FileReader, allocate_buffer
+from sigpyproc.io.pfits import PFITSFile, PrimaryHdr, SubintHdr
 from sigpyproc.utils import get_logger
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterator
+
+    from sigpyproc.io.bits import BitsInfo
 
 
 class FilReader(Filterbank):
@@ -35,15 +41,23 @@ class FilReader(Filterbank):
     contain keywords found in the :data:`~sigpyproc.io.sigproc.header_keys` dictionary.
     """
 
-    def __init__(self, filenames: str | list[str], check_contiguity: bool = True) -> None:
+    def __init__(
+        self,
+        filenames: str | list[str],
+        *,
+        check_contiguity: bool = True,
+    ) -> None:
         if isinstance(filenames, str):
             filenames = [filenames]
         self._filenames = filenames
         self._header = Header.from_sigproc(
-            self._filenames, check_contiguity=check_contiguity
+            self._filenames,
+            check_contiguity=check_contiguity,
         )
         self._file = FileReader(
-            self.header.stream_info, mode="r", nbits=self.header.nbits
+            self.header.stream_info,
+            mode="r",
+            nbits=self.header.nbits,
         )
         super().__init__()
 
@@ -68,7 +82,8 @@ class FilReader(Filterbank):
 
     def read_block(self, start: int, nsamps: int) -> FilterbankBlock:
         if start < 0 or start + nsamps > self.header.nsamples:
-            raise ValueError("requested block is out of range")
+            msg = f"requested block is out of range: start={start}, nsamps={nsamps}"
+            raise ValueError(msg)
         self._file.seek(start * self.sampsize)
         data = self._file.cread(self.header.nchans * nsamps)
         nsamps_read = data.size // self.header.nchans
@@ -84,7 +99,11 @@ class FilReader(Filterbank):
         min_sample = start + delays
         max_sample = min_sample + nsamps
         if np.any(min_sample < 0) or np.any(max_sample > self.header.nsamples):
-            raise ValueError("requested dedispersed block is out of range")
+            msg = (
+                f"requested dedispersed block is out of range: "
+                f"start={start}, nsamps={nsamps}"
+            )
+            raise ValueError(msg)
 
         self._file.seek(start * self.sampsize)
         samples_read = np.zeros(self.header.nchans, dtype=int)
@@ -93,7 +112,10 @@ class FilReader(Filterbank):
         for isamp in track(range(nsamps), description="Reading dedispersed data ..."):
             samples_offset = start + isamp
             relevant_chans = np.argwhere(
-                np.logical_and(max_sample > samples_offset, min_sample <= samples_offset)
+                np.logical_and(
+                    max_sample > samples_offset,
+                    min_sample <= samples_offset,
+                ),
             ).flatten()
             chans_slice = slice(relevant_chans.min(), relevant_chans.max() + 1)
 
@@ -115,6 +137,7 @@ class FilReader(Filterbank):
         nsamps: int | None = None,
         skipback: int = 0,
         description: str | None = None,
+        *,
         quiet: bool = False,
         allocator: Callable[[int], Buffer] | None = None,
     ) -> Iterator[tuple[int, int, np.ndarray]]:
@@ -122,11 +145,11 @@ class FilReader(Filterbank):
             nsamps = self.header.nsamples - start
         if description is None:
             description = f"{inspect.stack()[1][3]} : "
-
         gulp = min(nsamps, gulp)
         skipback = abs(skipback)
         if skipback >= gulp:
-            raise ValueError(f"readsamps ({gulp}) must be > skipback ({skipback})")
+            msg = f"readsamps ({gulp}) must be > skipback ({skipback})"
+            raise ValueError(msg)
 
         # Here we set the allocator
         allocator = allocator if allocator is not None else bytearray
@@ -135,7 +158,8 @@ class FilReader(Filterbank):
         read_buffer = allocate_buffer(allocator, gulp * self.sampsize)
         # Here we allocate (if needed) a buffer for unpacking the data
         if self.bitsinfo.unpack:
-            # The unpacking always unpacks up to 8-bits, so the size should be nsamps * nchans
+            # The unpacking always unpacks up to 8-bits, so the size should
+            # be nsamps * nchans
             # Is there a way to guarantee that the behaviour is correct here?
             unpack_buffer = allocate_buffer(allocator, gulp * self.header.nchans)
             data = np.frombuffer(unpack_buffer, dtype=self._file.bitsinfo.dtype)
@@ -156,17 +180,21 @@ class FilReader(Filterbank):
             blocks.append((nreads, lastread * self.header.nchans, 0))
 
         # / self.logger.debug(f"Reading plan: nsamps = {nsamps}, nreads = {nreads}")
-        # / self.logger.debug(f"Reading plan: gulp = {gulp}, lastread = {lastread}, skipback = {skipback}")
+        # / self.logger.debug(f"Reading plan: gulp = {gulp}, lastread = {lastread},
+        # / skipback = {skipback}")
         for ii, block, skip in track(blocks, description=description, disable=quiet):
             nbytes = self._file.creadinto(read_buffer, unpack_buffer)
             expected_nbytes = block * self.sampsize / self.header.nchans
             if nbytes != expected_nbytes:
-                raise ValueError(
-                    f"Unexpected number of bytes read from file {nbytes} (actual) != {expected_nbytes} (expected)"
+                msg = (
+                    f"Unexpected number of bytes read from file {nbytes} (actual) "
+                    f"!= {expected_nbytes} (expected)"
                 )
+                raise ValueError(msg)
             if skip != 0:
                 self._file.seek(
-                    skip * self.bitsinfo.itemsize // self.bitsinfo.bitfact, whence=1
+                    skip * self.bitsinfo.itemsize // self.bitsinfo.bitfact,
+                    whence=1,
                 )
             yield block // self.header.nchans, ii, data[:block]
 
@@ -184,16 +212,16 @@ class PFITSReader(Filterbank):
     def __init__(self, filename: str) -> None:
         self._filename = filename
         self._header = Header.from_pfits(self._filename)
-        self._fitsfile = pfits.PFITSFile(self._filename)
+        self._fitsfile = PFITSFile(self._filename)
         super().__init__()
 
     @property
-    def pri_hdr(self) -> pfits.PrimaryHdr:
+    def pri_hdr(self) -> PrimaryHdr:
         """:class:`~sigpyproc.io.pfits.PrimaryHdr`: Primary header of input file."""
         return self._fitsfile.pri_hdr
 
     @property
-    def sub_hdr(self) -> pfits.SubintHdr:
+    def sub_hdr(self) -> SubintHdr:
         """:class:`~sigpyproc.io.pfits.SubintHdr`: Subint header of input file."""
         return self._fitsfile.sub_hdr
 
@@ -218,10 +246,13 @@ class PFITSReader(Filterbank):
 
     def read_block(self, start: int, nsamps: int) -> FilterbankBlock:
         if start < 0 or start + nsamps > self.header.nsamples:
-            raise ValueError("requested block is out of range")
+            msg = f"requested block is out of range: start={start}, nsamps={nsamps}"
+            raise ValueError(msg)
 
         startsub, startsamp = divmod(start, self.sub_hdr.subint_samples)
-        nsubs = (nsamps + self.sub_hdr.subint_samples - 1) // self.sub_hdr.subint_samples
+        nsubs = (
+            nsamps + self.sub_hdr.subint_samples - 1
+        ) // self.sub_hdr.subint_samples
 
         data = self._fitsfile.read_subints(startsub, nsubs)
 
@@ -231,8 +262,9 @@ class PFITSReader(Filterbank):
         new_header = self.header.new_header({"tstart": start_mjd, "nsamples": nsamps})
         return FilterbankBlock(data, new_header)
 
-    def read_dedisp_block(self, start: int, nsamps: int, dm: float) -> FilterbankBlock:
-        raise NotImplementedError("Not implemented for PFITSReader")
+    def read_dedisp_block(self, start: int, nsamps: int, dm: float) -> FilterbankBlock:  # noqa: ARG002
+        msg = "Not implemented for PFITSReader"
+        raise NotImplementedError(msg)
 
     def read_plan(
         self,
@@ -272,7 +304,7 @@ class PFITSReader(Filterbank):
             yield block, ii, data.ravel()
 
 
-class PulseExtractor(object):
+class PulseExtractor:
     """Extracts a data block from a filterbank file centered on a pulse.
 
     The extracted block is centered on the given pulse toa at the highest
@@ -301,6 +333,7 @@ class PulseExtractor(object):
         pulse_toa: int,
         pulse_width: int,
         pulse_dm: float,
+        *,
         min_nsamps: int = 256,
         quiet: bool = False,
     ) -> None:
@@ -331,7 +364,9 @@ class PulseExtractor(object):
     @property
     def block_delay(self) -> int:
         """int: Dispersion Block size in samples."""
-        return ((self.disp_delay // self.decimation_factor) + 1) * self.decimation_factor
+        return (
+            (self.disp_delay // self.decimation_factor) + 1
+        ) * self.decimation_factor
 
     @property
     def nsamps(self) -> int:
@@ -362,7 +397,7 @@ class PulseExtractor(object):
         return self.pulse_toa - self.nstart
 
     def get_data(self, pad_mode: str = "median") -> FilterbankBlock:
-        """Extracts the data block from the filterbank file.
+        """Extract the filterbank block centered on the pulse.
 
         Parameters
         ----------
@@ -390,7 +425,7 @@ class PulseExtractor(object):
     def _pad_data(
         self, data: FilterbankBlock, pad_mode: str = "median"
     ) -> FilterbankBlock:
-        """Pads the data block with the given mode.
+        """Pad the data block with the given mode.
 
         Parameters
         ----------

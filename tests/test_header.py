@@ -70,7 +70,7 @@ class TestHeader(object):
     def test_prep_outfile(self, filfile_4bit, tmpfile):
         header = Header.from_sigproc(filfile_4bit)
         with header.prep_outfile(tmpfile) as outfile:
-            outfilename = outfile.name
+            outfilename = outfile.file_cur
         out_header = Header.from_sigproc(outfilename)
         np.testing.assert_equal(out_header.to_sigproc(), header.to_sigproc())
 

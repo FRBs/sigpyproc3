@@ -60,7 +60,8 @@ class TestSigproc(object):
             assert header[key] == expected_value
 
     @pytest.mark.parametrize(
-        "key, newval", [("nchans", 2000), ("fch1", 4000.5), ("source_name", "new_source")]
+        "key, newval",
+        [("nchans", 2000), ("fch1", 4000.5), ("source_name", "new_source")],
     )
     def test_edit_header(self, filfile_8bit_1, tmpfile, key, newval):
         shutil.copyfile(filfile_8bit_1, tmpfile)
@@ -107,7 +108,12 @@ class TestStreamInfo(object):
     def test_stream_info_add_entry(self):
         stream_info = sigproc.StreamInfo()
         file_info = sigproc.FileInfo(
-            filename="file.txt", hdrlen=100, datalen=1000, nsamples=500, tstart=10.0
+            filename="file.txt",
+            hdrlen=100,
+            datalen=1000,
+            nsamples=500,
+            tstart=10.0,
+            tsamp=0.001,
         )
 
         stream_info.add_entry(file_info)
@@ -117,29 +123,41 @@ class TestStreamInfo(object):
     def test_stream_info_add_entry_invalid(self) -> None:
         stream_info = sigproc.StreamInfo()
         with pytest.raises(TypeError):
-            stream_info.add_entry("invalid") # type: ignore [arg-type]
+            stream_info.add_entry("invalid")  # type: ignore [arg-type]
 
     def test_stream_info_check_contiguity_valid(self):
-        file_info1 = sigproc.FileInfo(
-            filename="file1.txt", hdrlen=100, datalen=1000, nsamples=500, tstart=50000.0
-        )
         tsamp = 0.001
-        tstart_valid = file_info1.tstart + file_info1.nsamples * tsamp / 86400
+        file_info1 = sigproc.FileInfo(
+            filename="file1.txt",
+            hdrlen=100,
+            datalen=1000,
+            nsamples=500,
+            tstart=50000.0,
+            tsamp=tsamp,
+        )
+
+        tstart_valid = file_info1.tstart + (file_info1.nsamples * tsamp) / 86400
         file_info2 = sigproc.FileInfo(
             filename="file2.txt",
             hdrlen=200,
             datalen=2000,
             nsamples=1000,
             tstart=tstart_valid,
+            tsamp=tsamp,
         )
         stream_info = sigproc.StreamInfo(entries=[file_info1, file_info2])
-        assert stream_info.check_contiguity(tsamp) is True
+        assert stream_info.check_contiguity() is True
 
     def test_stream_info_check_contiguity_invalid(self):
-        file_info1 = sigproc.FileInfo(
-            filename="file1.txt", hdrlen=100, datalen=1000, nsamples=500, tstart=50000.0
-        )
         tsamp = 0.001
+        file_info1 = sigproc.FileInfo(
+            filename="file1.txt",
+            hdrlen=100,
+            datalen=1000,
+            nsamples=500,
+            tstart=50000.0,
+            tsamp=0.001,
+        )
         tstart_invalid = file_info1.tstart + file_info1.nsamples * tsamp + 0.1
         file_info2 = sigproc.FileInfo(
             filename="file2.txt",
@@ -147,6 +165,7 @@ class TestStreamInfo(object):
             datalen=2000,
             nsamples=1000,
             tstart=tstart_invalid,
+            tsamp=tsamp,
         )
         stream_info = sigproc.StreamInfo(entries=[file_info1, file_info2])
-        assert stream_info.check_contiguity(tsamp) is False
+        assert stream_info.check_contiguity() is False
