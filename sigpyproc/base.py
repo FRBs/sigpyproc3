@@ -362,7 +362,7 @@ class Filterbank(ABC):
             out_ar = kernels.invert_freq(data, self.header.nchans, nsamp)
             out_file.cwrite(out_ar)
         out_file.close()
-        return out_file.file_cur
+        return filename
 
     def apply_channel_mask(
         self,
@@ -398,7 +398,7 @@ class Filterbank(ABC):
         for nsamps, _ii, data in self.read_plan(**plan_kwargs):
             kernels.mask_channels(data, mask, maskvalue, self.header.nchans, nsamps)
             out_file.cwrite(data)
-        return out_file.file_cur
+        return filename
 
     def downsample(
         self,
@@ -458,7 +458,7 @@ class Filterbank(ABC):
                 nsamps,
             )
             out_file.cwrite(write_ar)
-        return out_file.file_cur
+        return filename
 
     def extract_samps(
         self,
@@ -507,7 +507,7 @@ class Filterbank(ABC):
         ):
             out_file.cwrite(data)
         out_file.close()
-        return out_file.file_cur
+        return filename
 
     def extract_chans(
         self,
@@ -557,10 +557,10 @@ class Filterbank(ABC):
             for ifile, out_file in enumerate(out_files):
                 out_file.cwrite(data_2d[:, chans[ifile]])
 
+        filenames = [out_file.file_cur for out_file in out_files]
         for out_file in out_files:
             out_file.close()
-
-        return [out_file.file_cur for out_file in out_files]
+        return filenames
 
     def extract_bands(
         self,
@@ -635,10 +635,10 @@ class Filterbank(ABC):
                 subband_ar = data_2d[:, iband_chanstart : iband_chanstart + chanpersub]
                 out_file.cwrite(subband_ar.ravel())
 
+        filenames = [out_file.file_cur for out_file in out_files]
         for out_file in out_files:
             out_file.close()
-
-        return [out_file.file_cur for out_file in out_files]
+        return filenames
 
     def requantize(
         self,
@@ -681,7 +681,7 @@ class Filterbank(ABC):
         for _nsamps, _ii, data in self.read_plan(**plan_kwargs):
             out_file.cwrite(data)
         out_file.close()
-        return out_file.file_cur
+        return filename
 
     def remove_zerodm(
         self,
@@ -733,7 +733,7 @@ class Filterbank(ABC):
             )
             out_file.cwrite(out_ar[: nsamps * self.header.nchans])
         out_file.close()
-        return out_file.file_cur
+        return filename
 
     def subband(
         self,

@@ -205,6 +205,28 @@ class BitsInfo:
         attributes.update(prop)
         return attributes
 
+    def quantize(self, arr_norm: np.ndarray) -> np.ndarray:
+        """Quantize normalized data to given nbit-dependent mean and sigma.
+
+        Parameters
+        ----------
+        arr : :py:obj:`~numpy.ndarray`
+            a 1-D numpy array containing the data to quantize.
+
+        Returns
+        -------
+        :py:obj:`~numpy.ndarray`
+            Quantized data array to nbits.
+
+        Notes
+        -----
+        Values outside the dynamic range of the nbits will be clipped.
+        """
+        arr = (arr_norm * self.digi_scale) + self.digi_mean + 0.5
+        arr = arr.astype(np.int32)
+        np.clip(arr, self.digi_min, self.digi_max, out=arr)
+        return arr.astype(self.dtype, copy=False)
+
     @digi_sigma.default
     def _set_digi_sigma(self) -> float:
         return self.default_sigma[self.nbits]

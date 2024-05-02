@@ -374,8 +374,7 @@ class Header:
         *,
         updates: dict[str, Any] | None = None,
         nbits: int | None = None,
-        scale_fac: float = 1.0,
-        rescale: bool = True,
+        rescale: bool = False,
     ) -> FileWriter:
         """Prepare a file to have sigproc format data written to it.
 
@@ -409,7 +408,6 @@ class Header:
             filename,
             mode="w+",
             nbits=nbits,
-            scale_fac=scale_fac,
             rescale=rescale,
         )
         new_hdr_binary = sigproc.encode_header(new_hdr.to_sigproc())

@@ -34,6 +34,8 @@ class TestFrequencyChannels:
         np.testing.assert_equal(freqs.fch1.value, fch1)
         np.testing.assert_equal(freqs.foff.value, foff)
         np.testing.assert_equal(freqs.nchans, nchans)
+        np.testing.assert_equal(freqs.fbottom.value, fch1 + foff * (nchans - 0.5))
+        np.testing.assert_equal(len(freqs.array), nchans)
 
     def test_from_pfits(self) -> None:
         fcenter = 1500
@@ -46,7 +48,7 @@ class TestFrequencyChannels:
 
     def test_fail(self) -> None:
         with np.testing.assert_raises(ValueError):
-            utils.FrequencyChannels([])
+            utils.FrequencyChannels([]) # type: ignore[arg-type]
         arr = [1, 2, 4, 7]
         with np.testing.assert_raises(ValueError):
-            utils.FrequencyChannels(arr)
+            utils.FrequencyChannels(arr) # type: ignore[arg-type]

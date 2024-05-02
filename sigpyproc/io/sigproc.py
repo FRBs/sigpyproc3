@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import struct
 from pathlib import Path
-from typing import IO
+from typing import BinaryIO
 
 import attrs
 import numpy as np
@@ -381,7 +381,7 @@ def parse_radec(src_raj: float, src_dej: float) -> SkyCoord:
     return SkyCoord(radec_str, unit=(units.hourangle, units.deg))
 
 
-def _read_string(fp: IO) -> str:
+def _read_string(fp: BinaryIO) -> str:
     """Read the next sigproc-format string in the file.
 
     Parameters
