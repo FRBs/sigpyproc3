@@ -1,6 +1,6 @@
 import click
 
-from sigpyproc.readers import 
+from sigpyproc.readers import FilReader
 from sigpyproc.utils import get_logger
 
 
@@ -86,12 +86,13 @@ def main(
     apply_FITS_scale_and_offset,
 ):
     """Convert to sigproc output digifil style."""
-    logger = get_logger(__name__)
-    nbytes_per_sample = TODO
-    gulpsize = block_size * 1024 * 1024 // 
-    logger.info(f"Reading {filfile}")
-    fil = FilReader(filfile)
-    fil.downsample(tfactor=tfactor, ffactor=ffactor, gulp=gulp, filename=outfile)
+    raise NotImplementedError("This function is not implemented yet.")
+    #logger = get_logger(__name__)
+    #nbytes_per_sample =
+    #gulpsize = block_size * 1024 * 1024 // 
+    #logger.info(f"Reading {filfile}")
+    #fil = FilReader(filfile)
+    #fil.downsample(tfactor=tfactor, ffactor=ffactor, gulp=gulp, filename=outfile)
 
 
 

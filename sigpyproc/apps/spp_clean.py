@@ -57,7 +57,7 @@ def main(
     _out_file, rfimask = fil.clean_rfi(
         method=method,
         threshold=threshold,
-        filename=outfile,
+        outfile_name=outfile,
         gulp=gulp,
     )
     if maskfile is not None:

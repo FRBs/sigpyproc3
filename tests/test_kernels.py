@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+from scipy import stats
 
 from sigpyproc.core import kernels
 
@@ -74,3 +75,92 @@ class TestKernels:
         arr = rng.normal(size=(128, 256, 512))
         with pytest.raises(ValueError):
             kernels.np_mean(arr, axis=0)
+
+
+class TestMoments:
+    def test_compute_moments_basic(self) -> None:
+        nchans = 128
+        nsamps = 256
+        rng = np.random.default_rng()
+        arr = rng.normal(size=(nchans, nsamps)).astype(np.float32)
+        bag = kernels.MomentsBag(nchans)
+        kernels.compute_online_moments_basic(arr.T.ravel(), bag, nsamps, startflag=0)
+        np.testing.assert_array_almost_equal(bag.max, np.max(arr, axis=1))
+        np.testing.assert_array_almost_equal(bag.min, np.min(arr, axis=1))
+        np.testing.assert_array_almost_equal(
+            bag.m1,
+            stats.moment(arr, axis=1, center=0, order=1),
+        )
+        np.testing.assert_array_almost_equal(
+            bag.m2,
+            stats.moment(arr, axis=1, order=2) * nsamps,
+            decimal=2,
+        )
+        kernels.compute_online_moments_basic.py_func(
+            arr.T.ravel(),
+            bag,
+            nsamps,
+            startflag=0,
+        )
+
+    def test_compute_moments(self) -> None:
+        nchans = 128
+        nsamps = 256
+        rng = np.random.default_rng()
+        arr = rng.normal(size=(nchans, nsamps)).astype(np.float32)
+        bag = kernels.MomentsBag(nchans)
+        kernels.compute_online_moments(arr.T.ravel(), bag, nsamps, startflag=0)
+        np.testing.assert_array_almost_equal(bag.max, np.max(arr, axis=1))
+        np.testing.assert_array_almost_equal(bag.min, np.min(arr, axis=1))
+        np.testing.assert_array_almost_equal(
+            bag.m1,
+            stats.moment(arr, axis=1, center=0, order=1),
+        )
+        np.testing.assert_array_almost_equal(
+            bag.m2,
+            stats.moment(arr, axis=1, order=2) * nsamps,
+            decimal=2,
+        )
+        np.testing.assert_array_almost_equal(
+            bag.m3,
+            stats.moment(arr, axis=1, order=3) * nsamps,
+            decimal=2,
+        )
+        np.testing.assert_array_almost_equal(
+            bag.m4,
+            stats.moment(arr, axis=1, order=4) * nsamps,
+            decimal=2,
+        )
+        kernels.compute_online_moments.py_func(
+            arr.T.ravel(),
+            bag,
+            nsamps,
+            startflag=0,
+        )
+
+    def test_compute_moments_add(self) -> None:
+        nchans = 128
+        nsamps = 256
+        rng = np.random.default_rng()
+        arr1 = rng.normal(size=(nchans, nsamps)).astype(np.float32)
+        arr2 = rng.normal(size=(nchans, nsamps)).astype(np.float32)
+        arr_expected = np.concatenate((arr1, arr2), axis=1).astype(np.float32)
+        bag1 = kernels.MomentsBag(nchans)
+        bag2 = kernels.MomentsBag(nchans)
+        bag_out = kernels.MomentsBag(nchans)
+        bag_expected = kernels.MomentsBag(nchans)
+        kernels.compute_online_moments(arr1.T.ravel(), bag1, nsamps, startflag=0)
+        kernels.compute_online_moments(arr2.T.ravel(), bag2, nsamps, startflag=0)
+        kernels.compute_online_moments(
+            arr_expected.T.ravel(),
+            bag_expected,
+            2 * nsamps,
+            startflag=0,
+        )
+        kernels.add_online_moments(bag1, bag2, bag_out)
+        np.testing.assert_array_almost_equal(bag_out.max, bag_expected.max)
+        np.testing.assert_array_almost_equal(bag_out.min, bag_expected.min)
+        np.testing.assert_array_almost_equal(bag_out.m1, bag_expected.m1)
+        np.testing.assert_array_almost_equal(bag_out.m2, bag_expected.m2, decimal=2)
+        np.testing.assert_array_almost_equal(bag_out.m3, bag_expected.m3, decimal=2)
+        np.testing.assert_array_almost_equal(bag_out.m4, bag_expected.m4, decimal=2)

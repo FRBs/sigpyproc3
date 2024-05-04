@@ -593,7 +593,7 @@ def compute_online_moments(
             bag.min[ichan] = min(bag.min[ichan], val)
 
 
-@njit(cache=True, parallel=False, locals={"val": types.f8})
+@njit(cache=True)
 def add_online_moments(bag_a: MomentsBag, bag_b: MomentsBag, bag_c: MomentsBag) -> None:
     bag_c.count = bag_a.count + bag_b.count
     delta = bag_b.m1 - bag_a.m1
@@ -639,4 +639,4 @@ def add_online_moments(bag_a: MomentsBag, bag_b: MomentsBag, bag_c: MomentsBag) 
     )
 
     bag_c.max = np.maximum(bag_a.max, bag_b.max)
-    bag_c.min = np.minimum(bag_c.min, bag_c.min)
+    bag_c.min = np.minimum(bag_a.min, bag_b.min)

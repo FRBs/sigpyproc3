@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 from astropy import units
 from astropy.time import Time, TimeDelta
 from rich.logging import RichHandler
+
+if TYPE_CHECKING:
+    import inspect
 
 
 def roll_array(arr: np.ndarray, shift: int, axis: int = 0) -> np.ndarray:
@@ -109,6 +113,11 @@ def get_logger(
         logger.addHandler(file_handler)
     return logger
 
+def get_callerfunc(stack: list[inspect.FrameInfo]) -> str:
+    for i in range(len(stack)):
+        if stack[i].function == "<module>":
+            return stack[i - 1].function
+    return stack[1].function
 
 def time_after_nsamps(tstart: float, tsamp: float, nsamps: int = 0) -> Time:
     """Get time after given nsamps. If nsamps is not given then just return tstart.

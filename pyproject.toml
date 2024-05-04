@@ -71,7 +71,7 @@ indent-style = "space"
 
 [tool.ruff.lint]
 select = ["ALL"]
-ignore = ["D1", "ANN1", "PLR2004"]
+ignore = ["D1", "ANN1", "PLR2004", "G004"]
 
 [tool.ruff.lint.pylint]
 max-args = 10
@@ -90,21 +90,17 @@ testpaths = "tests"
 source = ["./sigpyproc/"]
 
 [tool.coverage.run]
-omit = [
-    "tests/*",
-    "docs/*",
-    "*__init__.py",
-]
+omit = ["tests/*", "docs/*", "*__init__.py", "sigpyproc/core/kernels.py"]
 
 [tool.coverage.report]
 show_missing = true
 #fail_under = 85
 ignore_errors = true
 exclude_lines = [
-    'raise AssertionError',
     'raise NotImplementedError',
     'if TYPE_CHECKING:',
     'if __name__ == "__main__":',
+    'if outfile_name is None:',
 ]
 
 [tool.mypy]
