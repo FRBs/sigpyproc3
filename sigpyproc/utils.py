@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 import numpy as np
 from astropy import units
@@ -98,8 +99,12 @@ def get_logger(
         )
         handler.setFormatter(formatter)
         logger.addHandler(handler)
-    if log_file:
-        file_handler = logging.FileHandler(log_file)
+    if log_file and not any(
+        isinstance(hndlr, logging.FileHandler)
+        and hndlr.baseFilename == Path(log_file).resolve().as_posix()
+        for hndlr in logger.handlers
+    ):
+        file_handler = logging.FileHandler(Path(log_file).resolve().as_posix())
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
     return logger

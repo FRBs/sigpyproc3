@@ -3,7 +3,7 @@ from __future__ import annotations
 import click
 
 from sigpyproc.header import Header
-from sigpyproc.io.sigproc import edit_header
+from sigpyproc.io import sigproc
 
 
 @click.group(
@@ -26,13 +26,19 @@ def print(filfile: str) -> None:  # noqa: A001
 @click.option(
     "-k",
     "--key",
+    required=True,
     type=str,
     help="A header key to read (e.g. telescope, fch1, nsamples)",
 )
 def get(filfile: str, key: str) -> None:
     """Get the value of a header key."""
     header = Header.from_sigproc(filfile)
-    click.echo(f"{key} = {getattr(header, key)}")
+    try:
+        value = getattr(header, key)
+    except AttributeError:
+        hdr = sigproc.parse_header(filfile)
+        value = hdr[key]
+    click.echo(f"{key} = {value}")
 
 
 @main.command()
@@ -40,6 +46,7 @@ def get(filfile: str, key: str) -> None:
 @click.option(
     "-i",
     "--item",
+    required=True,
     nargs=2,
     type=click.Tuple([str, str]),
     help="(key, value) to update in header",
@@ -47,7 +54,7 @@ def get(filfile: str, key: str) -> None:
 def update(filfile: str, item: tuple[str, str]) -> None:
     """Update a header key."""
     key, value = item
-    edit_header(filfile, key, value)
+    sigproc.edit_header(filfile, key, value)
 
 
 if __name__ == "__main__":

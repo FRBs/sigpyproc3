@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import click
 
 from sigpyproc.readers import FilReader
@@ -32,20 +34,23 @@ from sigpyproc.readers import FilReader
     "-o",
     "--outfile",
     type=click.Path(exists=False),
+    default=None,
     help="Output masked filterbank file",
 )
 @click.option(
-    "--save/--no-save",
-    default=True,
-    help="Save the mask information to a file",
+    "-s",
+    "--maskfile",
+    type=click.Path(exists=False),
+    default=None,
+    help="Output mask file",
 )
 def main(
     filfile: str,
     method: str,
     threshold: float,
-    outfile: str,
+    outfile: str | None,
+    maskfile: str | None,
     gulp: int,
-    save: bool,  # noqa: FBT001
 ) -> None:
     """Clean RFI from filterbank data."""
     fil = FilReader(filfile)
@@ -55,8 +60,8 @@ def main(
         filename=outfile,
         gulp=gulp,
     )
-    if save:
-        rfimask.to_file()
+    if maskfile is not None:
+        rfimask.to_file(filename=maskfile)
 
 
 if __name__ == "__main__":

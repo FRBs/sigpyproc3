@@ -47,6 +47,7 @@ tests = [
     "pytest-randomly",
     "pytest-sugar",
     "pytest-benchmark",
+    "pytest-mock",
     "mypy",
 ]
 docs = ["sphinx", "sphinx-book-theme", "sphinx-click", "myst-nb"]
@@ -92,9 +93,7 @@ source = ["./sigpyproc/"]
 omit = [
     "tests/*",
     "docs/*",
-    "apps/*",
     "*__init__.py",
-    "sigpyproc/core/kernels.py",
 ]
 
 [tool.coverage.report]
@@ -105,6 +104,7 @@ exclude_lines = [
     'raise AssertionError',
     'raise NotImplementedError',
     'if TYPE_CHECKING:',
+    'if __name__ == "__main__":',
 ]
 
 [tool.mypy]

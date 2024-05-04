@@ -464,7 +464,7 @@ class Filterbank(ABC):
         self,
         start: int,
         nsamps: int,
-        filename: str | None = None,
+        outfile_name: str | None = None,
         **plan_kwargs: Unpack[PlanKwargs],
     ) -> str:
         """Extract a subset of time samples from the data and write to file.
@@ -472,11 +472,11 @@ class Filterbank(ABC):
         Parameters
         ----------
         start : int
-            start sample to extract
+            starting time sample to extract
         nsamps : int
-            number of samples to extract
-        filename : str, optional
-            name of output file, by default ``basename_samps_start_start+nsamps.fil``
+            number of time samples to extract
+        outfile_name : str, optional
+            Output file name, by default ``basename_samps_{start}_{start+nsamps}.fil``
         **plan_kwargs : dict
             Additional keyword arguments for :func:`read_plan`.
 
@@ -493,10 +493,12 @@ class Filterbank(ABC):
         if start < 0 or start + nsamps > self.header.nsamples:
             msg = f"Selected samples out of range: {start:d} to {start+nsamps:d}"
             raise ValueError(msg)
-        if filename is None:
-            filename = f"{self.header.basename}_samps_{start:d}_{start+nsamps:d}.fil"
+        if outfile_name is None:
+            outfile_name = (
+                f"{self.header.basename}_samps_{start:d}_{start+nsamps:d}.fil"
+            )
         out_file = self.header.prep_outfile(
-            filename,
+            outfile_name,
             updates={"tstart": self.header.mjd_after_nsamps(start)},
             nbits=self.header.nbits,
         )
@@ -507,11 +509,12 @@ class Filterbank(ABC):
         ):
             out_file.cwrite(data)
         out_file.close()
-        return filename
+        return outfile_name
 
     def extract_chans(
         self,
         chans: np.ndarray | None = None,
+        outfile_base: str | None = None,
         **plan_kwargs: Unpack[PlanKwargs],
     ) -> list[str]:
         """Extract a subset of channels from the data and write each to file.
@@ -520,6 +523,8 @@ class Filterbank(ABC):
         ----------
         chans : :py:obj:`~numpy.typing.ArrayLike`, optional
             channel numbers to extract, by default all channels
+        outfile_base : str, optional
+            base name of output files, by default ``header.basename``.
         **plan_kwargs : dict
             Keyword arguments for :func:`read_plan`.
 
@@ -540,24 +545,29 @@ class Filterbank(ABC):
         if chans is None:
             chans = np.arange(self.header.nchans)
         chans = np.array(chans).astype("int")
+        nchans_extract = len(chans)
         if np.all(np.logical_or(chans >= self.header.nchans, chans < 0)):
             msg = f"Selected channels out of range: {chans.min()} to {chans.max()}"
             raise ValueError(msg)
+        if outfile_base is None:
+            outfile_base = self.header.basename
 
+        filenames = [
+            f"{outfile_base}_chan{chans[ichan]:04d}.tim"
+            for ichan in range(nchans_extract)
+        ]
         out_files = [
             self.header.prep_outfile(
-                f"{self.header.basename}_chan{chan:04d}.tim",
+                filenames[ichan],
                 updates={"nchans": 1, "nbits": 32, "data_type": "time series"},
                 nbits=32,
             )
-            for chan in chans
+            for ichan in range(nchans_extract)
         ]
         for nsamps, _ii, data in self.read_plan(**plan_kwargs):
             data_2d = data.reshape(nsamps, self.header.nchans)
             for ifile, out_file in enumerate(out_files):
                 out_file.cwrite(data_2d[:, chans[ifile]])
-
-        filenames = [out_file.file_cur for out_file in out_files]
         for out_file in out_files:
             out_file.close()
         return filenames
@@ -567,6 +577,7 @@ class Filterbank(ABC):
         chanstart: int,
         nchans: int,
         chanpersub: int | None = None,
+        outfile_base: str | None = None,
         **plan_kwargs: Unpack[PlanKwargs],
     ) -> list[str]:
         """Extract a subset of Sub-bands from the data and write each to file.
@@ -579,6 +590,8 @@ class Filterbank(ABC):
             number of channel to extract
         chanpersub : int, optional
             number of channels in each sub-band, by default ``nchans``
+        outfile_base: str, optional
+            base name of output files, by default ``header.basename``.
         **plan_kwargs : dict
             Keyword arguments for :func:`read_plan`.
 
@@ -616,9 +629,13 @@ class Filterbank(ABC):
         nsub = (self.header.nchans - chanstart) // chanpersub
         fstart = self.header.fch1 + chanstart * self.header.foff
 
+        if outfile_base is None:
+            outfile_base = self.header.basename
+
+        filenames = [f"{outfile_base}_sub{isub:02d}.fil" for isub in range(nsub)]
         out_files = [
             self.header.prep_outfile(
-                f"{self.header.basename}_sub{isub:02d}.fil",
+                filenames[isub],
                 updates={
                     "nchans": chanpersub,
                     "fch1": fstart + isub * chanpersub * self.header.foff,
@@ -634,8 +651,6 @@ class Filterbank(ABC):
                 iband_chanstart = chanstart + ifile * chanpersub
                 subband_ar = data_2d[:, iband_chanstart : iband_chanstart + chanpersub]
                 out_file.cwrite(subband_ar.ravel())
-
-        filenames = [out_file.file_cur for out_file in out_files]
         for out_file in out_files:
             out_file.close()
         return filenames

@@ -1,4 +1,8 @@
+import logging
+
 import numpy as np
+from astropy.time import Time
+from rich.logging import RichHandler
 
 from sigpyproc import utils
 
@@ -24,6 +28,41 @@ class TestUtils:
         np.testing.assert_equal(utils.duration_string(3600), "1.0 hours")
         np.testing.assert_equal(utils.duration_string(86400), "1.0 days")
 
+    def test_time_after_nsamps(self) -> None:
+        tstart = 60000
+        tsamp = 0.1
+        output = utils.time_after_nsamps(tstart, tsamp)
+        assert isinstance(output, Time)
+        np.testing.assert_equal(output.mjd, tstart)
+        nsamps = 100
+        output = utils.time_after_nsamps(tstart, tsamp, nsamps)
+        assert isinstance(output, Time)
+        np.testing.assert_equal(output.mjd, tstart + nsamps * tsamp / 86400)
+
+class TestLogger:
+    def test_get_logger_default(self) -> None:
+        name = "test_logger"
+        logger_def = logging.getLogger(name)
+        logger_def.propagate = False
+        for handler in logger_def.handlers[:]:
+            logger_def.removeHandler(handler)
+        logger = utils.get_logger(name)
+        assert isinstance(logger, logging.Logger)
+        assert logger.level == logging.INFO
+        assert len(logger.handlers) == 1
+        assert isinstance(logger.handlers[0], RichHandler)
+
+
+    def test_get_logger_log_file(self, tmpfile: str) -> None:
+        name = "test_logger"
+        logger_def = logging.getLogger(name)
+        logger_def.propagate = False
+        for handler in logger_def.handlers[:]:
+            logger_def.removeHandler(handler)
+        logger = utils.get_logger(name, log_file=tmpfile)
+        assert len(logger.handlers) == 2
+        assert isinstance(logger.handlers[1], logging.FileHandler)
+        assert logger.handlers[1].baseFilename == tmpfile
 
 class TestFrequencyChannels:
     def test_from_sig(self) -> None:

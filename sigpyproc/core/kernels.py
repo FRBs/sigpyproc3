@@ -234,8 +234,7 @@ def downsample_2d(
             temp = 0
             for ifactor in range(tfactor):
                 ipos = pos + ifactor * nchans
-                for jfactor in range(ffactor):
-                    temp += array[ipos + jfactor]
+                temp += np.sum(array[ipos : ipos + ffactor])
             result[nchans_new * isamp + ichan] = downcast(array[0], temp / totfactor)
     return result
 
@@ -505,6 +504,7 @@ def sum_harms(spec_arr, sum_arr, harm_arr, fact_arr, nharms, nsamps, nfold):
                 ]
         for kk in range(nharms // 2):
             fact_arr[kk] += 2 * kk + 1
+
 
 @jitclass(
     [

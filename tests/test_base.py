@@ -88,7 +88,7 @@ class TestFilterbank:
     def test_extract_samps(self, filfile_4bit: str, tmpfile: str) -> None:
         nsamps = 1024
         fil = FilReader(filfile_4bit)
-        outfile = fil.extract_samps(start=100, nsamps=nsamps, filename=tmpfile)
+        outfile = fil.extract_samps(start=100, nsamps=nsamps, outfile_name=tmpfile)
         new_fil = FilReader(outfile)
         np.testing.assert_equal(new_fil.header.dtype, fil.header.dtype)
         np.testing.assert_equal(new_fil.header.nsamples, nsamps)

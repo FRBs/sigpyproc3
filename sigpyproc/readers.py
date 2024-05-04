@@ -90,7 +90,7 @@ class FilReader(Filterbank):
         data = data.reshape(nsamps_read, self.header.nchans).transpose()
         start_mjd = self.header.mjd_after_nsamps(start)
         new_header = self.header.new_header(
-            {"tstart": start_mjd, "nsamples": nsamps_read}
+            {"tstart": start_mjd, "nsamples": nsamps_read},
         )
         return FilterbankBlock(data, new_header)
 
