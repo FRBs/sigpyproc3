@@ -49,6 +49,7 @@ tests = [
     "pytest-benchmark",
     "pytest-mock",
     "mypy",
+    "scipy",
 ]
 docs = ["sphinx", "sphinx-book-theme", "sphinx-click", "myst-nb"]
 develop = ["ruff"]

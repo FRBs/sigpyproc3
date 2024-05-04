@@ -223,7 +223,7 @@ class FileReader(FileBase):
             self._seek2hdr(self.ifile_cur + 1)
         data_ar = np.concatenate(data)
         if self.bitsinfo.unpack:
-            return unpack(data_ar, self.bitsinfo.nbits)
+            return unpack(data_ar, self.bitsinfo.nbits, bitorder=self.bitsinfo.bitorder)
         return data_ar
 
     def creadinto(
@@ -279,7 +279,12 @@ class FileReader(FileBase):
         if self.bitsinfo.unpack and unpack_buffer is not None:
             read_ar = np.frombuffer(read_buffer_view, dtype=np.uint8)
             unpack_ar = np.frombuffer(memoryview(unpack_buffer), dtype=np.uint8)
-            unpack(read_ar, self.bitsinfo.nbits, unpack_ar)
+            unpack(
+                read_ar,
+                self.bitsinfo.nbits,
+                unpack_ar,
+                bitorder=self.bitsinfo.bitorder,
+            )
         elif self.bitsinfo.unpack:
             msg = "unpack_buffer should be provided when unpacking"
             raise ValueError(msg)
@@ -384,7 +389,7 @@ class FileWriter(FileBase):
             # arr should be normalized first
             arr = self.bitsinfo.quantize(arr)
         if self.bitsinfo.unpack:
-            packed = pack(arr, self.bitsinfo.nbits)
+            packed = pack(arr, self.bitsinfo.nbits, bitorder=self.bitsinfo.bitorder)
             packed.tofile(self.file_obj)
         else:
             arr.tofile(self.file_obj)

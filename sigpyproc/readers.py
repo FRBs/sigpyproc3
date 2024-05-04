@@ -242,16 +242,6 @@ class PFITSReader(Filterbank):
         """:class:`~sigpyproc.io.bits.BitsInfo`: Bits info of input file data."""
         return self._fitsfile.bitsinfo
 
-    @property
-    def chan_stride(self) -> float:
-        """int: Channel byte stride in input data."""
-        return self.bitsinfo.itemsize / self.bitsinfo.bitfact
-
-    @property
-    def samp_stride(self) -> int:
-        """int: Sample byte stride in input data."""
-        return int(self.header.nchans * self.chan_stride)
-
     def read_block(self, start: int, nsamps: int) -> FilterbankBlock:
         if start < 0 or start + nsamps > self.header.nsamples:
             msg = f"requested block is out of range: start={start}, nsamps={nsamps}"

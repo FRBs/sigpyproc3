@@ -147,6 +147,14 @@ class BitsInfo:
         16: 6,
         32: 6,
     }
+    default_bitorder: ClassVar[dict[int, str]] = {
+        1: "little",
+        2: "big",
+        4: "big",
+        8: "invalid",
+        16: "invalid",
+        32: "invalid",
+    }
 
     @property
     def dtype(self) -> np.dtype:
@@ -167,6 +175,11 @@ class BitsInfo:
     def bitfact(self) -> int:
         """Bit factor to unpack/pack bits (`int`, read-only)."""
         return 8 // self.nbits if self.unpack else 1
+
+    @property
+    def bitorder(self) -> str:
+        """Bit order of the packed data (`str`, read-only)."""
+        return self.default_bitorder[self.nbits]
 
     @property
     def digi_min(self) -> int:
