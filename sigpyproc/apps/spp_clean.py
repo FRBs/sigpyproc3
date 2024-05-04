@@ -1,10 +1,12 @@
+from __future__ import annotations
+
 import click
 
 from sigpyproc.readers import FilReader
 
 
 @click.command(
-    context_settings=dict(help_option_names=["-h", "--help"], show_default=True)
+    context_settings={"help_option_names": ["-h", "--help"], "show_default": True},
 )
 @click.argument("filfile", type=click.Path(exists=True))
 @click.option(
@@ -15,27 +17,51 @@ from sigpyproc.readers import FilReader
     help="RFI cleaning method to use.",
 )
 @click.option(
-    "-t", "--threshold", type=float, default=3.0, help="Sigma threshold for RFI cleaning."
+    "-t",
+    "--threshold",
+    type=float,
+    default=3.0,
+    help="Sigma threshold for RFI cleaning.",
 )
 @click.option(
-    "-g", "--gulp", type=int, default=16384, help="Number of samples to read at once"
+    "-g",
+    "--gulp",
+    type=int,
+    default=16384,
+    help="Number of samples to read at once",
 )
 @click.option(
-    "-o", "--outfile", type=click.Path(exists=False), help="Output masked filterbank file"
+    "-o",
+    "--outfile",
+    type=click.Path(exists=False),
+    default=None,
+    help="Output masked filterbank file",
 )
 @click.option(
-    "--save/--no-save", default=True, help="Save the mask information to a file"
+    "-s",
+    "--maskfile",
+    type=click.Path(exists=False),
+    default=None,
+    help="Output mask file",
 )
 def main(
-    filfile: str, method: str, threshold: float, outfile: str, gulp: int, save: bool
+    filfile: str,
+    method: str,
+    threshold: float,
+    outfile: str | None,
+    maskfile: str | None,
+    gulp: int,
 ) -> None:
     """Clean RFI from filterbank data."""
     fil = FilReader(filfile)
     _out_file, rfimask = fil.clean_rfi(
-        method=method, threshold=threshold, filename=outfile, gulp=gulp
+        method=method,
+        threshold=threshold,
+        outfile_name=outfile,
+        gulp=gulp,
     )
-    if save:
-        rfimask.to_file()
+    if maskfile is not None:
+        rfimask.to_file(filename=maskfile)
 
 
 if __name__ == "__main__":

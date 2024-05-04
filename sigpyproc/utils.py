@@ -1,28 +1,23 @@
 from __future__ import annotations
-import numpy as np
+
 import logging
+from pathlib import Path
+from typing import TYPE_CHECKING
 
-from numpy import typing as npt
-
-from datetime import datetime
-from rich.text import Text
-from rich.logging import RichHandler
+import numpy as np
 from astropy import units
 from astropy.time import Time, TimeDelta
+from rich.logging import RichHandler
+
+if TYPE_CHECKING:
+    import inspect
 
 
-class AttrDict(dict):  # noqa:WPS600
-    def __init__(self, *args, **kwargs) -> None:
-        """Dict class to expose keys as attributes."""
-        super().__init__(*args, **kwargs)
-        self.__dict__ = self
-
-
-def roll_array(arr: npt.ArrayLike, shift: int, axis: int = 0) -> np.ndarray:
+def roll_array(arr: np.ndarray, shift: int, axis: int = 0) -> np.ndarray:
     """Roll the elements in the array by `shift` positions along the given axis.
 
-    The shift direction is from the end towards the beginning of the axis, opposite to the
-    shift direction of :py:func:`~numpy.roll`.
+    The shift direction is from the end towards the beginning of the axis,
+    opposite to the shift direction of :py:func:`~numpy.roll`.
 
     Parameters
     ----------
@@ -41,7 +36,10 @@ def roll_array(arr: npt.ArrayLike, shift: int, axis: int = 0) -> np.ndarray:
     arr = np.asanyarray(arr)
     arr_size = arr.shape[axis]
     shift %= arr_size
-    return arr.take(np.concatenate((np.arange(shift, arr_size), np.arange(shift))), axis)
+    return arr.take(
+        np.concatenate((np.arange(shift, arr_size), np.arange(shift))),
+        axis,
+    )
 
 
 def nearest_factor(num: int, fac: int) -> int:
@@ -69,9 +67,13 @@ def nearest_factor(num: int, fac: int) -> int:
 
 
 def get_logger(
-    name: str, level: int | str = logging.INFO, quiet: bool = False
+    name: str,
+    *,
+    level: int | str = logging.INFO,
+    quiet: bool = False,
+    log_file: str | None = None,
 ) -> logging.Logger:
-    """Get a fancy logging utility using Rich library.
+    """Get a fancy configured logger.
 
     Parameters
     ----------
@@ -81,6 +83,8 @@ def get_logger(
         logging level, by default logging.INFO
     quiet : bool, optional
         if True set `level` as logging.WARNING, by default False
+    log_file : str, optional
+        path to log file, by default None
 
     Returns
     -------
@@ -88,32 +92,35 @@ def get_logger(
         a logging object
     """
     logger = logging.getLogger(name)
-    if quiet:
-        logger.setLevel(logging.WARNING)
-    else:
-        logger.setLevel(level)
-
+    logger.setLevel(logging.WARNING if quiet else level)
     logformat = "- %(name)s - %(message)s"
     formatter = logging.Formatter(fmt=logformat)
-
     if not logger.hasHandlers():
         handler = RichHandler(
-            show_level=False,
             show_path=False,
             rich_tracebacks=True,
-            log_time_format=_time_formatter,
+            log_time_format="%Y-%m-%d %H:%M:%S",
         )
         handler.setFormatter(formatter)
         logger.addHandler(handler)
+    if log_file and not any(
+        isinstance(hndlr, logging.FileHandler)
+        and hndlr.baseFilename == Path(log_file).resolve().as_posix()
+        for hndlr in logger.handlers
+    ):
+        file_handler = logging.FileHandler(Path(log_file).resolve().as_posix())
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
     return logger
 
-
-def _time_formatter(timestamp: datetime) -> Text:
-    return Text(timestamp.isoformat(sep=" ", timespec="milliseconds"))
-
+def get_callerfunc(stack: list[inspect.FrameInfo]) -> str:
+    for i in range(len(stack)):
+        if stack[i].function == "<module>":
+            return stack[i - 1].function
+    return stack[1].function
 
 def time_after_nsamps(tstart: float, tsamp: float, nsamps: int = 0) -> Time:
-    """Get precise time nsamps after input tstart. If nsamps is not given then just return tstart.
+    """Get time after given nsamps. If nsamps is not given then just return tstart.
 
     Parameters
     ----------
@@ -149,23 +156,23 @@ def duration_string(duration: float) -> str:
     """
     if duration < 60:
         return f"{duration:.1f} seconds"
-    elif duration < 3600:
+    if duration < 3600:
         return f"{duration / 60:.1f} minutes"
-    elif duration < 86400:
+    if duration < 86400:
         return f"{duration / 3600:.1f} hours"
     return f"{duration / 86400:.1f} days"
 
 
-class FrequencyChannels(object):
+class FrequencyChannels:
     """FrequencyChannels class to handle frequency channels.
 
     Parameters
     ----------
-    freqs : :py:obj:`~numpy.typing.ArrayLike`
+    freqs : :py:obj:`~numpy.ndarray`
         array of frequencies
     """
 
-    def __init__(self, freqs: npt.ArrayLike) -> None:
+    def __init__(self, freqs: np.ndarray) -> None:
         freqs = np.asanyarray(freqs, dtype=np.float64)
         self._check_freqs(freqs)
         self._array = units.Quantity(freqs, units.MHz, copy=False)
@@ -174,7 +181,7 @@ class FrequencyChannels(object):
         self._foff = self._array[1] - self._array[0]
 
     @property
-    def array(self) -> np.ndarray:
+    def array(self) -> units.Quantity:
         """:py:obj:`~numpy.ndarray`: Get the frequency array."""
         return self._array
 
@@ -184,32 +191,32 @@ class FrequencyChannels(object):
         return self._nchans
 
     @property
-    def fch1(self) -> float:
+    def fch1(self) -> units.Quantity:
         """float: Central frequency of the first channel."""
         return self._fch1
 
     @property
-    def foff(self) -> float:
+    def foff(self) -> units.Quantity:
         """float: Channel width."""
         return self._foff
 
     @property
-    def ftop(self) -> float:
+    def ftop(self) -> units.Quantity:
         """float: Frequency (edge) of the top channel."""
         return self.fch1 - 0.5 * self.foff
 
     @property
-    def fcenter(self) -> float:
+    def fcenter(self) -> units.Quantity:
         """float: Central frequency of the whole band."""
         return self.ftop + 0.5 * self.foff * self.nchans
 
     @property
-    def fbottom(self) -> float:
+    def fbottom(self) -> units.Quantity:
         """float: Frequency (edge) of the bottom channel."""
         return self.ftop + self.foff * self.nchans
 
     @property
-    def bandwidth(self) -> float:
+    def bandwidth(self) -> units.Quantity:
         """float: Bandwidth."""
         return abs(self.foff) * self.nchans
 
@@ -220,14 +227,21 @@ class FrequencyChannels(object):
 
     @classmethod
     def from_pfits(
-        cls, fcenter: float, bandwidth: float, nchans: int
+        cls,
+        fcenter: float,
+        bandwidth: float,
+        nchans: int,
     ) -> FrequencyChannels:
         foff = bandwidth / nchans
         fch1 = fcenter - 0.5 * foff * (nchans - 1)
         array = np.arange(nchans, dtype=np.float64) * foff + fch1
         return cls(array)
 
-    def _check_freqs(self, freqs) -> None:
-        assert len(freqs) > 0, "Frequency array cannot be empty."
+    def _check_freqs(self, freqs: np.ndarray) -> None:
+        if len(freqs) == 0:
+            msg = "Frequency array empty."
+            raise ValueError(msg)
         diff = np.diff(freqs)
-        assert np.all(np.isclose(diff, diff[0])), "Frequencies must be equally spaced."
+        if not np.all(np.isclose(diff, diff[0])):
+            msg = "Frequencies must be equally spaced."
+            raise ValueError(msg)

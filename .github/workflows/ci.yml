@@ -14,34 +14,36 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        python-version: ['3.8', '3.9']
+        python-version: ['3.9', '3.10', '3.11']
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
     - name: Install it
       run: |
         python -m pip install -U pip setuptools wheel
-        python -m pip install -e .[tests]
-    - name: Lint with flake8
+        python -m pip install .[tests] -v
+    - name: Lint with Ruff
+      uses: chartboost/ruff-action@v1
+      with:
+        args: "check"
+      continue-on-error: true
+    - name: Check types with mypy
       run: |
-        pip install flake8 wemake-python-styleguide
-        # stop the build if there are Python syntax errors or undefined names
-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
-        flake8 . --count --exit-zero --statistics
-    - name: Run pytest and Generate coverage report
+        mypy --strict ./sigpyproc/
+      continue-on-error: true
+    - name: Test with pytest and Generate coverage report
       run: |
-        pip install pytest pytest-cov
         pytest --cov=./ --cov-report=xml
       continue-on-error: false
     - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v2
+      uses: codecov/codecov-action@v4
       with:
-        token: ${{ secrets.CODECOV_TOKEN }}
         file: ./coverage.xml
         name: codecov-umbrella
         fail_ci_if_error: true
+      env:
+        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

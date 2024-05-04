@@ -1,112 +1,120 @@
-import pytest
-import numpy as np
+from __future__ import annotations
+
 from pathlib import Path
+
+import numpy as np
+import pytest
 
 _testdir = Path(__file__).resolve().parent
 _datadir = _testdir / "data"
 
 
 @pytest.fixture(scope="session")
-def tmpfile(tmp_path_factory, content=""):
+def tmpfile(tmp_path_factory: pytest.TempPathFactory, content: str = "") -> str:
     fn = tmp_path_factory.mktemp("pytest_data") / "test.tmpfile"
     fn.write_text(content)
     return fn.as_posix()
 
+
 @pytest.fixture(scope="session", autouse=True)
-def filfile_1bit():
+def filfile_1bit() -> str:
     return Path(_datadir / "parkes_1bit.fil").as_posix()
 
 
 @pytest.fixture(scope="session", autouse=True)
-def filfile_2bit():
+def filfile_2bit() -> str:
     return Path(_datadir / "parkes_2bit.fil").as_posix()
 
 
 @pytest.fixture(scope="session", autouse=True)
-def filfile_4bit():
+def filfile_4bit() -> str:
     return Path(_datadir / "parkes_4bit.fil").as_posix()
 
 
 @pytest.fixture(scope="session", autouse=True)
-def filfile_8bit_1():
+def filfile_8bit_1() -> str:
     return Path(_datadir / "parkes_8bit_1.fil").as_posix()
 
 
 @pytest.fixture(scope="session", autouse=True)
-def filfile_8bit_2():
+def filfile_8bit_2() -> str:
     return Path(_datadir / "parkes_8bit_2.fil").as_posix()
 
+
 @pytest.fixture(scope="session", autouse=True)
-def filterbank_files():
+def filfiles() -> list:
     return [
         Path(_datadir / "parkes_1bit.fil").as_posix(),
         Path(_datadir / "parkes_2bit.fil").as_posix(),
         Path(_datadir / "parkes_4bit.fil").as_posix(),
-        [Path(_datadir / "parkes_8bit_1.fil").as_posix(),
-         Path(_datadir / "parkes_8bit_2.fil").as_posix()],
+        [
+            Path(_datadir / "parkes_8bit_1.fil").as_posix(),
+            Path(_datadir / "parkes_8bit_2.fil").as_posix(),
+        ],
         Path(_datadir / "tutorial.fil").as_posix(),
         Path(_datadir / "tutorial_2bit.fil").as_posix(),
     ]
 
+
 @pytest.fixture(scope="session", autouse=True)
-def fitsfile_4bit():
+def fitsfile_4bit() -> str:
     return Path(_datadir / "parkes_4bit.sf").as_posix()
 
 
 @pytest.fixture(scope="session", autouse=True)
-def maskfile():
+def maskfile() -> str:
     return Path(_datadir / "parkes_8bit_1_mask.h5").as_posix()
 
 
 @pytest.fixture(scope="session", autouse=True)
-def timfile():
+def timfile() -> str:
     return Path(_datadir / "GBT_J1807-0847.tim").as_posix()
 
 
 @pytest.fixture(scope="session", autouse=True)
-def timfile_mean():
+def timfile_mean() -> int:
     return 100
 
 
 @pytest.fixture(scope="session", autouse=True)
-def timfile_std():
+def timfile_std() -> int:
     return 691
 
 
 @pytest.fixture(scope="session", autouse=True)
-def datfile():
+def datfile() -> str:
     return Path(_datadir / "GBT_J1807-0847.dat").as_posix()
 
 
 @pytest.fixture(scope="session", autouse=True)
-def datfile_mean():
+def datfile_mean() -> int:
     return 445404
 
 
 @pytest.fixture(scope="session", autouse=True)
-def datfile_std():
+def datfile_std() -> int:
     return 3753
 
 
 @pytest.fixture(scope="session", autouse=True)
-def fftfile():
+def fftfile() -> str:
     return Path(_datadir / "GBT_J1807-0847.fft").as_posix()
 
 
 @pytest.fixture(scope="session", autouse=True)
-def inffile():
+def inffile() -> str:
     return Path(_datadir / "GBT_J1807-0847.inf").as_posix()
 
 
 @pytest.fixture(scope="class", autouse=True)
-def tim_data():
-    np.random.seed(5)
-    return np.random.normal(128, 20, 10000)
+def tim_data() -> np.ndarray:
+    rng = np.random.default_rng(5)
+    return rng.normal(128, 20, 10000)
 
 
 @pytest.fixture(scope="class", autouse=True)
-def tim_header():
-    header = {}
+def tim_header() -> dict[str, str | float]:
+    header: dict[str, str | float] = {}
     header["rawdatafile"] = "tmp_test.tim"
     header["filename"] = "tmp_test.tim"
     header["data_type"] = "time series"
@@ -121,14 +129,14 @@ def tim_header():
 
 
 @pytest.fixture(scope="class", autouse=True)
-def fourier_data(tim_data):  # noqa: WPS442
+def fourier_data(tim_data: np.ndarray) -> np.ndarray:
     fft = np.fft.rfft(tim_data)
     return fft.view(np.float64).astype(np.float32).view(np.complex64)
 
 
 @pytest.fixture(scope="class", autouse=True)
-def inf_header():
-    header = {}
+def inf_header() -> dict[str, str | float]:
+    header: dict[str, str | float] = {}
     header["basename"] = "GBT_J1807-0847"
     header["telescope"] = "GBT"
     header["backend"] = "VEGAS"
@@ -146,8 +154,8 @@ def inf_header():
 
 
 @pytest.fixture(scope="class", autouse=True)
-def filfile_8bit_1_header():
-    header = {}
+def filfile_8bit_1_header() -> dict[str, str | float]:
+    header: dict[str, str | float] = {}
     header["telescope_id"] = 4
     header["machine_id"] = 0
     header["source_name"] = "J0534+2200"

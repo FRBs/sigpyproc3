@@ -1,18 +1,17 @@
 from __future__ import annotations
+
 import pathlib
+
 import numpy as np
 
-from numpy import typing as npt
-
 try:
-    from pyfftw.interfaces import numpy_fft  # noqa: WPS433
+    from pyfftw.interfaces import numpy_fft
 except ModuleNotFoundError:
-    from numpy import fft as numpy_fft  # noqa: WPS433
+    from numpy import fft as numpy_fft
 
-from sigpyproc import foldedcube
-from sigpyproc import fourierseries
+from sigpyproc import foldedcube, fourierseries
+from sigpyproc.core import kernels, stats
 from sigpyproc.header import Header
-from sigpyproc.core import stats, kernels
 
 
 class TimeSeries(np.ndarray):
@@ -35,7 +34,7 @@ class TimeSeries(np.ndarray):
     Data is converted to 32-bit floats regardless of original type.
     """
 
-    def __new__(cls, input_array: npt.ArrayLike, header: Header) -> TimeSeries:
+    def __new__(cls, input_array: np.ndarray, header: Header) -> TimeSeries:
         obj = np.asarray(input_array).astype(np.float32, copy=False).view(cls)
         obj.header = header
         return obj
@@ -135,7 +134,7 @@ class TimeSeries(np.ndarray):
         """
         if window < 1:
             raise ValueError("incorrect window size")
-        tim_ar = stats.running_mean(self, window)
+        tim_ar = stats.running_filter(self, window, filter_func="mean")
         return tim_ar.view(TimeSeries)
 
     def running_median(self, window: int = 10001) -> TimeSeries:
@@ -155,7 +154,7 @@ class TimeSeries(np.ndarray):
         -----
         Window edges is dealt by reflecting about the edges of the time series.
         """
-        tim_ar = stats.running_median(self, window)
+        tim_ar = stats.running_filter(self, window, filter_func="median")
         return tim_ar.view(TimeSeries)
 
     def apply_boxcar(self, width: int) -> TimeSeries:
@@ -182,7 +181,7 @@ class TimeSeries(np.ndarray):
         """
         if width < 1:
             raise ValueError("incorrect boxcar window size")
-        mean_ar = stats.running_mean(self, width) * np.sqrt(width)
+        mean_ar = stats.running_filter(self, width, filter_func="mean") * np.sqrt(width)
         ref_bin = -width // 2 + 1 if width % 2 else -width // 2
         boxcar_ar = np.roll(mean_ar, ref_bin)
         return boxcar_ar.view(TimeSeries)
@@ -249,7 +248,7 @@ class TimeSeries(np.ndarray):
         changes = {"nsamples": tim_ar.size, "accel": accel}
         return TimeSeries(tim_ar, self.header.new_header(changes))
 
-    def correlate(self, other: TimeSeries | npt.ArrayLike) -> TimeSeries:
+    def correlate(self, other: TimeSeries | np.ndarray) -> TimeSeries:
         """Cross correlate with another time series of the same length.
 
         Parameters
@@ -369,5 +368,7 @@ class TimeSeries(np.ndarray):
             a new TimeSeries object
         """
         header = Header.from_sigproc(timfile)
-        data = np.fromfile(timfile, dtype=header.dtype, offset=header.hdrlens[0])
+        data = np.fromfile(
+            timfile, dtype=header.dtype, offset=header.stream_info.entries[0].hdrlen
+        )
         return cls(data, header)

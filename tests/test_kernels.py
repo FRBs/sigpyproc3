@@ -1,76 +1,166 @@
 import numpy as np
-from sigpyproc.core import kernels, stats, rfi
-from sigpyproc.header import Header
+import pytest
+from scipy import stats
+
+from sigpyproc.core import kernels
 
 
-class TestKernels(object):
-    def test_unpack1_8(self):
-        input_arr = np.array([0, 2, 7, 23], dtype=np.uint8)
-        expected_bit1 = np.array(
-            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0,
-             0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 0, 1, 1, 1], dtype=np.uint8
+class TestKernels:
+    @pytest.mark.parametrize("nbits", [1, 2, 4])
+    @pytest.mark.parametrize("bitorder", ["big", "little"])
+    @pytest.mark.parametrize("parallel", [False, True])
+    def test_unpack1_8(self, nbits: int, bitorder: str, parallel: bool) -> None:
+        input_arr = np.array([7, 23], dtype=np.uint8)
+        if nbits == 1 and bitorder == "big":
+            expected = np.array(
+                [0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 0, 1, 1, 1],
+                dtype=np.uint8,
+            )
+        elif nbits == 1 and bitorder == "little":
+            expected = np.array(
+                [1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1, 0, 0, 0],
+                dtype=np.uint8,
+            )
+        elif nbits == 2 and bitorder == "big":
+            expected = np.array([0, 0, 1, 3, 0, 1, 1, 3], dtype=np.uint8)
+        elif nbits == 2 and bitorder == "little":
+            expected = np.array([3, 1, 0, 0, 3, 1, 1, 0], dtype=np.uint8)
+        elif nbits == 4 and bitorder == "big":
+            expected = np.array([0, 7, 1, 7], dtype=np.uint8)
+        elif nbits == 4 and bitorder == "little":
+            expected = np.array([7, 0, 7, 1], dtype=np.uint8)
+        unpacked = np.empty_like(expected)
+        bitorder_str = "big" if bitorder[0] == "b" else "little"
+        parallel_str = "" if parallel else "_serial"
+        unpack_func = getattr(
+            kernels,
+            f"unpack{nbits:d}_8_{bitorder_str}{parallel_str}",
         )
-        unpacked = np.empty_like(expected_bit1)
-        np.testing.assert_array_equal(expected_bit1, kernels.unpack1_8(input_arr, unpacked))
+        unpack_func(input_arr, unpacked)
+        np.testing.assert_array_equal(unpacked, expected, strict=True)
+        unpack_func.py_func(input_arr, unpacked)
+        np.testing.assert_array_equal(unpacked, expected, strict=True)
 
-    def test_unpack2_8(self):
-        input_arr = np.array([0, 2, 7, 23], dtype=np.uint8)
-        expected_bit2 = np.array(
-            [0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 1, 3, 0, 1, 1, 3], dtype=np.uint8
-        )
-        unpacked = np.empty_like(expected_bit2)
-        np.testing.assert_array_equal(expected_bit2, kernels.unpack2_8(input_arr, unpacked))
+    @pytest.mark.parametrize("nbits", [1, 2, 4])
+    @pytest.mark.parametrize("bitorder", ["big", "little"])
+    @pytest.mark.parametrize("parallel", [False, True])
+    def test_pack(self, nbits: int, bitorder: str, parallel: bool) -> None:
+        rng = np.random.default_rng()
+        arr = rng.integers(255, size=2**10, dtype=np.uint8)
+        parallel_str = "" if parallel else "_serial"
+        unpack_func = getattr(kernels, f"unpack{nbits:d}_8_{bitorder}{parallel_str}")
+        pack_func = getattr(kernels, f"pack{nbits:d}_8_{bitorder}{parallel_str}")
+        unpacked = np.zeros(arr.size * 8 // nbits, dtype=np.uint8)
+        unpack_func(arr, unpacked)
+        packed = np.empty_like(arr)
+        pack_func(unpacked, packed)
+        np.testing.assert_array_equal(packed, arr, strict=True)
+        unpack_func.py_func(arr, unpacked)
+        pack_func.py_func(unpacked, packed)
+        np.testing.assert_array_equal(packed, arr, strict=True)
 
-    def test_unpack4_8(self):
-        input_arr = np.array([0, 2, 7, 23], dtype=np.uint8)
-        expected_bit4 = np.array([0, 0, 0, 2, 0, 7, 1, 7], dtype=np.uint8)
-        unpacked = np.empty_like(expected_bit4)
-        np.testing.assert_array_equal(expected_bit4, kernels.unpack4_8(input_arr, unpacked))
-
-    def test_pack2_8(self):
-        input_arr = np.arange(255, dtype=np.uint8)
-        unpacked = np.empty(input_arr.size * 4, dtype="ubyte")
-        output = kernels.pack2_8(kernels.unpack2_8(input_arr, unpacked))
-        np.testing.assert_array_equal(input_arr, output)
-
-    def test_pack4_8(self):
-        input_arr = np.arange(255, dtype=np.uint8)
-        unpacked = np.empty(input_arr.size * 2, dtype="ubyte")
-        output = kernels.pack4_8(kernels.unpack4_8(input_arr, unpacked))
-        np.testing.assert_array_equal(input_arr, output)
-
-
-class TestStats(object):
-    def test_zscore_mad(self):
-        input_arr = np.array([1, 2, 3, 4], dtype=np.uint8)
-        desired = np.array(
-            [-1.01173463, -0.33724488, 0.33724488, 1.01173463], dtype=np.float32
+    def test_np_mean(self) -> None:
+        rng = np.random.default_rng()
+        arr = rng.normal(size=(128, 256))
+        np.testing.assert_array_almost_equal(
+            kernels.np_mean(arr, axis=0),
+            np.mean(arr, axis=0),
         )
         np.testing.assert_array_almost_equal(
-            desired, stats.zscore_mad(input_arr), decimal=4
+            kernels.np_mean(arr, axis=1),
+            np.mean(arr, axis=1),
         )
+        with pytest.raises(ValueError):
+            kernels.np_mean(arr, axis=2)
+        arr = rng.normal(size=(128, 256, 512))
+        with pytest.raises(ValueError):
+            kernels.np_mean(arr, axis=0)
 
-    def test_zscore_double_mad(self):
-        input_arr = np.array([1, 2, 3, 4], dtype=np.uint8)
-        desired = np.array(
-            [-1.01173463, -0.33724488, 0.33724488, 1.01173463], dtype=np.float32
+
+class TestMoments:
+    def test_compute_moments_basic(self) -> None:
+        nchans = 128
+        nsamps = 256
+        rng = np.random.default_rng()
+        arr = rng.normal(size=(nchans, nsamps)).astype(np.float32)
+        bag = kernels.MomentsBag(nchans)
+        kernels.compute_online_moments_basic(arr.T.ravel(), bag, nsamps, startflag=0)
+        np.testing.assert_array_almost_equal(bag.max, np.max(arr, axis=1))
+        np.testing.assert_array_almost_equal(bag.min, np.min(arr, axis=1))
+        np.testing.assert_array_almost_equal(
+            bag.m1,
+            stats.moment(arr, axis=1, center=0, order=1),
         )
         np.testing.assert_array_almost_equal(
-            desired, stats.zscore_double_mad(input_arr), decimal=4
+            bag.m2,
+            stats.moment(arr, axis=1, order=2) * nsamps,
+            decimal=2,
+        )
+        kernels.compute_online_moments_basic.py_func(
+            arr.T.ravel(),
+            bag,
+            nsamps,
+            startflag=0,
         )
 
+    def test_compute_moments(self) -> None:
+        nchans = 128
+        nsamps = 256
+        rng = np.random.default_rng()
+        arr = rng.normal(size=(nchans, nsamps)).astype(np.float32)
+        bag = kernels.MomentsBag(nchans)
+        kernels.compute_online_moments(arr.T.ravel(), bag, nsamps, startflag=0)
+        np.testing.assert_array_almost_equal(bag.max, np.max(arr, axis=1))
+        np.testing.assert_array_almost_equal(bag.min, np.min(arr, axis=1))
+        np.testing.assert_array_almost_equal(
+            bag.m1,
+            stats.moment(arr, axis=1, center=0, order=1),
+        )
+        np.testing.assert_array_almost_equal(
+            bag.m2,
+            stats.moment(arr, axis=1, order=2) * nsamps,
+            decimal=2,
+        )
+        np.testing.assert_array_almost_equal(
+            bag.m3,
+            stats.moment(arr, axis=1, order=3) * nsamps,
+            decimal=2,
+        )
+        np.testing.assert_array_almost_equal(
+            bag.m4,
+            stats.moment(arr, axis=1, order=4) * nsamps,
+            decimal=2,
+        )
+        kernels.compute_online_moments.py_func(
+            arr.T.ravel(),
+            bag,
+            nsamps,
+            startflag=0,
+        )
 
-class TestRFI(object):
-    def test_double_mad_mask(self):
-        input_arr = np.array([1, 2, 3, 4, 5, 20], dtype=np.uint8)
-        desired = np.array([0, 0, 0, 0, 0, 1], dtype=bool)
-        np.testing.assert_array_equal(desired, rfi.double_mad_mask(input_arr))
-
-
-class TestRFIMask(object):
-    def test_from_file(self, maskfile):
-        mask = rfi.RFIMask.from_file(maskfile)
-        assert isinstance(mask.header, Header)
-        np.testing.assert_equal(mask.num_masked, 83)
-        np.testing.assert_equal(mask.chan_mask.size, mask.header.nchans)
-        np.testing.assert_almost_equal(mask.masked_fraction, 9.97, decimal=1)
+    def test_compute_moments_add(self) -> None:
+        nchans = 128
+        nsamps = 256
+        rng = np.random.default_rng()
+        arr1 = rng.normal(size=(nchans, nsamps)).astype(np.float32)
+        arr2 = rng.normal(size=(nchans, nsamps)).astype(np.float32)
+        arr_expected = np.concatenate((arr1, arr2), axis=1).astype(np.float32)
+        bag1 = kernels.MomentsBag(nchans)
+        bag2 = kernels.MomentsBag(nchans)
+        bag_out = kernels.MomentsBag(nchans)
+        bag_expected = kernels.MomentsBag(nchans)
+        kernels.compute_online_moments(arr1.T.ravel(), bag1, nsamps, startflag=0)
+        kernels.compute_online_moments(arr2.T.ravel(), bag2, nsamps, startflag=0)
+        kernels.compute_online_moments(
+            arr_expected.T.ravel(),
+            bag_expected,
+            2 * nsamps,
+            startflag=0,
+        )
+        kernels.add_online_moments(bag1, bag2, bag_out)
+        np.testing.assert_array_almost_equal(bag_out.max, bag_expected.max)
+        np.testing.assert_array_almost_equal(bag_out.min, bag_expected.min)
+        np.testing.assert_array_almost_equal(bag_out.m1, bag_expected.m1)
+        np.testing.assert_array_almost_equal(bag_out.m2, bag_expected.m2, decimal=2)
+        np.testing.assert_array_almost_equal(bag_out.m3, bag_expected.m3, decimal=2)
+        np.testing.assert_array_almost_equal(bag_out.m4, bag_expected.m4, decimal=2)

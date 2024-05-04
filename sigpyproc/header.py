@@ -1,22 +1,22 @@
 from __future__ import annotations
-import pathlib
-import attrs
-import numpy as np
 
+from pathlib import Path
 from typing import Any
 
+import attrs
+import numpy as np
 from astropy import units
 from astropy.coordinates import Angle, SkyCoord
 
 from sigpyproc import params
-from sigpyproc.io import sigproc, pfits
+from sigpyproc.io import pfits, sigproc
 from sigpyproc.io.bits import BitsInfo
 from sigpyproc.io.fileio import FileWriter
-from sigpyproc.utils import time_after_nsamps, duration_string
+from sigpyproc.utils import duration_string, time_after_nsamps
 
 
 @attrs.define(auto_attribs=True, kw_only=True)
-class Header(object):
+class Header:
     """Container object to handle observation metadata.
 
     Parameters
@@ -69,16 +69,6 @@ class Header(object):
         if the data is signed
     rawdatafile: str
         Original file name
-    hdrlens: list of int
-        List of header length of files
-    datalens: list of int
-        List of data length of files
-    filenames: list of str
-        List of filenames
-    nsamples_files: list of int
-        List of samples in each file
-    tstart_files: list of float
-        List of start MJD in each file
     """
 
     filename: str
@@ -107,21 +97,17 @@ class Header(object):
     signed: bool = False
     rawdatafile: str = ""
 
-    hdrlens: list[int] = attrs.Factory(list)
-    datalens: list[int] = attrs.Factory(list)
-    filenames: list[str] = attrs.Factory(list)
-    nsamples_files: list[int] = attrs.Factory(list)
-    tstart_files: list[float] = attrs.Factory(list)
+    stream_info: sigproc.StreamInfo = sigproc.StreamInfo()
 
     @property
     def basename(self) -> str:
         """Basename of header filename (`str`, read-only)."""
-        return pathlib.Path(self.filename).stem
+        return Path(self.filename).stem
 
     @property
     def extension(self) -> str:
         """Extension of header filename (`str`, read-only)."""
-        return pathlib.Path(self.filename).suffix
+        return Path(self.filename).suffix
 
     @property
     def telescope_id(self) -> int:
@@ -162,7 +148,7 @@ class Header(object):
     def fmax(self) -> float:
         """Highest (center) frequency channel (`float`, read-only)."""
         return self.chan_freqs.max()
-    
+
     @property
     def fmin(self) -> float:
         """Lowest (center) frequency channel (`float`, read-only)."""
@@ -209,9 +195,13 @@ class Header(object):
         return time_after_nsamps(self.tstart, self.tsamp, nsamps).mjd
 
     def get_dmdelays(
-        self, dm: float, in_samples: bool = True, ref_freq: str = "ch1"
+        self,
+        dm: float,
+        *,
+        in_samples: bool = True,
+        ref_freq: str = "ch1",
     ) -> np.ndarray:
-        """For a given dispersion measure get the dispersive ISM delay for middle of each frequency channel.
+        """Get ISM disperison delays at each channel frequency for a given DM.
 
         Parameters
         ----------
@@ -227,8 +217,9 @@ class Header(object):
         :py:obj:`~numpy.ndarray`
             delays for middle of each channel with respect to reference frequency
         """
-        if ref_freq not in ["max", "min", "center", "ch1"]:
-            raise ValueError(f"reference frequency {ref_freq} not defined")
+        if ref_freq not in {"max", "min", "center", "ch1"}:
+            msg = f"reference frequency {ref_freq} not defined"
+            raise ValueError(msg)
 
         fch_ref = getattr(self, f"f{ref_freq}")
         delays = dm * params.DM_CONSTANT_LK * ((self.chan_freqs**-2) - (fch_ref**-2))
@@ -253,7 +244,7 @@ class Header(object):
         if update_dict is not None:
             new.update(update_dict)
         new_checked = {
-            key: value for key, value in new.items() if key in attrs.asdict(self).keys()
+            key: value for key, value in new.items() if key in attrs.asdict(self)
         }
         return Header(**new_checked)
 
@@ -271,10 +262,10 @@ class Header(object):
             A dedispersed version of the header
         """
         return self.new_header(
-            {"dm": dm, "nchans": 1, "data_type": "time series", "nbits": 32}
+            {"dm": dm, "nchans": 1, "data_type": "time series", "nbits": 32},
         )
 
-    def to_dict(self, with_properties=True) -> dict[str, Any]:
+    def to_dict(self, *, with_properties: bool = True) -> dict[str, Any]:
         """Get a dict of all attributes including property attributes.
 
         Returns
@@ -286,19 +277,19 @@ class Header(object):
         if with_properties:
             prop = {
                 key: getattr(self, key)
-                for key, value in vars(type(self)).items()  # noqa: WPS421
+                for key, value in vars(type(self)).items()
                 if isinstance(value, property)
             }
             attributes.update(prop)
         return attributes
 
-    def to_sigproc(self, as_dict=False) -> dict | bytes:
-        """Get sigproc format header binary header.
+    def to_sigproc(self) -> dict:
+        """Get a dictionary of header values in Sigproc format.
 
         Returns
         -------
-        str
-            header in binary format
+        dict
+            header values in Sigproc format
         """
         header = self.to_dict()
         sig_header = {
@@ -316,10 +307,7 @@ class Header(object):
             "az_start": self.azimuth.deg,
         }
         sig_header.update(hdr_update)
-        if as_dict:
-            return sig_header
-
-        return sigproc.encode_header(sig_header)
+        return sig_header
 
     def to_string(self) -> str:
         hdr = []
@@ -327,8 +315,14 @@ class Header(object):
         hdr.extend(
             [
                 temp.format("Data file", self.filename),
-                temp.format("Header size (bytes)", self.hdrlens[0]),
-                temp.format("Data size (bytes)", self.datalens[0]),
+                temp.format(
+                    "Header size (bytes)",
+                    self.stream_info.get_combined("hdrlen"),
+                ),
+                temp.format(
+                    "Data size (bytes)",
+                    self.stream_info.get_combined("datalen"),
+                ),
                 temp.format("Data type", f"{self.data_type} ({self.frame})"),
                 temp.format("Telescope", self.telescope),
                 temp.format("Datataking Machine", self.backend),
@@ -337,7 +331,7 @@ class Header(object):
                 temp.format("Source DEC (J2000)", self.dec),
                 temp.format("Start AZ (deg)", self.azimuth.deg),
                 temp.format("Start ZA (deg)", self.zenith.deg),
-            ]
+            ],
         )
         if self.data_type == "filterbank":
             hdr.extend(
@@ -347,7 +341,7 @@ class Header(object):
                     temp.format("Number of channels", self.nchans),
                     temp.format("Number of beams", self.nbeams),
                     temp.format("Beam number", self.ibeam),
-                ]
+                ],
             )
         elif self.data_type == "time series":
             hdr.extend(
@@ -355,7 +349,7 @@ class Header(object):
                     temp.format("Reference DM (pc/cc)", self.dm),
                     temp.format("Reference frequency    (MHz)", self.fch1),
                     temp.format("Number of channels", self.nchans),
-                ]
+                ],
             )
         print_dur, print_unit = duration_string(self.tobs).split()
         hdr.extend(
@@ -370,19 +364,17 @@ class Header(object):
                 temp.format(f"Observation length {print_unit}", print_dur),
                 temp.format("Number of bits per sample", self.nbits),
                 temp.format("Number of IFs", self.nifs),
-            ]
+            ],
         )
         return "\n".join(hdr)
 
     def prep_outfile(
         self,
         filename: str,
-        update_dict: dict[str, Any] | None = None,
+        *,
+        updates: dict[str, Any] | None = None,
         nbits: int | None = None,
-        quantize: bool = False,
-        interval_seconds: float = 10,
-        constant_offset_scale: bool = False,
-        **kwargs,
+        rescale: bool = False,
     ) -> FileWriter:
         """Prepare a file to have sigproc format data written to it.
 
@@ -390,11 +382,15 @@ class Header(object):
         ----------
         filename : str
             name of new file
-        update_dict : dict, optional
+        updates : dict, optional
             values to overide existing header values, by default None
         nbits : int, optional
-            the bitsize of data points that will written to this file (1,2,4,8,32),
-            by default None
+            Number of bits per output sample, by default None
+        scale_fac : float, optional
+            Additional scale factor to apply to data, by default 1.0
+        rescale : bool, optional
+            whether to rescale the data using the nbit-dependent values,
+            by default True
 
         Returns
         -------
@@ -403,23 +399,22 @@ class Header(object):
         """
         if nbits is None:
             nbits = self.nbits
-        new_hdr = self.new_header(update_dict)
-        new_hdr.nbits = nbits
+        if updates is None:
+            updates = {}
+        if nbits != self.nbits:
+            updates["nbits"] = nbits
+        new_hdr = self.new_header(updates)
         out_file = FileWriter(
             filename,
-            tsamp=new_hdr.tsamp,
-            nchans=new_hdr.nchans,
             mode="w+",
             nbits=nbits,
-            quantize=quantize,
-            interval_seconds=interval_seconds,
-            constant_offset_scale=constant_offset_scale,
-            **kwargs,
+            rescale=rescale,
         )
-        out_file.write(new_hdr.to_sigproc())
+        new_hdr_binary = sigproc.encode_header(new_hdr.to_sigproc())
+        out_file.write(new_hdr_binary)
         return out_file
 
-    def make_inf(self, outfile=None):
+    def make_inf(self, outfile: str | None = None) -> str | None:
         """Make a presto format ``.inf`` file.
 
         Parameters
@@ -442,11 +437,11 @@ class Header(object):
             f" {desc:<38} =  {inf_dict[key]:{keyformat}}"
             for desc, (key, _keytype, keyformat) in params.presto_inf.items()
         ]
-        inf = "\n".join(inf)
+        inf_str = "\n".join(inf)
         if outfile is None:
-            return inf
-        with open(outfile, "w+") as fp:
-            fp.write(inf)
+            return inf_str
+        with Path(outfile).open("w+") as fp:
+            fp.write(inf_str)
         return None
 
     @classmethod
@@ -464,7 +459,7 @@ class Header(object):
             observational metadata
         """
         header: dict[str, Any] = {}
-        with open(filename, "r") as fp:
+        with Path(filename).open("r") as fp:
             lines = fp.readlines()
 
         for line in lines:
@@ -472,9 +467,8 @@ class Header(object):
             val = line.split("=")[-1].strip()
             if desc not in list(params.presto_inf.keys()):
                 continue
-            else:
-                key, keytype, _keyformat = params.presto_inf[desc]
-                header[key] = keytype(val)
+            key, keytype, _keyformat = params.presto_inf[desc]
+            header[key] = keytype(val)
 
         hdr_update = {
             "filename": header["basename"],
@@ -484,20 +478,23 @@ class Header(object):
             "nchans": 1,
             "nifs": 1,
             "coord": SkyCoord(
-                header["ra"], header["dec"], unit=(units.hourangle, units.deg)
+                header["ra"],
+                header["dec"],
+                unit=(units.hourangle, units.deg),
             ),
         }
         header.update(hdr_update)
         header_check = {
-            key: value
-            for key, value in header.items()
-            if key in attrs.fields_dict(cls).keys()
+            key: value for key, value in header.items() if key in attrs.fields_dict(cls)
         }
         return cls(**header_check)
 
     @classmethod
     def from_sigproc(
-        cls, filenames: str | list[str], check_contiguity: bool = True
+        cls,
+        filenames: str | list[str],
+        *,
+        check_contiguity: bool = True,
     ) -> Header:
         """Parse the metadata from Sigproc-style file/sequential files.
 
@@ -512,18 +509,25 @@ class Header(object):
             observational metadata
 
         """
-        header = sigproc.parse_header_multi(filenames, check_contiguity=check_contiguity)
+        header = sigproc.parse_header_multi(
+            filenames,
+            check_contiguity=check_contiguity,
+        )
         frame = "pulsarcentric" if header.get("pulsarcentric") else "topocentric"
         frame = "barycentric" if header.get("barycentric") else "topocentric"
         hdr_update = {
             "data_type": params.data_types[header.get("data_type", 1)],
-            "telescope": sigproc.telescope_ids.inv.get(header.get("telescope_id", 0), "Fake"),
+            "telescope": sigproc.telescope_ids.inv.get(
+                header.get("telescope_id", 0),
+                "Fake",
+            ),
             "backend": sigproc.machine_ids.inv.get(header.get("machine_id", 0), "FAKE"),
             "source": header.get("source_name", "Fake"),
             "dm": header.get("refdm", 0),
             "foff": header.get("foff", 0),
             "coord": sigproc.parse_radec(
-                header.get("src_raj", 0), header.get("src_dej", 0)
+                header.get("src_raj", 0),
+                header.get("src_dej", 0),
             ),
             "azimuth": Angle(header.get("az_start", 0) * units.deg),
             "zenith": Angle(header.get("za_start", 0) * units.deg),
@@ -531,9 +535,7 @@ class Header(object):
         }
         header.update(hdr_update)
         header_check = {
-            key: value
-            for key, value in header.items()
-            if key in attrs.fields_dict(cls).keys()
+            key: value for key, value in header.items() if key in attrs.fields_dict(cls)
         }
         return cls(**header_check)
 
@@ -572,8 +574,6 @@ class Header(object):
         }
         header.update(hdr_update)
         header_check = {
-            key: value
-            for key, value in header.items()
-            if key in attrs.fields_dict(cls).keys()
+            key: value for key, value in header.items() if key in attrs.fields_dict(cls)
         }
         return cls(**header_check)

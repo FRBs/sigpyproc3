@@ -1,11 +1,14 @@
 from __future__ import annotations
-import struct
-import numpy as np
 
-from bidict import bidict
-from astropy.time import Time, TimeDelta
-from astropy.coordinates import SkyCoord
+import struct
+from pathlib import Path
+from typing import BinaryIO
+
+import attrs
+import numpy as np
 from astropy import units
+from astropy.coordinates import SkyCoord
+from bidict import bidict
 
 header_keys = {
     "signed": "b",
@@ -45,29 +48,100 @@ telescope_ids = bidict(
         "Effelsberg": 8,
         "Effelsberg LOFAR": 9,
         "SRT": 10,
-        "Unknown": 11,
+        "LOFAR": 11,
+        "VLA": 12,
         "CHIME": 20,
-    }
+        "MeerKAT": 64,
+    },
 )
 
 machine_ids = bidict(
     {
         "FAKE": 0,
         "PSPM": 1,
-        "Wapp": 2,
+        "WAPP": 2,
         "AOFTM": 3,
-        "BCPM1": 4,
+        "BPP": 4,
         "OOTY": 5,
         "SCAMP": 6,
-        "GBT Pulsar Spigot": 7,
-        "PFFTS": 8,
-        "Unknown": 9,
+        "GMRTFB": 7,
+        "PULSAR2000": 8,
+        "PARSPEC": 9,
+        "BPSR": 10,
+        "COBALT": 11,
+        "GMRTNEW": 14,
         "CHIME": 20,
-    }
+    },
 )
 
 
-def edit_header(filename: str, key: str, value: int | float | str) -> None:
+@attrs.define(frozen=True, kw_only=True)
+class FileInfo:
+    """Class to handle individual file information."""
+
+    filename: str
+    hdrlen: int
+    datalen: int
+    nsamples: int
+    tstart: float
+    tsamp: float
+
+    @property
+    def tend(self) -> float:
+        """Get the end time of the file."""
+        return self.tstart + ((self.nsamples - 1) * self.tsamp) / 86400
+
+    @classmethod
+    def from_dict(cls, info: dict) -> FileInfo:
+        """Create FileInfo object from a dictionary."""
+        info_filtered = {key: info[key] for key in attrs.fields_dict(cls)}
+        return cls(**info_filtered)
+
+
+@attrs.define(frozen=True)
+class StreamInfo:
+    """Class to handle stream information as a list of FileInfo objects."""
+
+    entries: list[FileInfo] = attrs.Factory(list)
+
+    @property
+    def cumsum_datalens(self) -> np.ndarray:
+        """Get the cumulative sum of datalen for all entries."""
+        return np.cumsum(self.get_info_list("datalen"))
+
+    @property
+    def time_gaps(self) -> np.ndarray:
+        """Get the time gaps between files."""
+        tstart = np.array(self.get_info_list("tstart"))
+        tend = np.array(self.get_info_list("tend"))
+        if len(tstart) == 1:
+            return np.array([0])
+        return (tstart[1:] - tend[:-1]) * 86400
+
+    def add_entry(self, finfo: FileInfo) -> None:
+        """Add a FileInfo entry to the StreamInfo object."""
+        if not isinstance(finfo, FileInfo):
+            msg = f"Input must be a FileInfo object, got {type(finfo)}"
+            raise TypeError(msg)
+        self.entries.append(finfo)
+
+    def get_combined(self, key: str) -> int:
+        """Get the combined value of a key for all entries."""
+        return sum(self.get_info_list(key))
+
+    def get_info_list(self, key: str) -> list:
+        """Get list of values for a given key for all entries."""
+        return [getattr(entry, key) for entry in self.entries]
+
+    def check_contiguity(self) -> bool:
+        """Check if the files in the stream are contiguous/sequential."""
+        tsamp_list = self.get_info_list("tsamp")
+        tsamp_check = len(set(tsamp_list)) == 1
+        contiguous = np.allclose(self.time_gaps, tsamp_list[0], rtol=0.1)
+        return tsamp_check and contiguous
+
+
+def edit_header(filename: str, key: str, value: float | str) -> None:
     """Edit a sigproc style header directly in place for the given file.
 
     Parameters
@@ -91,7 +165,8 @@ def edit_header(filename: str, key: str, value: int | float | str) -> None:
        change the file on which it is being operated.
     """
     if key not in header_keys:
-        raise ValueError(f"Key '{key}' is not a valid sigproc key.")
+        msg = f"Key '{key}' is not a valid sigproc key."
+        raise ValueError(msg)
     header = parse_header(filename)
     if key == "source_name" and isinstance(value, str):
         oldlen = len(header["source_name"])
@@ -101,14 +176,19 @@ def edit_header(filename: str, key: str, value: int | float | str) -> None:
     hdr.update({key: value})
     new_hdr = encode_header(hdr)
     if header["hdrlen"] == len(new_hdr):
-        with open(filename, "rb+") as fp:
+        with Path(filename).open("rb+") as fp:
             fp.seek(0)
             fp.write(new_hdr)
     else:
-        raise ValueError("New header is too long/short for file")
+        msg = f"New header is too long/short for file {filename}"
+        raise ValueError(msg)
 
 
-def parse_header_multi(filenames: str | list[str], check_contiguity: bool = True) -> dict:
+def parse_header_multi(
+    filenames: str | list[str],
+    *,
+    check_contiguity: bool = True,
+) -> dict:
     """Parse the metadata from Sigproc-style file/sequential files.
 
     Parameters
@@ -126,28 +206,19 @@ def parse_header_multi(filenames: str | list[str], check_contiguity: bool = True
         filenames = [filenames]
 
     header = parse_header(filenames[0])
-    # Set multifile header values
-    header["hdrlens"] = [header["hdrlen"]]
-    header["datalens"] = [header["datalen"]]
-    header["nsamples_files"] = [header["nsamples"]]
-    header["tstart_files"] = [header["tstart"]]
-    header["filenames"] = [header["filename"]]
-
+    sinfo = StreamInfo([FileInfo.from_dict(header)])
     if len(filenames) > 1:
         for filename in filenames[1:]:
             hdr = parse_header(filename)
             match_header(header, hdr)
+            sinfo.add_entry(FileInfo.from_dict(hdr))
 
-            header["hdrlens"].append(hdr["hdrlen"])
-            header["datalens"].append(hdr["datalen"])
-            header["nsamples_files"].append(hdr["nsamples"])
-            header["tstart_files"].append(hdr["tstart"])
-            header["filenames"].append(hdr["filename"])
+        if check_contiguity and not sinfo.check_contiguity():
+            msg = f"Files {filenames} are not contiguous"
+            raise ValueError(msg)
 
-        if check_contiguity:
-            ensure_contiguity(header)
-
-    header["nsamples"] = sum(header["nsamples_files"])
+    header["stream_info"] = sinfo
+    header["nsamples"] = header["stream_info"].get_combined("nsamples")
     return header
 
 
@@ -169,14 +240,16 @@ def parse_header(filename: str) -> dict:
     IOError
         If file header is not in sigproc format
     """
-    with open(filename, "rb") as fp:
-        header = {}
+    with Path(filename).open("rb") as fp:
+        header: dict[str, float | str] = {}
         try:
             key = _read_string(fp)
         except struct.error:
-            raise IOError("File Header is not in sigproc format... Is file empty?")
+            msg = f"File {filename} Header is not in sigproc format... Is file empty?."
+            raise OSError(msg) from None
         if key != "HEADER_START":
-            raise IOError("File Header is not in sigproc format")
+            msg = f"File {filename} Header is not in sigproc format."
+            raise OSError(msg)
         while True:
             key = _read_string(fp)
             if key == "HEADER_END":
@@ -186,12 +259,16 @@ def parse_header(filename: str) -> dict:
             if key_fmt == "str":
                 header[key] = _read_string(fp)
             else:
-                header[key] = struct.unpack(key_fmt, fp.read(struct.calcsize(key_fmt)))[0]
+                header[key] = struct.unpack(key_fmt, fp.read(struct.calcsize(key_fmt)))[
+                    0
+                ]
         header["hdrlen"] = fp.tell()
         fp.seek(0, 2)
         header["filelen"] = fp.tell()
-        header["datalen"] = header["filelen"] - header["hdrlen"]
-        header["nsamples"] = 8 * header["datalen"] // header["nbits"] // header["nchans"]
+        header["datalen"] = int(header["filelen"]) - int(header["hdrlen"])
+        header["nsamples"] = (
+            8 * int(header["datalen"]) // int(header["nbits"]) // int(header["nchans"])
+        )
         fp.seek(0)
         header["filename"] = filename
 
@@ -218,41 +295,11 @@ def match_header(header1: dict, header2: dict) -> None:
         if key in keys_nomatch or key not in header_keys:
             continue
         if value != header2[key]:
-            raise ValueError(
-                f'Header key "{key} = {value} and {header2[key]}"'
-                + f'do not match for file {header2["filename"]}'
+            msg = (
+                f"Header key ({key} = {value}) and ({key} = {header2[key]}) "
+                f"do not match for file {header2['filename']}"
             )
-
-
-def ensure_contiguity(header: dict) -> None:
-    """Check if list of sigproc files are contiguous/sequential.
-
-    Parameters
-    ----------
-    header : dict
-        parsed header of sigproc files
-
-    Raises
-    ------
-    ValueError
-        if files are not contiguous
-    """
-    for ifile, _file in enumerate(header["filenames"][:-1]):
-        precision = int(np.ceil(abs(np.log10(header["tsamp"]))))
-        tstart = Time(
-            header["tstart_files"][ifile], format="mjd", scale="utc", precision=precision
-        )
-        end_time = tstart + TimeDelta(
-            header["nsamples_files"][ifile] * header["tsamp"], format="sec"
-        )
-        end_mjd = end_time.mjd
-        difference = header["tstart_files"][ifile + 1] - end_mjd
-        if abs(difference) > header["tsamp"]:
-            samp_diff = int(abs(difference) / header["tsamp"])
-            raise ValueError(
-                f"files {header['filenames'][ifile]} and {header['filenames'][ifile + 1]} "
-                + f"are off by at least {samp_diff} samples."
-            )
+            raise ValueError(msg)
 
 
 def encode_header(header: dict) -> bytes:
@@ -265,7 +312,7 @@ def encode_header(header: dict) -> bytes:
     """
     hdr_encoded = encode_key("HEADER_START")
 
-    for key in header.keys():
+    for key in header:
         if key not in header_keys:
             continue
         hdr_encoded += encode_key(key, value=header[key], value_type=header_keys[key])
@@ -275,7 +322,9 @@ def encode_header(header: dict) -> bytes:
 
 
 def encode_key(
-    key: str, value: int | float | str | None = None, value_type: str = "str"
+    key: str,
+    value: float | str | None = None,
+    value_type: str = "str",
 ) -> bytes:
     """Encode given header key to a bytes string.
 
@@ -321,23 +370,23 @@ def parse_radec(src_raj: float, src_dej: float) -> SkyCoord:
     :class:`~astropy.coordinates.SkyCoord`
         Astropy coordinate class
     """
-    ho, mi = divmod(src_raj, 10000)  # noqa: WPS432
+    ho, mi = divmod(src_raj, 10000)
     mi, se = divmod(mi, 100)
 
     sign = -1 if src_dej < 0 else 1
-    de, ami = divmod(abs(src_dej), 10000)  # noqa: WPS432
+    de, ami = divmod(abs(src_dej), 10000)
     ami, ase = divmod(ami, 100)
 
     radec_str = f"{int(ho)} {int(mi)} {se} {sign* int(de)} {int(ami)} {ase}"
     return SkyCoord(radec_str, unit=(units.hourangle, units.deg))
 
 
-def _read_string(fp):
+def _read_string(fp: BinaryIO) -> str:
     """Read the next sigproc-format string in the file.
 
     Parameters
     ----------
-    fp : file
+    fp : file object
         file object to read from.
 
     Returns

@@ -1,23 +1,25 @@
 from __future__ import annotations
-import numpy as np
+
 import inspect
+from typing import TYPE_CHECKING
 
-from collections.abc import Iterator, Callable
-try:
-    from collections.abc import Buffer
-except ImportError:
-    from typing import Any, NewType
-    Buffer = NewType("Buffer", Any)
-
+import numpy as np
 from rich.progress import track
+from typing_extensions import Buffer
 
-from sigpyproc.io import pfits
-from sigpyproc.io.fileio import FileReader
-from sigpyproc.io.bits import BitsInfo
-from sigpyproc.header import Header
 from sigpyproc.base import Filterbank
 from sigpyproc.block import FilterbankBlock
-from sigpyproc.utils import get_logger
+from sigpyproc.header import Header
+from sigpyproc.io.fileio import FileReader, allocate_buffer
+from sigpyproc.io.pfits import PFITSFile, PrimaryHdr, SubintHdr
+from sigpyproc.utils import get_callerfunc, get_logger
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterator
+
+    from sigpyproc.io.bits import BitsInfo
+
+logger = get_logger(__name__)
 
 
 class FilReader(Filterbank):
@@ -41,17 +43,21 @@ class FilReader(Filterbank):
     contain keywords found in the :data:`~sigpyproc.io.sigproc.header_keys` dictionary.
     """
 
-    def __init__(self, filenames: str | list[str], check_contiguity: bool = True) -> None:
+    def __init__(
+        self,
+        filenames: str | list[str],
+        *,
+        check_contiguity: bool = True,
+    ) -> None:
         if isinstance(filenames, str):
             filenames = [filenames]
         self._filenames = filenames
         self._header = Header.from_sigproc(
-            self._filenames, check_contiguity=check_contiguity
+            self._filenames,
+            check_contiguity=check_contiguity,
         )
         self._file = FileReader(
-            self._filenames,
-            self.header.hdrlens,
-            self.header.datalens,
+            self.header.stream_info,
             mode="r",
             nbits=self.header.nbits,
         )
@@ -72,20 +78,26 @@ class FilReader(Filterbank):
         return self._file.bitsinfo
 
     @property
-    def sampsize(self) -> int:
+    def chan_stride(self) -> float:
+        """int: Channel byte stride in input data."""
+        return self.bitsinfo.itemsize / self.bitsinfo.bitfact
+
+    @property
+    def samp_stride(self) -> int:
         """int: Sample byte stride in input data."""
-        return self.header.nchans * self.bitsinfo.itemsize // self.bitsinfo.bitfact
+        return int(self.header.nchans * self.chan_stride)
 
     def read_block(self, start: int, nsamps: int) -> FilterbankBlock:
         if start < 0 or start + nsamps > self.header.nsamples:
-            raise ValueError("requested block is out of range")
-        self._file.seek(start * self.sampsize)
+            msg = f"requested block is out of range: start={start}, nsamps={nsamps}"
+            raise ValueError(msg)
+        self._file.seek(start * self.samp_stride)
         data = self._file.cread(self.header.nchans * nsamps)
         nsamps_read = data.size // self.header.nchans
         data = data.reshape(nsamps_read, self.header.nchans).transpose()
         start_mjd = self.header.mjd_after_nsamps(start)
         new_header = self.header.new_header(
-            {"tstart": start_mjd, "nsamples": nsamps_read}
+            {"tstart": start_mjd, "nsamples": nsamps_read},
         )
         return FilterbankBlock(data, new_header)
 
@@ -94,16 +106,23 @@ class FilReader(Filterbank):
         min_sample = start + delays
         max_sample = min_sample + nsamps
         if np.any(min_sample < 0) or np.any(max_sample > self.header.nsamples):
-            raise ValueError("requested dedispersed block is out of range")
+            msg = (
+                f"requested dedispersed block is out of range: "
+                f"start={start}, nsamps={nsamps}"
+            )
+            raise ValueError(msg)
 
-        self._file.seek(start * self.sampsize)
+        self._file.seek(start * self.samp_stride)
         samples_read = np.zeros(self.header.nchans, dtype=int)
         data = np.zeros((self.header.nchans, nsamps), dtype=self._file.bitsinfo.dtype)
 
         for isamp in track(range(nsamps), description="Reading dedispersed data ..."):
             samples_offset = start + isamp
             relevant_chans = np.argwhere(
-                np.logical_and(max_sample > samples_offset, min_sample <= samples_offset)
+                np.logical_and(
+                    max_sample > samples_offset,
+                    min_sample <= samples_offset,
+                ),
             ).flatten()
             chans_slice = slice(relevant_chans.min(), relevant_chans.max() + 1)
 
@@ -125,107 +144,35 @@ class FilReader(Filterbank):
         nsamps: int | None = None,
         skipback: int = 0,
         description: str | None = None,
-        quiet: bool = False
-    ) -> Iterator[tuple[int, int, np.ndarray]]:
-        if nsamps is None:
-            nsamps = self.header.nsamples - start
-        if description is None:
-            description = f"{inspect.stack()[1][3]} : "
-
-        gulp = min(nsamps, gulp)
-        skipback = abs(skipback)
-        if skipback >= gulp:
-            raise ValueError(f"readsamps ({gulp}) must be > skipback ({skipback})")
-        self._file.seek(start * self.sampsize)
-        nreads, lastread = divmod(nsamps, (gulp - skipback))
-        if lastread < skipback:
-            nreads -= 1
-            lastread = nsamps - (nreads * (gulp - skipback))
-        blocks = [
-            (ii, gulp * self.header.nchans, -skipback * self.header.nchans)
-            for ii in range(nreads)
-        ]
-        if lastread != 0:
-            blocks.append((nreads, lastread * self.header.nchans, 0))
-
-        # / self.logger.debug(f"Reading plan: nsamps = {nsamps}, nreads = {nreads}")
-        # / self.logger.debug(f"Reading plan: gulp = {gulp}, lastread = {lastread}, skipback = {skipback}")
-        for ii, block, skip in track(blocks, description=description, disable=quiet):
-            data = self._file.cread(block)
-            if skip != 0:
-                self._file.seek(
-                    skip * self.bitsinfo.itemsize // self.bitsinfo.bitfact, whence=1
-                )
-            yield block // self.header.nchans, ii, data
-
-    def _safe_allocate(self, allocator, nbytes):
-        buffer = allocator(nbytes)
-        if len(buffer) != nbytes:
-            raise ValueError(f"Allocated buffer is not the expected size {len(buffer)} (actual) != {nbytes} (expected)")
-        return buffer
-
-    def read_plan_buffered(
-        self,
-        gulp: int = 16384,
-        start: int = 0,
-        nsamps: int | None = None,
-        skipback: int = 0,
-        description: str | None = None,
+        *,
         quiet: bool = False,
-        allocator: Callable[[int], Buffer] = None,
+        allocator: Callable[[int], Buffer] | None = None,
     ) -> Iterator[tuple[int, int, np.ndarray]]:
-        """
-        Iterate over the file, reading into a pre-allocated buffer
-        
-        Parameters
-        ----------
-        gulp: int
-            The number of samples (spectra) to read in each iteration
-        start: int
-            The starting sample (spectrum) to read from
-        nsamps: int
-            The total number of samples (spectra) to read
-        skipback: int = 0
-            The number of samples (spectra) to seek back after each read
-        description: str
-            Annotation for progress bar
-        quiet: bool
-            Disable/Enable progress bar
-        allocator: Callable[[int], Buffer]
-            An allocator callback that returns an object implementing
-            the Python Buffer Protocol interface (PEP 3118)
-        
-        Yields
-        -------
-        Tuple[int, int, np.ndarray]
-            The number of samples read, the index of the read and the unpacked data
-        """ 
         if nsamps is None:
             nsamps = self.header.nsamples - start
         if description is None:
-            description = f"{inspect.stack()[1][3]} : "
-
+            description = f"{get_callerfunc(inspect.stack())} : "
         gulp = min(nsamps, gulp)
         skipback = abs(skipback)
         if skipback >= gulp:
-            raise ValueError(f"readsamps ({gulp}) must be > skipback ({skipback})")
-        
-        # Here we set the allocator
-        allocator = allocator if allocator is not None else bytearray
+            msg = f"readsamps ({gulp}) must be > skipback ({skipback})"
+            raise ValueError(msg)
 
-        # Here we allocate the buffer that will be readinto from file
-        read_buffer = self._safe_allocate(allocator, gulp * self.sampsize)
+        # Here we set the allocator and allocate the readinto buffer
+        allocator = bytearray if allocator is None else allocator
+        read_buffer = allocate_buffer(allocator, gulp * self.samp_stride)
         # Here we allocate (if needed) a buffer for unpacking the data
         if self.bitsinfo.unpack:
-            # The unpacking always unpacks up to 8-bits, so the size should be nsamps * nchans
+            # The unpacking always unpacks up to 8-bits, so the size should
+            # be nsamps * nchans
             # Is there a way to guarantee that the behaviour is correct here?
-            unpack_buffer =  self._safe_allocate(allocator, gulp * self.header.nchans)
-            data = np.frombuffer(unpack_buffer, dtype=self._file.bitsinfo.dtype)
+            unpack_buffer = allocate_buffer(allocator, gulp * self.header.nchans)
+            data = np.frombuffer(unpack_buffer, dtype=self.bitsinfo.dtype)
         else:
             unpack_buffer = None
-            data = np.frombuffer(read_buffer, dtype=self._file.bitsinfo.dtype)        
+            data = np.frombuffer(read_buffer, dtype=self.bitsinfo.dtype)
 
-        self._file.seek(start * self.sampsize)
+        self._file.seek(start * self.samp_stride)
         nreads, lastread = divmod(nsamps, (gulp - skipback))
         if lastread < skipback:
             nreads -= 1
@@ -237,18 +184,22 @@ class FilReader(Filterbank):
         if lastread != 0:
             blocks.append((nreads, lastread * self.header.nchans, 0))
 
-        # / self.logger.debug(f"Reading plan: nsamps = {nsamps}, nreads = {nreads}")
-        # / self.logger.debug(f"Reading plan: gulp = {gulp}, lastread = {lastread}, skipback = {skipback}")
         for ii, block, skip in track(blocks, description=description, disable=quiet):
+            logger.debug(
+                f"read_plan: Reading block {ii}/{nreads}, {block} elements, "
+                f"with skipback={skip}",
+            )
             nbytes = self._file.creadinto(read_buffer, unpack_buffer)
-            expected_nbytes = block * self.sampsize / self.header.nchans
-            if nbytes != expected_nbytes :
-                raise ValueError(f"Unexpected number of bytes read from file {nbytes} (actual) != {expected_nbytes} (expected)")
-            if skip != 0:
-                self._file.seek(
-                    skip * self.bitsinfo.itemsize // self.bitsinfo.bitfact, whence=1
+            expected_nbytes = int(block * self.chan_stride)
+            if nbytes != expected_nbytes:
+                msg = (
+                    f"Unexpected number of bytes read from file {nbytes} (actual) "
+                    f"!= {expected_nbytes} (expected)"
                 )
-            yield block // self.header.nchans, ii, data[:block]        
+                raise ValueError(msg)
+            if skip != 0:
+                self._file.seek(int(skip * self.chan_stride), whence=1)
+            yield block // self.header.nchans, ii, data[:block]
 
 
 class PFITSReader(Filterbank):
@@ -264,16 +215,16 @@ class PFITSReader(Filterbank):
     def __init__(self, filename: str) -> None:
         self._filename = filename
         self._header = Header.from_pfits(self._filename)
-        self._fitsfile = pfits.PFITSFile(self._filename)
+        self._fitsfile = PFITSFile(self._filename)
         super().__init__()
 
     @property
-    def pri_hdr(self) -> pfits.PrimaryHdr:
+    def pri_hdr(self) -> PrimaryHdr:
         """:class:`~sigpyproc.io.pfits.PrimaryHdr`: Primary header of input file."""
         return self._fitsfile.pri_hdr
 
     @property
-    def sub_hdr(self) -> pfits.SubintHdr:
+    def sub_hdr(self) -> SubintHdr:
         """:class:`~sigpyproc.io.pfits.SubintHdr`: Subint header of input file."""
         return self._fitsfile.sub_hdr
 
@@ -291,17 +242,15 @@ class PFITSReader(Filterbank):
         """:class:`~sigpyproc.io.bits.BitsInfo`: Bits info of input file data."""
         return self._fitsfile.bitsinfo
 
-    @property
-    def sampsize(self) -> int:
-        """int: Sample byte stride in input data."""
-        return self.header.nchans * self.bitsinfo.itemsize // self.bitsinfo.bitfact
-
     def read_block(self, start: int, nsamps: int) -> FilterbankBlock:
         if start < 0 or start + nsamps > self.header.nsamples:
-            raise ValueError("requested block is out of range")
+            msg = f"requested block is out of range: start={start}, nsamps={nsamps}"
+            raise ValueError(msg)
 
         startsub, startsamp = divmod(start, self.sub_hdr.subint_samples)
-        nsubs = (nsamps + self.sub_hdr.subint_samples - 1) // self.sub_hdr.subint_samples
+        nsubs = (
+            nsamps + self.sub_hdr.subint_samples - 1
+        ) // self.sub_hdr.subint_samples
 
         data = self._fitsfile.read_subints(startsub, nsubs)
 
@@ -311,8 +260,9 @@ class PFITSReader(Filterbank):
         new_header = self.header.new_header({"tstart": start_mjd, "nsamples": nsamps})
         return FilterbankBlock(data, new_header)
 
-    def read_dedisp_block(self, start: int, nsamps: int, dm: float) -> FilterbankBlock:
-        raise NotImplementedError("Not implemented for PFITSReader")
+    def read_dedisp_block(self, start: int, nsamps: int, dm: float) -> FilterbankBlock:  # noqa: ARG002
+        msg = "Not implemented for PFITSReader"
+        raise NotImplementedError(msg)
 
     def read_plan(
         self,
@@ -321,7 +271,9 @@ class PFITSReader(Filterbank):
         nsamps: int | None = None,
         skipback: int = 0,
         description: str | None = None,
+        *,
         quiet: bool = False,
+        allocator: Callable[[int], Buffer] | None = None,  # noqa: ARG002
     ) -> Iterator[tuple[int, int, np.ndarray]]:
         if nsamps is None:
             nsamps = self.header.nsamples - start
@@ -331,7 +283,8 @@ class PFITSReader(Filterbank):
         gulp = min(nsamps, gulp)
         skipback = abs(skipback)
         if skipback >= gulp:
-            raise ValueError(f"readsamps ({gulp}) must be > skipback ({skipback})")
+            msg = f"readsamps ({gulp}) must be > skipback ({skipback})"
+            raise ValueError(msg)
         nreads, lastread = divmod(nsamps, (gulp - skipback))
         if lastread < skipback:
             nreads -= 1
@@ -352,7 +305,7 @@ class PFITSReader(Filterbank):
             yield block, ii, data.ravel()
 
 
-class PulseExtractor(object):
+class PulseExtractor:
     """Extracts a data block from a filterbank file centered on a pulse.
 
     The extracted block is centered on the given pulse toa at the highest
@@ -381,8 +334,8 @@ class PulseExtractor(object):
         pulse_toa: int,
         pulse_width: int,
         pulse_dm: float,
+        *,
         min_nsamps: int = 256,
-        quiet: bool = False,
     ) -> None:
         self.fil = FilReader(filfile)
         self.header = self.fil.header
@@ -396,7 +349,6 @@ class PulseExtractor(object):
             max(np.abs(self.header.get_dmdelays(pulse_dm, in_samples=True)))
             + self.pulse_width * 5
         )
-        self._configure_logger(quiet=quiet)
 
     @property
     def decimation_factor(self) -> int:
@@ -411,7 +363,9 @@ class PulseExtractor(object):
     @property
     def block_delay(self) -> int:
         """int: Dispersion Block size in samples."""
-        return ((self.disp_delay // self.decimation_factor) + 1) * self.decimation_factor
+        return (
+            (self.disp_delay // self.decimation_factor) + 1
+        ) * self.decimation_factor
 
     @property
     def nsamps(self) -> int:
@@ -442,7 +396,7 @@ class PulseExtractor(object):
         return self.pulse_toa - self.nstart
 
     def get_data(self, pad_mode: str = "median") -> FilterbankBlock:
-        """Extracts the data block from the filterbank file.
+        """Extract the filterbank block centered on the pulse.
 
         Parameters
         ----------
@@ -454,12 +408,14 @@ class PulseExtractor(object):
         FilterbankBlock
             Data block.
         """
-        self.logger.info(
-            f"Required samples = {2 * self.block_delay}, Reading samples = {self.nsamps}"
+        logger.info(
+            f"PulseExtractor: Required samples = {2 * self.block_delay}, "
+            f"Reading samples = {self.nsamps}",
         )
-        self.logger.debug(f"nstart = {self.nstart}, nsamps = {self.nsamps}")
-        self.logger.debug(
-            f"nstart_file = {self.nstart_file}, nsamps_file = {self.nsamps_file}"
+        logger.debug(f"PulseExtractor: nstart = {self.nstart}, nsamps = {self.nsamps}")
+        logger.debug(
+            f"PulseExtractor: nstart_file = {self.nstart_file}, "
+            f"nsamps_file = {self.nsamps_file}",
         )
         data = self.fil.read_block(start=self.nstart_file, nsamps=self.nsamps_file)
 
@@ -468,9 +424,11 @@ class PulseExtractor(object):
         return FilterbankBlock(data, self.header.new_header())
 
     def _pad_data(
-        self, data: FilterbankBlock, pad_mode: str = "median"
+        self,
+        data: FilterbankBlock,
+        pad_mode: str = "median",
     ) -> FilterbankBlock:
-        """Pads the data block with the given mode.
+        """Pad the data block with the given mode.
 
         Parameters
         ----------
@@ -494,16 +452,13 @@ class PulseExtractor(object):
         elif pad_mode == "median":
             pad_arr = np.median(data, axis=1)
         else:
-            raise ValueError(f"pad_mode {pad_mode} not supported.")
+            msg = f"pad_mode {pad_mode} not supported."
+            raise ValueError(msg)
 
         data_pad = np.ones((self.header.nchans, self.nsamps), dtype=pad_arr.dtype)
         data_pad *= pad_arr[:, None]
 
         offset = min(0, self.nstart)
-        self.logger.info(f"Padding with {pad_mode}. start offset = {offset}")
+        logger.info(f"PulseExtractor: Padding with {pad_mode}. start offset = {offset}")
         data_pad[:, -offset : -offset + self.nsamps_file] = data
-        return data_pad
-
-    def _configure_logger(self, **kwargs) -> None:
-        logger_name = "PulseExtractor"
-        self.logger = get_logger(logger_name, **kwargs)
+        return FilterbankBlock(data_pad, self.header.new_header())
