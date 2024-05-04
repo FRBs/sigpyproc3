@@ -1,3 +1,11 @@
+1.2.0 (2024-05-04)
+++++++++++++++++++
+
+- Adds implementation of buffered file read. (`#34 <https://github.com/FRBs/sigpyproc3/pull/34>`_)
+- Uses pyproject.toml for build + tool configuration.
+- Improves pack/unpack functions + fixes bitorder bugs.
+
+
 1.1.0 (2024-02-20)
 ++++++++++++++++++
 
