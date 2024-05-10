@@ -32,11 +32,12 @@ class TestFilReader:
 
     def test_read_dedisp_block(self, filfile_8bit_1: str) -> None:
         fil = FilReader(filfile_8bit_1)
-        dm = 10
-        block = fil.read_dedisp_block(0, 100, dm)
+        dm = 0
+        block = fil.read_block(0, fil.header.nsamples)
+        block_dd = fil.read_dedisp_block(0, fil.header.nsamples, dm)
         assert isinstance(block, FilterbankBlock)
         assert isinstance(block.header, Header)
-        np.testing.assert_equal(block.dm, dm)
+        np.testing.assert_equal(block, block_dd)
 
     def test_read_dedisp_block_outofrange(self, filfile_8bit_1: str) -> None:
         fil = FilReader(filfile_8bit_1)
