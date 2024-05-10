@@ -124,8 +124,11 @@ class FilReader(Filterbank):
                     min_sample <= samples_offset,
                 ),
             ).flatten()
-            chans_slice = slice(relevant_chans.min(), relevant_chans.max() + 1)
-
+            chans_slice = np.arange(
+                relevant_chans.min(),
+                relevant_chans.max() + 1,
+                dtype=int,
+            )
             # Read channel data for for each sample
             sample_data = self._file.cread(self.header.nchans)
             data[chans_slice, samples_read[chans_slice]] = sample_data[chans_slice]
