@@ -406,92 +406,100 @@ def remove_zerodm(inarray, outarray, bpass, chanwts, nchans, nsamps):
             outarray[pos] = downcast(inarray[0], result)
 
 
-@njit("f4[:](f4[:], b1)", cache=True)
-def form_spec(fft_ar, interpolated=False):
-    specsize = fft_ar.size // 2
-    spec_arr = np.zeros(shape=specsize, dtype=fft_ar.dtype)
-    if interpolated:
-        rl = 0
-        il = 0
-        for ispec in range(specsize):
-            rr = fft_ar[2 * ispec]
-            ii = fft_ar[2 * ispec + 1]
-            aa = rr**2 + ii**2
-            bb = ((rr - rl) ** 2 + (ii - il) ** 2) / 2
-            spec_arr[ispec] = np.sqrt(max(aa, bb))
-
-            rl = rr
-            il = ii
-    else:
-        for ispec in range(specsize):
-            spec_arr[ispec] = np.sqrt(
-                fft_ar[2 * ispec] ** 2 + fft_ar[2 * ispec + 1] ** 2
-            )
-    return spec_arr
+@njit("void(f4[:], f4[:])", cache=True)
+def form_spec(fft_ar: np.ndarray, spec_ar: np.ndarray) -> None:
+    specsize = len(spec_ar)
+    for ispec in range(specsize):
+        spec_ar[ispec] = np.sqrt(fft_ar[2 * ispec] ** 2 + fft_ar[2 * ispec + 1] ** 2)
 
 
-@njit("f4[:](f4[:], i4, i4, f4, f4)", cache=True, locals={"norm": types.f4})
-def remove_rednoise(fftbuffer, startwidth, endwidth, endfreq, tsamp):
-    outbuffer = np.zeros_like(fftbuffer, dtype=np.float32)
-    oldinbuf = np.empty(2 * endwidth, dtype=np.float32)
-    newinbuf = np.empty(2 * endwidth, dtype=np.float32)
-    realbuffer = np.empty(endwidth, dtype=np.float32)
-    nsamps = fftbuffer.size // 2
+@njit("void(f4[:], f4[:])", cache=True, locals={"re_l": types.f4, "im_l": types.f4})
+def form_spec_interpolated(fft_ar: np.ndarray, spec_ar: np.ndarray) -> None:
+    specsize = len(spec_ar)
+    re_l = 0
+    im_l = 0
+    for ispec in range(specsize):
+        re = fft_ar[2 * ispec]
+        im = fft_ar[2 * ispec + 1]
+        ampsq = re**2 + im**2
+        ampsq_diff = 0.5 * ((re - re_l) ** 2 + (im - im_l) ** 2)
+        spec_ar[ispec] = np.sqrt(max(ampsq, ampsq_diff))
+        re_l = re
+        im_l = im
+
+
+@njit(
+    "void(f4[:], f4[:], i4, i4, i4)",
+    cache=True,
+    locals={"norm": types.f4, "slope": types.f4},
+)
+def remove_rednoise_presto(
+    fft_ar: np.ndarray,
+    out_ar: np.ndarray,
+    start_width: int,
+    end_width: int,
+    end_freq_bin: int,
+) -> None:
+    nspecs = len(fft_ar) // 2
+    oldinbuf = np.empty(2 * end_width, dtype=np.float32)
+    newinbuf = np.empty(2 * end_width, dtype=np.float32)
+    realbuffer = np.empty(end_width, dtype=np.float32)
     binnum = 1
+    bufflen = start_width
 
     # Set DC bin to 1.0
-    outbuffer[0] = 1.0
+    out_ar[0] = 1.0
     windex = 2
     rindex = 2
-    numread_old = startwidth
 
-    # transfer numread_old complex samples to oldinbuf
-    oldinbuf[: 2 * numread_old] = fftbuffer[rindex : rindex + 2 * numread_old]
-    rindex += 2 * numread_old
+    # transfer bufflen complex samples to oldinbuf
+    oldinbuf[: 2 * bufflen] = fft_ar[rindex : rindex + 2 * bufflen]
+    numread_old = bufflen
+    rindex += 2 * bufflen
 
     # calculate powers for oldinbuf
     for ispec in range(numread_old):
         realbuffer[ispec] = oldinbuf[2 * ispec] ** 2 + oldinbuf[2 * ispec + 1] ** 2
 
     # calculate first median of our data and determine next bufflen
-    mean_old = np.median(realbuffer) / np.log(2.0)
+    mean_old = np.median(realbuffer[:numread_old]) / np.log(2.0)
     binnum += numread_old
-    bufflen = round(startwidth * np.log(binnum))
+    bufflen = round(start_width * np.log(binnum))
 
-    while rindex // 2 < nsamps:
-        numread_new = min(bufflen, nsamps - rindex // 2)
+    while rindex // 2 < nspecs:
+        numread_new = min(bufflen, nspecs - rindex // 2)
 
         # transfer numread_new complex samples to newinbuf
-        newinbuf[: 2 * numread_new] = fftbuffer[rindex : rindex + 2 * numread_new]
+        newinbuf[: 2 * numread_new] = fft_ar[rindex : rindex + 2 * numread_new]
         rindex += 2 * numread_new
 
         # calculate powers for newinbuf
         for ispec in range(numread_new):
             realbuffer[ispec] = newinbuf[2 * ispec] ** 2 + newinbuf[2 * ispec + 1] ** 2
 
-        mean_new = np.median(realbuffer) / np.log(2.0)
+        mean_new = np.median(realbuffer[:numread_new]) / np.log(2.0)
         slope = (mean_new - mean_old) / (numread_old + numread_new)
 
         for ispec in range(numread_old):
-            norm = np.sqrt(mean_old + slope * ((numread_old + numread_new) / 2 - ispec))
-            outbuffer[2 * ispec + windex] = oldinbuf[2 * ispec] / norm
-            outbuffer[2 * ispec + 1 + windex] = oldinbuf[2 * ispec + 1] / norm
+            norm = 1 / np.sqrt(
+                mean_old + slope * ((numread_old + numread_new) / 2 - ispec)
+            )
+            out_ar[2 * ispec + windex] = oldinbuf[2 * ispec] * norm
+            out_ar[2 * ispec + 1 + windex] = oldinbuf[2 * ispec + 1] * norm
 
         windex += 2 * numread_old
         binnum += numread_new
-        if binnum / (nsamps * tsamp) < endfreq:
-            bufflen = round(startwidth * np.log(binnum))
+        if binnum < end_freq_bin:
+            bufflen = int(start_width * np.log(binnum))
         else:
-            bufflen = endwidth
+            bufflen = end_width
         numread_old = numread_new
         mean_old = mean_new
-
         oldinbuf[: 2 * numread_new] = newinbuf[: 2 * numread_new]
 
-    outbuffer[windex : windex + 2 * numread_old] = oldinbuf[
-        : 2 * numread_old
-    ] / np.sqrt(mean_old)
-    return outbuffer
+    # Remaining samples
+    norm = 1 / np.sqrt(mean_old)
+    out_ar[windex : windex + 2 * numread_old] = oldinbuf[: 2 * numread_old] * norm
 
 
 @njit("void(f4[:], f4[:], i4[:], i4[:], i4, i4, i4)", cache=True)
