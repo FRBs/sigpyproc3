@@ -26,8 +26,6 @@ class PowerSpectrum:
         1 dimensional power spectrum
     header : :class:`~sigpyproc.header.Header`
         header object containing metadata
-    copy : bool, optional
-        make a copy of the data, by default False
 
     Returns
     -------
@@ -39,13 +37,8 @@ class PowerSpectrum:
     Data is converted to 32 bits regardless of original type.
     """
 
-    def __init__(
-        self,
-        data: npt.ArrayLike,
-        hdr: Header,
-        copy: bool | None = None,
-    ) -> None:
-        self._data = np.asarray(data, dtype=np.float32, copy=copy)
+    def __init__(self, data: npt.ArrayLike, hdr: Header) -> None:
+        self._data = np.asarray(data, dtype=np.float32)
         self._hdr = hdr
         self._check_input()
 
@@ -179,8 +172,6 @@ class FourierSeries:
         1 dimensional fourier series
     header : :class:`~sigpyproc.header.Header`
         header object containing metadata
-    copy : bool, optional
-        make a copy of the data, by default None
 
     Returns
     -------
@@ -193,13 +184,8 @@ class FourierSeries:
 
     """
 
-    def __init__(
-        self,
-        data: npt.ArrayLike,
-        hdr: Header,
-        copy: bool | None = None,
-    ) -> None:
-        self._data = np.asarray(data, dtype=np.complex64, copy=copy)
+    def __init__(self, data: npt.ArrayLike, hdr: Header) -> None:
+        self._data = np.asarray(data, dtype=np.complex64)
         self._hdr = hdr
         self._check_input()
 

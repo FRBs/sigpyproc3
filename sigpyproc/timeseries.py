@@ -21,29 +21,18 @@ class TimeSeries:
     Parameters
     ----------
     data : :py:obj:`~numpy.typing.ArrayLike`
-        1 dimensional time series
+        1-D time series
     header : :class:`~sigpyproc.header.Header`
         header object containing metadata
-    copy : bool, optional
-        make a copy of the data, by default None
 
     Returns
     -------
     :py:obj:`~numpy.ndarray`
         1 dimensional time series array with header metadata
-
-    Notes
-    -----
-    Data is converted to 32-bit floats regardless of original type.
     """
 
-    def __init__(
-        self,
-        data: npt.ArrayLike,
-        hdr: Header,
-        copy: bool | None = None,
-    ) -> None:
-        self._data = np.asarray(data, dtype=np.float32, copy=copy)
+    def __init__(self, data: npt.ArrayLike, hdr: Header) -> None:
+        self._data = np.asarray(data, dtype=np.float32)
         self._hdr = hdr
         self._check_input()
 
