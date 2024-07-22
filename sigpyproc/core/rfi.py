@@ -36,7 +36,8 @@ def double_mad_mask(array: np.ndarray, threshold: float = 3) -> np.ndarray:
     if threshold <= 0:
         msg = f"threshold must be positive, got {threshold}"
         raise ValueError(msg)
-    return np.abs(stats.zscore_double_mad(array)) > threshold
+    zscore_re = stats.zscore(array, scale_method="doublemad")
+    return np.abs(zscore_re.zscores) > threshold
 
 
 def iqrm_mask(array: np.ndarray, threshold: float = 3, radius: int = 5) -> np.ndarray:
@@ -74,7 +75,8 @@ def iqrm_mask(array: np.ndarray, threshold: float = 3, radius: int = 5) -> np.nd
     lagged_diffs = array[:, np.newaxis] - shifted_x[:, lags + radius]
     lagged_diffs = lagged_diffs.T
     for lagged_diff in lagged_diffs:
-        mask = np.logical_or(mask, np.abs(stats.zscore_iqr(lagged_diff)) > threshold)
+        zscore_re = stats.zscore(lagged_diff, scale_method="iqr")
+        mask = np.logical_or(mask, np.abs(zscore_re.zscores) > threshold)
     return mask
 
 

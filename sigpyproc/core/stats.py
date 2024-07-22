@@ -32,7 +32,7 @@ class ZScoreResult:
 def running_filter(
     array: np.ndarray,
     window: int,
-    filter_func: str = "mean",
+    method: str = "mean",
 ) -> np.ndarray:
     """
     Calculate the running filter of an array.
@@ -43,8 +43,8 @@ def running_filter(
         The array to calculate the running filter of.
     window : int
         The window size of the filter.
-    filter_func : str, optional
-        The filter function to use, by default "mean".
+    method : str, optional
+        The method to use for the filter, by default "mean".
 
     Returns
     -------
@@ -61,17 +61,20 @@ def running_filter(
     Window edges are handled by reflecting about the edges.
 
     """
+    filter_methods: dict[str, Callable[[np.ndarray, int], np.ndarray]] = {
+        "mean": bn.move_mean,
+        "median": bn.move_median,
+    }
+    array = np.asarray(array)
+    filter_func = filter_methods.get(method)
+    if filter_func is None:
+        msg = f"Filter function not recognized: {method}"
+        raise ValueError(msg)
     pad_size = (
         (window // 2, window // 2) if window % 2 else (window // 2, window // 2 - 1)
     )
     padded_ar = np.pad(array, pad_size, "symmetric")
-    if filter_func == "mean":
-        filtered_ar = bn.move_mean(padded_ar, window)
-    elif filter_func == "median":
-        filtered_ar = bn.move_median(padded_ar, window)
-    else:
-        msg = f"Filter function not recognized: {filter_func}"
-        raise ValueError(msg)
+    filtered_ar = filter_func(padded_ar, window)
     return filtered_ar[window - 1 :]
 
 
@@ -95,14 +98,108 @@ def estimate_loc(array: np.ndarray, method: str = "median") -> float:
     ValueError
         If the method is not supported
     """
-    if method == "median":
-        loc = np.median(array)
-    elif method == "mean":
-        loc = np.mean(array)
-    else:
+    loc_methods: dict[str, Callable[[np.ndarray], float]] = {
+        "median": np.median,
+        "mean": np.mean,
+    }
+    array = np.asarray(array)
+    if len(array) == 0:
+        msg = "Cannot estimate loc from an empty array."
+        raise ValueError(msg)
+
+    loc_func = loc_methods.get(method)
+    if loc_func is None:
         msg = f"Method {method} is not supported for estimating location."
         raise ValueError(msg)
-    return loc
+    return loc_func(array)
+
+
+def estimate_scale(array: np.ndarray, method: str = "mad") -> float | np.ndarray:
+    """Estimate the scale or standard deviation of an array.
+
+    Parameters
+    ----------
+    array : np.ndarray
+        The array to estimate the scale of.
+    method : str, optional
+        The method to use for estimating the scale, by default "mad".
+
+    Returns
+    -------
+    float | np.ndarray
+        The estimated scale of the array.
+
+    Raises
+    ------
+    ValueError
+        If the method is not supported or if the array is empty.
+
+    Notes
+    -----
+    https://en.wikipedia.org/wiki/Robust_measures_of_scale
+
+    Following methods are supported:
+    - "iqr": Normalized Inter-quartile Range
+    - "mad": Median Absolute Deviation
+    - "diffcov": Difference Covariance
+    - "biweight": Biweight Midvariance
+    - "qn": Normalized Qn scale
+    - "sn": Normalized Sn scale
+    - "gapper": Gapper Estimator
+    """
+    scale_methods: dict[str, Callable[[np.ndarray], float | np.ndarray]] = {
+        "iqr": _scale_iqr,
+        "mad": _scale_mad,
+        "doublemad": _scale_doublemad,
+        "diffcov": _scale_diffcov,
+        "biweight": _scale_biweight,
+        "qn": _scale_qn,
+        "sn": _scale_sn,
+        "gapper": _scale_gapper,
+    }
+    array = np.asarray(array)
+    if len(array) == 0:
+        msg = "Cannot estimate noise from an empty array."
+        raise ValueError(msg)
+
+    scale_func = scale_methods.get(method)
+    if scale_func is None:
+        msg = f"Method {method} is not supported for estimating scale."
+        raise ValueError(msg)
+    return scale_func(array)
+
+
+def zscore(
+    array: np.ndarray,
+    loc_method: str = "median",
+    scale_method: str = "mad",
+) -> ZScoreResult:
+    """Calculate robust Z-scores of an array.
+
+    Parameters
+    ----------
+    array : np.ndarray
+        The array to calculate the Z-score of.
+    loc_method : str, optional
+        The method to use for estimating the location, by default "median".
+    scale_method : str, optional
+        The method to use for estimating the scale, by default "mad".
+
+    Returns
+    -------
+    ZScoreResult
+        The robust Z-scores of the array.
+
+    Raises
+    ------
+    ValueError
+        If the location or scale method is not supported.
+    """
+    loc = estimate_loc(array, loc_method)
+    scale = estimate_scale(array, scale_method)
+    diff = array - loc
+    zscores = np.divide(diff, scale, out=np.zeros_like(diff), where=scale != 0)
+    return ZScoreResult(zscores=zscores, loc=loc, scale=scale)
 
 
 def _scale_iqr(array: np.ndarray) -> float:
@@ -237,10 +334,11 @@ def _scale_qn(array: np.ndarray) -> float:
     """
     # \np.sqrt(2) * stats.norm.ppf(5/8)
     norm = 0.4506241100243562
-    h = len(array) // 2 + 1
+    n = len(array)
+    h = n // 2 + 1
     k = h * (h - 1) // 2
     diffs = np.abs(array[:, None] - array)
-    return np.partition(diffs.ravel(), k - 1)[k - 1] / norm
+    return np.partition(diffs[np.triu_indices(n, k=1)].ravel(), k - 1)[k - 1] / norm
 
 
 def _scale_sn(array: np.ndarray) -> float:
@@ -279,95 +377,6 @@ def _scale_gapper(array: np.ndarray) -> float:
     return np.dot(weights, gaps) * np.sqrt(np.pi) / (n * (n - 1))
 
 
-def estimate_scale(array: np.ndarray, method: str = "mad") -> float | np.ndarray:
-    """Estimate the scale or standard deviation of an array.
-
-    Parameters
-    ----------
-    array : np.ndarray
-        The array to estimate the scale of.
-    method : str, optional
-        The method to use for estimating the scale, by default "mad".
-
-    Returns
-    -------
-    float | np.ndarray
-        The estimated scale of the array.
-
-    Raises
-    ------
-    ValueError
-        If the method is not supported or if the array is empty.
-
-    Notes
-    -----
-    https://en.wikipedia.org/wiki/Robust_measures_of_scale
-
-    Following methods are supported:
-    - "iqr": Normalized Inter-quartile Range
-    - "mad": Median Absolute Deviation
-    - "diffcov": Difference Covariance
-    - "biweight": Biweight Midvariance
-    - "qn": Normalized Qn scale
-    - "sn": Normalized Sn scale
-    - "gapper": Gapper Estimator
-    """
-    scale_methods: dict[str, Callable[[np.ndarray], float | np.ndarray]] = {
-        "iqr": _scale_iqr,
-        "mad": _scale_mad,
-        "doublemad": _scale_doublemad,
-        "diffcov": _scale_diffcov,
-        "biweight": _scale_biweight,
-        "qn": _scale_qn,
-        "sn": _scale_sn,
-        "gapper": _scale_gapper,
-    }
-    array = np.asarray(array)
-    n = len(array)
-    if n == 0:
-        msg = "Cannot estimate noise from an empty array."
-        raise ValueError(msg)
-
-    scale_func = scale_methods.get(method)
-    if scale_func is None:
-        msg = f"Method {method} is not supported for estimating scale."
-        raise ValueError(msg)
-    return scale_func(array)
-
-
-def zscore(
-    array: np.ndarray,
-    loc_method: str = "median",
-    scale_method: str = "mad",
-) -> ZScoreResult:
-    """Calculate robust Z-scores of an array.
-
-    Parameters
-    ----------
-    array : np.ndarray
-        The array to calculate the Z-score of.
-    loc_method : str, optional
-        The method to use for estimating the location, by default "median".
-    scale_method : str, optional
-        The method to use for estimating the scale, by default "mad".
-
-    Returns
-    -------
-    ZScoreResult
-        The robust Z-scores of the array.
-
-    Raises
-    ------
-    ValueError
-        If the location or scale method is not supported.
-    """
-    loc = estimate_loc(array, loc_method)
-    scale = estimate_scale(array, scale_method)
-    diff = array - loc
-    zscores = np.divide(diff, scale, out=np.zeros_like(diff), where=scale != 0)
-    return ZScoreResult(zscores=zscores, loc=loc, scale=scale)
-
-
 class ChannelStats:
     def __init__(self, nchans: int, nsamps: int) -> None:
         """Central central moments for filterbank channels in one pass.
@@ -389,12 +398,12 @@ class ChannelStats:
         self._nchans = nchans
         self._nsamps = nsamps
 
-        self._mbag = kernels.MomentsBag(nchans)
+        self._moments = np.zeros(nchans, dtype=kernels.moments_dtype)
 
     @property
-    def mbag(self) -> kernels.MomentsBag:
-        """:class:`~sigpyproc.core.kernels.MomentsBag`: Central moments of the data."""
-        return self._mbag
+    def moments(self) -> np.ndarray:
+        """:class:`~numpy.ndarray`: Central moments of the data."""
+        return self._moments
 
     @property
     def nchans(self) -> int:
@@ -409,36 +418,36 @@ class ChannelStats:
     @property
     def maxima(self) -> np.ndarray:
         """numpy.ndarray: Get the maximum value of each channel."""
-        return self._mbag.max
+        return self._moments["max"]
 
     @property
     def minima(self) -> np.ndarray:
         """numpy.ndarray: Get the minimum value of each channel."""
-        return self._mbag.min
+        return self._moments["min"]
 
     @property
     def mean(self) -> np.ndarray:
         """numpy.ndarray: Get the mean of each channel."""
-        return self._mbag.m1
+        return self._moments["m1"]
 
     @property
     def var(self) -> np.ndarray:
         """numpy.ndarray: Get the variance of each channel."""
-        return self._mbag.m2 / self.nsamps
+        return self._moments["m2"] / self.nsamps
 
     @property
     def std(self) -> np.ndarray:
         """numpy.ndarray: Get the standard deviation of each channel."""
-        return np.sqrt(self._mbag.m2 / self.nsamps)
+        return np.sqrt(self.var)
 
     @property
     def skew(self) -> np.ndarray:
         """numpy.ndarray: Get the skewness of each channel."""
         return np.divide(
-            self._mbag.m3,
-            np.power(self._mbag.m2, 1.5),
-            out=np.zeros_like(self._mbag.m3),
-            where=self._mbag.m2 != 0,
+            self._moments["m3"],
+            np.power(self._moments["m2"], 1.5),
+            out=np.zeros_like(self._moments["m3"]),
+            where=self._moments["m2"] != 0,
         ) * np.sqrt(self.nsamps)
 
     @property
@@ -446,10 +455,10 @@ class ChannelStats:
         """numpy.ndarray: Get the kurtosis of each channel."""
         return (
             np.divide(
-                self._mbag.m4,
-                np.power(self._mbag.m2, 2.0),
-                out=np.zeros_like(self._mbag.m4),
-                where=self._mbag.m2 != 0,
+                self._moments["m4"],
+                np.power(self._moments["m2"], 2.0),
+                out=np.zeros_like(self._moments["m4"]),
+                where=self._moments["m2"] != 0,
             )
             * self.nsamps
             - 3.0
@@ -458,19 +467,17 @@ class ChannelStats:
     def push_data(
         self,
         array: np.ndarray,
-        gulp_size: int,
         start_index: int,
         mode: str = "basic",
     ) -> None:
         if mode == "basic":
             kernels.compute_online_moments_basic(
                 array,
-                self.mbag,
-                gulp_size,
+                self._moments,
                 start_index,
             )
         else:
-            kernels.compute_online_moments(array, self.mbag, gulp_size, start_index)
+            kernels.compute_online_moments(array, self._moments, start_index)
 
     def __add__(self, other: ChannelStats) -> ChannelStats:
         """Add two ChannelStats objects together as if all the data belonged to one.
@@ -495,5 +502,5 @@ class ChannelStats:
             raise TypeError(msg)
 
         combined = ChannelStats(self.nchans, self.nsamps)
-        kernels.add_online_moments(self.mbag, other.mbag, combined.mbag)
+        kernels.add_online_moments(self._moments, other._moments, combined._moments)
         return combined
