@@ -202,10 +202,11 @@ def downsample_2d(
     nchans: int,
     nsamps: int,
 ) -> np.ndarray:
+    """Assuming nchans is multiple of ffactor."""
     nsamps_new = nsamps // tfactor
     nchans_new = nchans // ffactor
     totfactor = ffactor * tfactor
-    result = np.empty(nsamps * nchans // totfactor, dtype=array.dtype)
+    result = np.empty(nsamps_new * nchans_new, dtype=array.dtype)
     for isamp in prange(nsamps_new):
         for ichan in range(nchans_new):
             pos = nchans * isamp * tfactor + ichan * ffactor
@@ -231,8 +232,7 @@ def extract_tim(
     index: int,
 ) -> None:
     for isamp in prange(nsamps):
-        for ichan in range(nchans):
-            outarray[index + isamp] += inarray[nchans * isamp + ichan]
+        outarray[index + isamp] = np.sum(inarray[nchans * isamp : nchans * (isamp + 1)])
 
 
 @njit(
@@ -273,8 +273,8 @@ def mask_channels(
 
 @njit(
     [
-        "void(u1[:], f4[:], i4[:], i4, i4, i4, i4)",
-        "void(f4[:], f4[:], i4[:], i4, i4, i4, i4)",
+        "void(u1[:], f4[:], i8[:], i4, i4, i4, i4)",
+        "void(f4[:], f4[:], i8[:], i4, i4, i4, i4)",
     ],
     cache=True,
     parallel=True,
@@ -294,19 +294,13 @@ def dedisperse(
             outarray[index + isamp] += inarray[nchans * (isamp + delays[ichan]) + ichan]
 
 
-@njit(
-    ["u1[:](u1[:], i4, i4)", "f4[:](f4[:], i4, i4)"],
-    cache=True,
-    parallel=True,
-    fastmath=True,
-)
+@njit(cache=True, parallel=True, fastmath=True)
 def invert_freq(array: np.ndarray, nchans: int, nsamps: int) -> np.ndarray:
     outarray = np.empty_like(array)
     for isamp in prange(nsamps):
-        for ichan in range(nchans):
-            outarray[nchans * isamp + ichan] = array[
-                nchans * isamp + (nchans - ichan - 1)
-            ]
+        outarray[nchans * isamp : nchans * (isamp + 1)] = array[
+            nchans * isamp : nchans * (isamp + 1)
+        ][::-1]
     return outarray
 
 
@@ -425,120 +419,107 @@ def remove_zerodm(
             outarray[pos] = result
 
 
-@njit("void(f4[:], f4[:])", cache=True)
-def form_spec(fft_ar: np.ndarray, spec_ar: np.ndarray) -> None:
-    specsize = len(spec_ar)
-    for ispec in range(specsize):
-        spec_ar[ispec] = np.sqrt(fft_ar[2 * ispec] ** 2 + fft_ar[2 * ispec + 1] ** 2)
+@njit("f4[:](c8[:])", cache=True, fastmath=True)
+def form_mspec(fspec: np.ndarray) -> np.ndarray:
+    nfreq = len(fspec)
+    mspec = np.zeros(nfreq, dtype=np.float32)
+    for i in range(nfreq):
+        mspec[i] = np.sqrt(fspec[i].real ** 2 + fspec[i].imag ** 2)
+    return mspec
 
 
-@njit("void(f4[:], f4[:])", cache=True, locals={"re_l": types.f4, "im_l": types.f4})
-def form_spec_interpolated(fft_ar: np.ndarray, spec_ar: np.ndarray) -> None:
-    specsize = len(spec_ar)
-    re_l = 0
-    im_l = 0
-    for ispec in range(specsize):
-        re = fft_ar[2 * ispec]
-        im = fft_ar[2 * ispec + 1]
+@njit("f4[:](c8[:])", cache=True, fastmath=True)
+def form_interp_mspec(fspec: np.ndarray) -> np.ndarray:
+    nfreq = len(fspec)
+    mspec = np.zeros(nfreq, dtype=np.float32)
+    re_prev = 0
+    im_prev = 0
+    for i in range(nfreq):
+        re, im = fspec[i].real, fspec[i].imag
         ampsq = re**2 + im**2
-        ampsq_diff = 0.5 * ((re - re_l) ** 2 + (im - im_l) ** 2)
-        spec_ar[ispec] = np.sqrt(max(ampsq, ampsq_diff))
-        re_l = re
-        im_l = im
+        ampsq_diff = 0.5 * ((re - re_prev) ** 2 + (im - im_prev) ** 2)
+        mspec[i] = np.sqrt(max(ampsq, ampsq_diff))
+        re_prev, im_prev = re, im
+    return mspec
 
 
-@njit(
-    "void(f4[:], f4[:], i4, i4, i4)",
-    cache=True,
-    locals={"norm": types.f4, "slope": types.f4},
-)
-def remove_rednoise_presto(
-    fft_ar: np.ndarray,
-    out_ar: np.ndarray,
+@njit("c8[:](c8[:], i8, i8, i8)", cache=True, fastmath=True)
+def fs_running_median(
+    spec_arr: np.ndarray,
     start_width: int,
     end_width: int,
     end_freq_bin: int,
-) -> None:
-    nspecs = len(fft_ar) // 2
-    oldinbuf = np.empty(2 * end_width, dtype=np.float32)
-    newinbuf = np.empty(2 * end_width, dtype=np.float32)
-    realbuffer = np.empty(end_width, dtype=np.float32)
-    binnum = 1
-    bufflen = start_width
+) -> np.ndarray:
+    nspecs = len(spec_arr)
+    out_arr = np.zeros_like(spec_arr)
+    powbuf = np.empty(nspecs, dtype=np.float32)
+    for ii in range(nspecs):
+        powbuf[ii] = spec_arr[ii].real ** 2 + spec_arr[ii].imag ** 2
 
     # Set DC bin to 1.0
-    out_ar[0] = 1.0
-    windex = 2
-    rindex = 2
+    out_arr[0] = 1.0 + 0j
+    rindex, windex, binnum = 1, 1, 1
+    buflen = start_width
 
-    # transfer bufflen complex samples to oldinbuf
-    oldinbuf[: 2 * bufflen] = fft_ar[rindex : rindex + 2 * bufflen]
-    numread_old = bufflen
-    rindex += 2 * bufflen
-
-    # calculate powers for oldinbuf
-    for ispec in range(numread_old):
-        realbuffer[ispec] = oldinbuf[2 * ispec] ** 2 + oldinbuf[2 * ispec + 1] ** 2
-
-    # calculate first median of our data and determine next bufflen
-    mean_old = np.median(realbuffer[:numread_old]) / np.log(2.0)
+    numread_old = buflen
+    mean_old = np.median(powbuf[rindex : rindex + numread_old]) / np.log(2)
+    rindex += numread_old
     binnum += numread_old
-    bufflen = round(start_width * np.log(binnum))
+    buflen = round(start_width * np.log(binnum))
 
-    while rindex // 2 < nspecs:
-        numread_new = min(bufflen, nspecs - rindex // 2)
+    while rindex < nspecs:
+        numread_new = min(buflen, nspecs - rindex)
+        mean_new = np.median(powbuf[rindex : rindex + numread_new]) / np.log(2)
+        rindex += numread_new
 
-        # transfer numread_new complex samples to newinbuf
-        newinbuf[: 2 * numread_new] = fft_ar[rindex : rindex + 2 * numread_new]
-        rindex += 2 * numread_new
-
-        # calculate powers for newinbuf
-        for ispec in range(numread_new):
-            realbuffer[ispec] = newinbuf[2 * ispec] ** 2 + newinbuf[2 * ispec + 1] ** 2
-
-        mean_new = np.median(realbuffer[:numread_new]) / np.log(2.0)
         slope = (mean_new - mean_old) / (numread_old + numread_new)
+        for i in range(numread_old):
+            norm = 1 / np.sqrt(mean_old + slope * ((numread_old + numread_new) / 2 - i))
+            out_arr[windex + i] = spec_arr[windex + i] * norm
 
-        for ispec in range(numread_old):
-            norm = 1 / np.sqrt(
-                mean_old + slope * ((numread_old + numread_new) / 2 - ispec),
-            )
-            out_ar[2 * ispec + windex] = oldinbuf[2 * ispec] * norm
-            out_ar[2 * ispec + 1 + windex] = oldinbuf[2 * ispec + 1] * norm
-
-        windex += 2 * numread_old
+        windex += numread_old
         binnum += numread_new
         if binnum < end_freq_bin:
-            bufflen = int(start_width * np.log(binnum))
+            buflen = round(start_width * np.log(binnum))
         else:
-            bufflen = end_width
-        numread_old = numread_new
-        mean_old = mean_new
-        oldinbuf[: 2 * numread_new] = newinbuf[: 2 * numread_new]
+            buflen = end_width
+        numread_old, mean_old = numread_new, mean_new
 
     # Remaining samples
     norm = 1 / np.sqrt(mean_old)
-    out_ar[windex : windex + 2 * numread_old] = oldinbuf[: 2 * numread_old] * norm
+    out_arr[windex : windex + numread_old] = (
+        spec_arr[windex : windex + numread_old] * norm
+    )
+    return out_arr
 
+@njit("f4[:,:](f4[:], i8)", cache=True, fastmath=True)
+def sum_harmonics(pow_spec: np.ndarray, nfolds: int) -> np.ndarray:
+    nfreqs = len(pow_spec)
+    sum_arr = np.zeros((nfolds, nfreqs), dtype=np.float32)
+    harm_sum = pow_spec.copy()
+    nfold1 = 0  # int(self.header.tsamp*2*self.size/maxperiod)
+    for iff in range(nfolds):
+        nharm = 2 ** (iff + 1)
+        nfoldi = int(max(1, min(nharm * nfold1 - nharm // 2, nfreqs)))
+        harm_arr = np.array(
+            [kk * ll // nharm for ll in range(nharm) for kk in range(1, nharm, 2)],
+            dtype=np.int32,
+        )
 
-@njit("void(f4[:], f4[:], i4[:], i4[:], i4, i4, i4)", cache=True)
-def sum_harms(
-    spec_arr: np.ndarray,
-    sum_arr: np.ndarray,
-    harm_arr: np.ndarray,
-    fact_arr: np.ndarray,
-    nharms: int,
-    nsamps: int,
-    nfold: int,
-) -> None:
-    for ifold in range(nfold, nsamps - (nharms - 1), nharms):
-        for iharm in range(nharms):
-            for kk in range(nharms // 2):
-                sum_arr[ifold + iharm] += spec_arr[
-                    fact_arr[kk] + harm_arr[iharm * nharms // 2 + kk]
-                ]
-        for kk in range(nharms // 2):
-            fact_arr[kk] += 2 * kk + 1
+        facts_ar = np.array(
+            [(kk * nfoldi + nharm // 2) // nharm for kk in range(1, nharm, 2)],
+            dtype=np.int32,
+        )
+        for ifold in range(nfoldi, nfreqs - (nharm - 1), nharm):
+            for iharm in range(nharm):
+                for kk in range(nharm // 2):
+                    harm_sum[ifold + iharm] += pow_spec[
+                        facts_ar[kk] + harm_arr[iharm * nharm // 2 + kk]
+                    ]
+            for kk in range(nharm // 2):
+                facts_ar[kk] += 2 * kk + 1
+        sum_arr[iff] = harm_sum
+    return sum_arr
 
 
 moments_dtype = np.dtype(
@@ -663,16 +644,17 @@ def compute_online_moments_basic(
         moments[ichan]["min"], moments[ichan]["max"] = min_val, max_val
 
 
+@njit(cache=True, fastmath=True)
 def add_online_moments(a: np.ndarray, b: np.ndarray, c: np.ndarray) -> None:
-    c["count"] = a["count"] + b["count"]
+    c["count"][:] = a["count"] + b["count"]
     delta = b["m1"] - a["m1"]
     delta2 = delta * delta
     delta3 = delta * delta2
     delta4 = delta2 * delta2
 
-    c["m1"] = (a["count"] * a["m1"] + b["count"] * b["m1"]) / c["count"]
-    c["m2"] = a["m2"] + b["m2"] + delta2 * a["count"] * b["count"] / c["count"]
-    c["m3"] = (
+    c["m1"][:] = (a["count"] * a["m1"] + b["count"] * b["m1"]) / c["count"]
+    c["m2"][:] = a["m2"] + b["m2"] + delta2 * a["count"] * b["count"] / c["count"]
+    c["m3"][:] = (
         a["m3"]
         + b["m3"]
         + delta3
@@ -681,8 +663,8 @@ def add_online_moments(a: np.ndarray, b: np.ndarray, c: np.ndarray) -> None:
         * (a["count"] - b["count"])
         / (c["count"] ** 2)
     )
-    c["m3"] += 3 * delta * (a["count"] * b["m2"] - b["count"] * a["m2"]) / c["count"]
-    c["m4"] = (
+    c["m3"][:] += 3 * delta * (a["count"] * b["m2"] - b["count"] * a["m2"]) / c["count"]
+    c["m4"][:] = (
         a["m4"]
         + b["m4"]
         + delta4
@@ -691,12 +673,38 @@ def add_online_moments(a: np.ndarray, b: np.ndarray, c: np.ndarray) -> None:
         * (a["count"] ** 2 - a["count"] * b["count"] + b["count"] ** 2)
         / (c["count"] ** 3)
     )
-    c["m4"] += (
+    c["m4"][:] += (
         6
         * delta2
         * (a["count"] ** 2 * b["m2"] + b["count"] ** 2 * a["m2"])
         / (c["count"] ** 2)
     )
-    c["m4"] += 4 * delta * (a["count"] * b["m3"] - b["count"] * a["m3"]) / c["count"]
-    c["max"] = np.maximum(a["max"], b["max"])
-    c["min"] = np.minimum(a["min"], b["min"])
+    c["m4"][:] += 4 * delta * (a["count"] * b["m3"] - b["count"] * a["m3"]) / c["count"]
+    c["max"][:] = np.maximum(a["max"], b["max"])
+    c["min"][:] = np.minimum(a["min"], b["min"])
+
+
+@njit(cache=True, fastmath=True)
+def detrend_1d(arr: np.ndarray) -> np.ndarray:
+    """Similar to scipiy.signal.detrend. Currently for 1d arrays only."""
+    m = len(arr)
+    if m == 0:
+        msg = "Input array must be non-empty."
+        raise ValueError(msg)
+    if m == 1:
+        return np.zeros(1, dtype=arr.dtype)
+
+    x_sum = m * (m - 1) / 2
+    y_sum = 0.0
+    x_sq_sum = m * (m - 1) * (2 * m - 1) / 6
+    x_y_sum = 0.0
+
+    for i in range(m):
+        y_sum += arr[i]
+        x_y_sum += i * arr[i]
+
+    slope = (m * x_y_sum - x_sum * y_sum) / (m * x_sq_sum - x_sum**2)
+    intercept = (y_sum - slope * x_sum) / m
+    trend = slope * np.arange(m, dtype=arr.dtype) + intercept
+
+    return arr - trend.astype(arr.dtype)

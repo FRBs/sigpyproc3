@@ -25,7 +25,7 @@ def filter_samples() -> np.ndarray:
 @pytest.fixture(scope="module", autouse=True)
 def random_normal_2d() -> np.ndarray:
     rng = np.random.default_rng(42)
-    return rng.normal(loc=5, scale=2, size=(10, 1000))
+    return rng.normal(loc=5, scale=2, size=(10, 1000)).astype(np.float32)
 
 
 class TestEstimateLoc:
@@ -190,36 +190,40 @@ class TestRunningFilter:
 
 
 class TestChannelStats:
+    nchans = 10
+    nsamps = 1000
+    deimal_precision = 3
+
     def test_initialization(self) -> None:
-        chan_stats = stats.ChannelStats(nchans=10, nsamps=1000)
-        assert chan_stats.nchans == 10
-        assert chan_stats.nsamps == 1000
-        assert chan_stats.moments.shape == (10,)
+        chan_stats = stats.ChannelStats(nchans=self.nchans, nsamps=self.nsamps)
+        assert chan_stats.nchans == self.nchans
+        assert chan_stats.nsamps == self.nsamps
+        assert chan_stats.moments.shape == (self.nchans,)
 
     @pytest.mark.parametrize("mode", ["basic", "advanced"])
     def test_push_data_basic(self, random_normal_2d: np.ndarray, mode: str) -> None:
-        chan_stats = stats.ChannelStats(nchans=10, nsamps=1000)
-        chan_stats.push_data(random_normal_2d.ravel(), start_index=0, mode=mode)
+        chan_stats = stats.ChannelStats(nchans=self.nchans, nsamps=self.nsamps)
+        chan_stats.push_data(random_normal_2d.T.ravel(), start_index=0, mode=mode)
         assert np.all(chan_stats.mean > 0)
         assert np.all(chan_stats.var > 0)
 
     def test_properties(self, random_normal_2d: np.ndarray) -> None:
-        chan_stats = stats.ChannelStats(nchans=10, nsamps=1000)
-        chan_stats.push_data(random_normal_2d.ravel(), start_index=0, mode="advanced")
-        np.testing.assert_allclose(
+        chan_stats = stats.ChannelStats(nchans=self.nchans, nsamps=self.nsamps)
+        chan_stats.push_data(random_normal_2d.T.ravel(), start_index=0, mode="advanced")
+        np.testing.assert_almost_equal(
             chan_stats.mean,
             np.mean(random_normal_2d, axis=1),
-            rtol=0.1,
+            decimal=self.deimal_precision,
         )
-        np.testing.assert_allclose(
+        np.testing.assert_almost_equal(
             chan_stats.var,
             np.var(random_normal_2d, axis=1),
-            rtol=0.1,
+            decimal=self.deimal_precision,
         )
-        np.testing.assert_allclose(
+        np.testing.assert_almost_equal(
             chan_stats.std,
             np.std(random_normal_2d, axis=1),
-            rtol=0.1,
+            decimal=self.deimal_precision,
         )
         np.testing.assert_almost_equal(
             chan_stats.maxima,
@@ -229,69 +233,100 @@ class TestChannelStats:
             chan_stats.minima,
             np.min(random_normal_2d, axis=1),
         )
-        np.testing.assert_allclose(
+        np.testing.assert_almost_equal(
             chan_stats.skew,
             scipy.stats.skew(random_normal_2d, axis=1),
-            rtol=0.1,
+            decimal=self.deimal_precision,
         )
-        np.testing.assert_allclose(
+        np.testing.assert_almost_equal(
             chan_stats.kurtosis,
             scipy.stats.kurtosis(random_normal_2d, axis=1),
-            rtol=0.1,
+            decimal=self.deimal_precision,
         )
 
     def test_addition(self, random_normal_2d: np.ndarray) -> None:
-        chan_stats1 = stats.ChannelStats(nchans=10, nsamps=500)
-        chan_stats2 = stats.ChannelStats(nchans=10, nsamps=500)
+        chan_stats1 = stats.ChannelStats(nchans=self.nchans, nsamps=self.nsamps // 2)
+        chan_stats2 = stats.ChannelStats(nchans=self.nchans, nsamps=self.nsamps // 2)
         chan_stats1.push_data(
-            random_normal_2d[:, :500].ravel(), start_index=0, mode="advanced"
+            random_normal_2d[:, : self.nsamps // 2].T.ravel(),
+            start_index=0,
+            mode="advanced",
         )
         chan_stats2.push_data(
-            random_normal_2d[:, 500:].ravel(),
-            start_index=500,
+            random_normal_2d[:, self.nsamps // 2 :].T.ravel(),
+            start_index=0,
             mode="advanced",
         )
         chan_stats = chan_stats1 + chan_stats2
-        assert chan_stats.nchans == 10
-        assert chan_stats.nsamps == 500
-        np.testing.assert_allclose(
+        assert chan_stats.nchans == self.nchans
+        assert chan_stats.nsamps == self.nsamps
+        np.testing.assert_almost_equal(
             chan_stats.mean,
             np.mean(random_normal_2d, axis=1),
-            rtol=0.1,
+            decimal=self.deimal_precision,
         )
-        np.testing.assert_allclose(
+        np.testing.assert_almost_equal(
             chan_stats.var,
             np.var(random_normal_2d, axis=1),
-            rtol=0.1,
+            decimal=self.deimal_precision,
+        )
+        np.testing.assert_almost_equal(
+            chan_stats.maxima,
+            np.max(random_normal_2d, axis=1),
+        )
+        np.testing.assert_almost_equal(
+            chan_stats.minima,
+            np.min(random_normal_2d, axis=1),
         )
 
     def test_addition_invalid(self, random_normal_2d: np.ndarray) -> None:
-        chan_stats = stats.ChannelStats(nchans=10, nsamps=1000)
+        chan_stats = stats.ChannelStats(nchans=self.nchans, nsamps=self.nsamps)
         with pytest.raises(TypeError):
             chan_stats + random_normal_2d
 
     def test_push_data_stream(self, random_normal_2d: np.ndarray) -> None:
-        chan_stats = stats.ChannelStats(nchans=10, nsamps=1000)
-        for i in range(0, 1000, 100):
+        chan_stats = stats.ChannelStats(nchans=self.nchans, nsamps=self.nsamps)
+        for i in range(0, self.nsamps, 100):
             chan_stats.push_data(
-                random_normal_2d[:, i : i + 100].ravel(), start_index=i
+                random_normal_2d[:, i : i + 100].T.ravel(),
+                start_index=i,
             )
-        np.testing.assert_allclose(
+        np.testing.assert_almost_equal(
             chan_stats.mean,
             np.mean(random_normal_2d, axis=1),
-            rtol=0.1,
+            decimal=self.deimal_precision,
         )
-        np.testing.assert_allclose(
+        np.testing.assert_almost_equal(
             chan_stats.var,
             np.var(random_normal_2d, axis=1),
-            rtol=0.1,
+            decimal=self.deimal_precision,
         )
 
     def test_constant_data(self) -> None:
-        chan_stats = stats.ChannelStats(nchans=10, nsamps=1000)
+        chan_stats = stats.ChannelStats(nchans=self.nchans, nsamps=self.nsamps)
         chan_stats.push_data(np.full((5, 100), 5).ravel(), start_index=0)
-        np.testing.assert_almost_equal(chan_stats.mean, np.full(10, 5), decimal=1)
-        np.testing.assert_almost_equal(chan_stats.var, np.zeros(10), decimal=1)
-        np.testing.assert_almost_equal(chan_stats.std, np.zeros(10), decimal=1)
-        np.testing.assert_almost_equal(chan_stats.skew, np.zeros(10), decimal=1)
-        np.testing.assert_almost_equal(chan_stats.kurtosis, np.full(10, -3), decimal=1)
+        np.testing.assert_almost_equal(
+            chan_stats.mean,
+            np.full(10, 5),
+            decimal=self.deimal_precision,
+        )
+        np.testing.assert_almost_equal(
+            chan_stats.var,
+            np.zeros(10),
+            decimal=self.deimal_precision,
+        )
+        np.testing.assert_almost_equal(
+            chan_stats.std,
+            np.zeros(10),
+            decimal=self.deimal_precision,
+        )
+        np.testing.assert_almost_equal(
+            chan_stats.skew,
+            np.zeros(10),
+            decimal=self.deimal_precision,
+        )
+        np.testing.assert_almost_equal(
+            chan_stats.kurtosis,
+            np.full(10, -3),
+            decimal=self.deimal_precision,
+        )

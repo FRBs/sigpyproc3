@@ -110,14 +110,14 @@ class TimeSeries:
 
     def remove_rednoise(
         self,
-        filter_func: str = "mean",
+        method: str = "mean",
         window: float = 0.5,
     ) -> TimeSeries:
         """Remove low-frequency red noise from time series using a moving filter.
 
         Parameters
         ----------
-        filter_func : str, optional
+        method : str, optional
             Moving filter function to use, by default 'mean'
         window : int, optional
             width of moving filter window in seconds, by default 0.5 seconds
@@ -139,12 +139,18 @@ class TimeSeries:
         tim_filter = stats.running_filter(
             self.data,
             window_bins,
-            filter_func=filter_func,
+            method=method,
         )
         tim_deredden = self.data - tim_filter
         return TimeSeries(tim_deredden, self.header)
 
-    def fold(self, period, accel=0, nbins=50, nints=32):
+    def fold(
+        self,
+        period: float,
+        accel: float = 0,
+        nbins: int = 50,
+        nints: int = 32,
+    ) -> foldedcube.FoldedData:
         """Fold time series into discrete phase and subintegration bins.
 
         Parameters
@@ -168,12 +174,13 @@ class TimeSeries:
         ValueError
             If ``nbins * nints`` is too large for length of the data.
         """
-        if self.size // (nbins * nints) < 10:
-            raise ValueError("nbins x nints is too large for length of data")
+        if self.data.size // (nbins * nints) < 10:
+            msg = "Data length is too short for requested number of bins"
+            raise ValueError(msg)
         fold_ar = np.zeros(nbins * nints, dtype=np.float32)
         count_ar = np.zeros(nbins * nints, dtype=np.int32)
         kernels.fold(
-            self,
+            self.data,
             fold_ar,
             count_ar,
             np.array([0], dtype=np.int32),
@@ -181,8 +188,8 @@ class TimeSeries:
             self.header.tsamp,
             period,
             accel,
-            self.size,
-            self.size,
+            self.data.size,
+            self.data.size,
             1,
             nbins,
             nints,
@@ -236,7 +243,7 @@ class TimeSeries:
         if width < 1:
             msg = f"invalid boxcar width: {width}"
             raise ValueError(msg)
-        mean_ar = stats.running_filter(self.data, width, filter_func="mean")
+        mean_ar = stats.running_filter(self.data, width, method="mean")
         mean_ar_norm = mean_ar * np.sqrt(width)
         ref_bin = -width // 2 + 1 if width % 2 else -width // 2
         boxcar_ar = np.roll(mean_ar_norm, ref_bin)

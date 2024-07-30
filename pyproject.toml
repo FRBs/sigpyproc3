@@ -91,7 +91,7 @@ testpaths = "tests"
 source = ["./sigpyproc/"]
 
 [tool.coverage.run]
-omit = ["tests/*", "docs/*", "*__init__.py", "sigpyproc/core/kernels.py"]
+omit = ["tests/*", "docs/*", "*__init__.py"]
 
 [tool.coverage.report]
 show_missing = true

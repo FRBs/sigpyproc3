@@ -501,6 +501,6 @@ class ChannelStats:
             msg = f"Only ChannelStats can be added together, not {type(other)}"
             raise TypeError(msg)
 
-        combined = ChannelStats(self.nchans, self.nsamps)
+        combined = ChannelStats(self.nchans, self.nsamps + other.nsamps)
         kernels.add_online_moments(self._moments, other._moments, combined._moments)
         return combined

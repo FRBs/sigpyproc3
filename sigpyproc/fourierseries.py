@@ -52,35 +52,38 @@ class PowerSpectrum:
         """Power spectrum data."""
         return self._data
 
-    def bin2freq(self, bin_num: int) -> float:
+    def bin2freq(self, r: int) -> float:
         """Return centre frequency of a given bin.
 
         Parameters
         ----------
-        bin_num : int
-            Bin number
+        r : int
+            Fourier bin number
 
         Returns
         -------
         float
             frequency of the given bin
         """
-        return bin_num / self.header.tobs
+        if r < 0 or r >= self.data.size:
+            msg = f"Fourier bin number {r} out of range"
+            raise ValueError(msg)
+        return r / self.header.tobs
 
-    def bin2period(self, bin_num: int) -> float:
+    def bin2period(self, r: int) -> float:
         """Return centre period of a given bin.
 
         Parameters
         ----------
-        bin_num : int
-            Bin number
+        r : int
+            Fourier bin number
 
         Returns
         -------
         float
-            period of bin
+            period of the given bin
         """
-        return 1 / self.bin2freq(bin_num)
+        return 1 / self.bin2freq(r)
 
     def freq2bin(self, freq: float) -> int:
         """Return nearest bin to a given frequency.
@@ -126,29 +129,12 @@ class PowerSpectrum:
             A list of folded spectra where the i :sup:`th` element
             is the spectrum folded i times.
         """
-        sum_ar = self.copy()
-
-        nfold1 = 0  # int(self.header.tsamp*2*self.size/maxperiod)
+        sum_arr = kernels.sum_harmonics(self.data, nfolds)
+        nharms = 2 ** np.arange(1, nfolds + 1)
         folds = []
-        for ii in range(nfolds):
-            nharm = 2 ** (ii + 1)
-            nfoldi = int(max(1, min(nharm * nfold1 - nharm // 2, self.size)))
-            harm_ar = np.array(
-                [
-                    int(kk * ll / float(nharm))
-                    for ll in range(nharm)
-                    for kk in range(1, nharm, 2)
-                ]
-            ).astype("int32")
-
-            facts_ar = np.array(
-                [(kk * nfoldi + nharm // 2) / nharm for kk in range(1, nharm, 2)]
-            ).astype("int32")
-
-            kernels.sum_harms(self, sum_ar, harm_ar, facts_ar, nharm, self.size, nfoldi)
-
+        for ii, nharm in enumerate(nharms):
             new_header = self.header.new_header({"tsamp": self.header.tsamp * nharm})
-            folds.append(PowerSpectrum(sum_ar, new_header))
+            folds.append(PowerSpectrum(sum_arr[ii], new_header))
         return folds
 
     def _check_input(self) -> None:
@@ -228,15 +214,17 @@ class FourierSeries:
         :class:`~sigpyproc.fourierseries.PowerSpectrum`
             The power spectrum
         """
-        spec_ar = np.zeros_like(self.data, dtype=np.float32)
         if interpolate:
-            kernels.form_spec_interpolated(self.data.view(np.float32), spec_ar)
+            spec_ar = kernels.form_interp_mspec(self.data)
         else:
-            kernels.form_spec(self.data.view(np.float32), spec_ar)
+            spec_ar = kernels.form_mspec(self.data)
         return PowerSpectrum(spec_ar, self.header.new_header())
 
     def remove_rednoise_presto(
-        self, start_width: int = 6, end_width: int = 100, end_freq: float = 6.0
+        self,
+        start_width: int = 6,
+        end_width: int = 100,
+        end_freq: float = 6.0,
     ) -> FourierSeries:
         """Perform rednoise removal via Presto style method.
 
@@ -256,15 +244,13 @@ class FourierSeries:
             whitened fourier series
         """
         end_freq_bin = int(round(end_freq / self.binwidth))
-        out_ar = np.zeros_like(2 * self.data, dtype=np.float32)
-        kernels.remove_rednoise_presto(
-            self.data.view(np.float32),
-            out_ar,
+        out_ar = kernels.fs_running_median(
+            self.data,
             start_width,
             end_width,
             end_freq_bin,
         )
-        return FourierSeries(out_ar.view(np.complex64), self.header.new_header())
+        return FourierSeries(out_ar, self.header.new_header())
 
     def recon_prof(self, freq: float, nharms: int = 32) -> Profile:
         """Reconstruct the time domain pulse profile from a signal and its harmonics.
@@ -283,9 +269,9 @@ class FourierSeries:
         """
         freq_bin = round(freq * self.header.tobs)
         spec_ids = np.arange(1, nharms + 1) * 2 * freq_bin
-        harms = self[spec_ids]
+        harms = self.data[spec_ids]
         harm_ar = np.hstack((harms, np.conj(harms[1:][::-1])))
-        return Profile(np.abs(numpy_fft.ifft(harm_ar)))
+        return Profile(np.abs(numpy_fft.ifft(harm_ar)), tsamp=self.header.tsamp)
 
     def multiply(self, other: FourierSeries | npt.ArrayLike) -> FourierSeries:
         """Multiply two Fourier series together.
@@ -406,7 +392,9 @@ class FourierSeries:
         """
         header = Header.from_sigproc(filename)
         data = np.fromfile(
-            filename, dtype=np.float32, offset=header.stream_info.entries[0].hdrlen
+            filename,
+            dtype=np.float32,
+            offset=header.stream_info.entries[0].hdrlen,
         )
         return cls(data.view(np.complex64), header)
 
