@@ -61,7 +61,12 @@ spp_extract = "sigpyproc.apps.spp_extract:main"
 spp_clean = "sigpyproc.apps.spp_clean:main"
 
 [tool.ruff]
-include = ["pyproject.toml", "sigpyproc/**/*.py"]
+include = [
+    "pyproject.toml",
+    "sigpyproc/**/*.py",
+    "tests/**/*.py",
+    "docs/**/*.py",
+]
 line-length = 88
 indent-width = 4
 target-version = "py39"
@@ -100,10 +105,12 @@ ignore_errors = true
 exclude_lines = [
     'raise NotImplementedError',
     'if TYPE_CHECKING:',
+    'except ModuleNotFoundError:',
     'if __name__ == "__main__":',
     'if outfile_name is None:',
 ]
 
 [tool.mypy]
+enable_incomplete_feature = ["Unpack"]
 ignore_missing_imports = true
 plugins = ["numpy.typing.mypy_plugin"]

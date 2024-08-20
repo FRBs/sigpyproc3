@@ -220,7 +220,7 @@ class FourierSeries:
             spec_ar = kernels.form_mspec(self.data)
         return PowerSpectrum(spec_ar, self.header.new_header())
 
-    def remove_rednoise_presto(
+    def deredden(
         self,
         start_width: int = 6,
         end_width: int = 100,
@@ -364,7 +364,7 @@ class FourierSeries:
             inffile = fftpath.with_suffix(".inf").as_posix()
         if not pathlib.Path(inffile).is_file():
             msg = "No corresponding .inf file found"
-            raise OSError(msg)
+            raise FileNotFoundError(msg)
         data = np.fromfile(fftfile, dtype=np.float32)
         header = Header.from_inffile(inffile)
         header.filename = fftfile

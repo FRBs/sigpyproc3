@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from contextlib import ExitStack
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -45,7 +46,13 @@ class Filterbank(ABC):
         """:class:`~sigpyproc.header.Header`: Header metadata of input file."""
 
     @abstractmethod
-    def read_block(self, start: int, nsamps: int) -> FilterbankBlock:
+    def read_block(
+        self,
+        start: int,
+        nsamps: int,
+        fch1: float | None = None,
+        nchans: int | None = None,
+    ) -> FilterbankBlock:
         """Read a data block from the filterbank file stream.
 
         Parameters
@@ -54,6 +61,10 @@ class Filterbank(ABC):
             first time sample of the block to be read
         nsamps : int
             number of samples in the block (i.e. block will be nsamps*nchans in size)
+        fch1 : float, optional
+            frequency of the first channel, by default None (header value)
+        nchans : int, optional
+            number of channels in the block, by default None (header value)
 
         Returns
         -------
@@ -63,7 +74,7 @@ class Filterbank(ABC):
         Raises
         ------
         ValueError
-            if requested samples are out of range
+            if requested samples or channels are out of range
         """
 
     @abstractmethod
@@ -178,13 +189,13 @@ class Filterbank(ABC):
             Keyword arguments for :func:`read_plan`.
         """
         bag = ChannelStats(self.header.nchans, self.header.nsamples)
-        for nsamps_r, ii, data in self.read_plan(
+        for _, ii, data in self.read_plan(
             gulp=gulp,
             start=start,
             nsamps=nsamps,
             **plan_kwargs,
         ):
-            bag.push_data(data, nsamps_r, ii, mode="full")
+            bag.push_data(data, ii, mode="full")
         self._chan_stats = bag
 
     def compute_stats_basic(
@@ -208,13 +219,13 @@ class Filterbank(ABC):
             Keyword arguments for :func:`read_plan`.
         """
         bag = ChannelStats(self.header.nchans, self.header.nsamples)
-        for nsamps_r, ii, data in self.read_plan(
+        for _, ii, data in self.read_plan(
             gulp=gulp,
             start=start,
             nsamps=nsamps,
             **plan_kwargs,
         ):
-            bag.push_data(data, nsamps_r, ii, mode="basic")
+            bag.push_data(data, ii, mode="basic")
         self._chan_stats = bag
 
     def collapse(
@@ -289,7 +300,10 @@ class Filterbank(ABC):
             kernels.extract_bpass(data, bpass_ar, self.header.nchans, nsamps_r)
             num_samples += nsamps_r
         bpass_ar /= num_samples
-        return TimeSeries(bpass_ar, self.header.new_header({"nchans": 1}))
+        return TimeSeries(
+            bpass_ar,
+            self.header.new_header({"nchans": 1, "nsamples": len(bpass_ar)}),
+        )
 
     def dedisperse(
         self,
@@ -345,7 +359,10 @@ class Filterbank(ABC):
                 nsamps_r,
                 ii * (gulp - max_delay),
             )
-        return TimeSeries(tim_ar, self.header.new_header({"nchans": 1, "dm": dm}))
+        return TimeSeries(
+            tim_ar,
+            self.header.new_header({"nchans": 1, "dm": dm, "nsamples": tim_len}),
+        )
 
     def read_chan(
         self,
@@ -626,6 +643,7 @@ class Filterbank(ABC):
         self,
         chans: np.ndarray | None = None,
         outfile_base: str | None = None,
+        batch_size: int = 200,
         gulp: int = 16384,
         start: int = 0,
         nsamps: int | None = None,
@@ -639,6 +657,8 @@ class Filterbank(ABC):
             channel numbers to extract, by default all channels
         outfile_base : str, optional
             base name of output files, by default ``header.basename``.
+        batch_size : int, optional
+            number of channels to extract in each batch, by default 200
         gulp : int, optional
             number of samples in each read, by default 16384
         start : int, optional
@@ -671,30 +691,38 @@ class Filterbank(ABC):
             raise ValueError(msg)
         if outfile_base is None:
             outfile_base = self.header.basename
+        filenames = [f"{outfile_base}_chan{chan:04d}.tim" for chan in chans]
 
-        filenames = [
-            f"{outfile_base}_chan{chans[ichan]:04d}.tim"
-            for ichan in range(nchans_extract)
-        ]
-        out_files = [
-            self.header.prep_outfile(
-                filenames[ichan],
-                updates={"nchans": 1, "nbits": 32, "data_type": "time series"},
-                nbits=32,
-            )
-            for ichan in range(nchans_extract)
-        ]
-        for nsamps_r, _ii, data in self.read_plan(
-            gulp=gulp,
-            start=start,
-            nsamps=nsamps,
-            **plan_kwargs,
-        ):
-            data_2d = data.reshape(nsamps_r, self.header.nchans)
-            for ifile, out_file in enumerate(out_files):
-                out_file.cwrite(data_2d[:, chans[ifile]])
-        for out_file in out_files:
-            out_file.close()
+        # Process in batches to avoid file open/close limits
+        for batch_start in range(0, nchans_extract, batch_size):
+            batch_end = min(batch_start + batch_size, nchans_extract)
+            batch_chans = chans[batch_start:batch_end]
+            batch_files = filenames[batch_start:batch_end]
+
+            with ExitStack() as stack:
+                out_files = [
+                    stack.enter_context(
+                        self.header.prep_outfile(
+                            filename,
+                            updates={
+                                "nchans": 1,
+                                "nbits": 32,
+                                "data_type": "time series",
+                            },
+                            nbits=32,
+                        ),
+                    )
+                    for filename in batch_files
+                ]
+                for nsamps_r, _, data in self.read_plan(
+                    gulp=gulp,
+                    start=start,
+                    nsamps=nsamps,
+                    **plan_kwargs,
+                ):
+                    data_2d = data.reshape(nsamps_r, self.header.nchans)
+                    for ifile, out_file in enumerate(out_files):
+                        out_file.cwrite(data_2d[:, batch_chans[ifile]])
         return filenames
 
     def extract_bands(
@@ -703,6 +731,7 @@ class Filterbank(ABC):
         nchans: int,
         chanpersub: int | None = None,
         outfile_base: str | None = None,
+        batch_size: int = 200,
         gulp: int = 16384,
         start: int = 0,
         nsamps: int | None = None,
@@ -720,6 +749,8 @@ class Filterbank(ABC):
             number of channels in each sub-band, by default ``nchans``
         outfile_base: str, optional
             base name of output files, by default ``header.basename``.
+        batch_size: int, optional
+            number of sub-bands to extract in each batch, by default 200
         gulp : int, optional
             number of samples in each read, by default 16384
         start : int, optional
@@ -767,31 +798,42 @@ class Filterbank(ABC):
             outfile_base = self.header.basename
 
         filenames = [f"{outfile_base}_sub{isub:02d}.fil" for isub in range(nsub)]
-        out_files = [
-            self.header.prep_outfile(
-                filenames[isub],
-                updates={
-                    "nchans": chanpersub,
-                    "fch1": fstart + isub * chanpersub * self.header.foff,
-                },
-                nbits=self.header.nbits,
-            )
-            for isub in range(nsub)
-        ]
 
-        for nsamps_r, _ii, data in self.read_plan(
-            gulp=gulp,
-            start=start,
-            nsamps=nsamps,
-            **plan_kwargs,
-        ):
-            data_2d = data.reshape(nsamps_r, self.header.nchans)
-            for ifile, out_file in enumerate(out_files):
-                iband_chanstart = chanstart + ifile * chanpersub
-                subband_ar = data_2d[:, iband_chanstart : iband_chanstart + chanpersub]
-                out_file.cwrite(subband_ar.ravel())
-        for out_file in out_files:
-            out_file.close()
+        # Process in batches to avoid file open/close limits
+        for batch_start in range(0, nsub, batch_size):
+            batch_end = min(batch_start + batch_size, nsub)
+            batch_files = filenames[batch_start:batch_end]
+
+            with ExitStack() as stack:
+                out_files = [
+                    stack.enter_context(
+                        self.header.prep_outfile(
+                            filename,
+                            updates={
+                                "nchans": chanpersub,
+                                "fch1": fstart
+                                + (batch_start + i) * chanpersub * self.header.foff,
+                            },
+                            nbits=self.header.nbits,
+                        ),
+                    )
+                    for i, filename in enumerate(batch_files)
+                ]
+
+                for nsamps_r, _ii, data in self.read_plan(
+                    gulp=gulp,
+                    start=start,
+                    nsamps=nsamps,
+                    **plan_kwargs,
+                ):
+                    data_2d = data.reshape(nsamps_r, self.header.nchans)
+                    for ifile, out_file in enumerate(out_files):
+                        iband_chanstart = chanstart + (batch_start + ifile) * chanpersub
+                        subband_ar = data_2d[
+                            :,
+                            iband_chanstart : iband_chanstart + chanpersub,
+                        ]
+                        out_file.cwrite(subband_ar.ravel())
         return filenames
 
     def requantize(
@@ -892,7 +934,7 @@ class Filterbank(ABC):
         if outfile_name is None:
             outfile_name = f"{self.header.basename}_noZeroDM.fil"
 
-        bpass = self.bandpass(**plan_kwargs)
+        bpass = self.bandpass(**plan_kwargs).data
         chanwts = bpass / bpass.sum()
         out_ar = np.empty(
             self.header.nsamples * self.header.nchans,

@@ -342,3 +342,11 @@ class FoldedData:
         bin_drifts = drifts - self._tph_shifts
         self._tph_shifts = drifts
         return bin_drifts
+
+    def _check_input(self) -> None:
+        if not isinstance(self.header, Header):
+            msg = "Input header is not a Header instance"
+            raise TypeError(msg)
+        if self.data.ndim != 3:
+            msg = "Input data is not 3 dimensional"
+            raise ValueError(msg)

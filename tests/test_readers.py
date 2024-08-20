@@ -22,6 +22,10 @@ class TestFilReader:
         assert isinstance(block, FilterbankBlock)
         assert isinstance(block.header, Header)
         np.testing.assert_equal(block.dm, 0)
+        np.testing.assert_equal(block.data.shape, (fil.header.nchans, 100))
+        nchans = fil.header.nchans // 2
+        block = fil.read_block(0, 100, nchans=nchans)
+        np.testing.assert_equal(block.data.shape, (nchans, 100))
 
     def test_read_block_outofrange(self, filfile_8bit_1: str) -> None:
         fil = FilReader(filfile_8bit_1)
@@ -29,6 +33,10 @@ class TestFilReader:
             fil.read_block(-10, 100)
         with np.testing.assert_raises(ValueError):
             fil.read_block(100, fil.header.nsamples + 1)
+        with np.testing.assert_raises(ValueError):
+            fil.read_block(0, 100, nchans=1000)
+        with np.testing.assert_raises(ValueError):
+            fil.read_block(0, 100, fch1=10000)
 
     def test_read_dedisp_block(self, filfile_8bit_1: str) -> None:
         fil = FilReader(filfile_8bit_1)
@@ -37,7 +45,7 @@ class TestFilReader:
         block_dd = fil.read_dedisp_block(0, fil.header.nsamples, dm)
         assert isinstance(block, FilterbankBlock)
         assert isinstance(block.header, Header)
-        np.testing.assert_equal(block, block_dd)
+        np.testing.assert_equal(block.data, block_dd.data)
 
     def test_read_dedisp_block_outofrange(self, filfile_8bit_1: str) -> None:
         fil = FilReader(filfile_8bit_1)
@@ -70,7 +78,7 @@ class TestFilReader:
         fil = FilReader(filfile_8bit_1)
         corrupted_file = fil.header.prep_outfile(tmpfile)
         for _, _, data in fil.read_plan(gulp=fil.header.nsamples):
-            corrupted_file.cwrite(data[:fil.header.nsamples * fil.header.nchans - 100])
+            corrupted_file.cwrite(data[: fil.header.nsamples * fil.header.nchans - 100])
         corrupted_file.close()
         corruted_fil = FilReader(tmpfile)
         with pytest.raises(ValueError):  # noqa: PT012
@@ -104,6 +112,10 @@ class TestPFITSReader:
         assert isinstance(block, FilterbankBlock)
         assert isinstance(block.header, Header)
         np.testing.assert_equal(block.dm, 0)
+        np.testing.assert_equal(block.data.shape, (fits.header.nchans, 100))
+        nchans = fits.header.nchans // 2
+        block = fits.read_block(0, 100, nchans=nchans)
+        np.testing.assert_equal(block.data.shape, (nchans, 100))
 
     def test_read_block_outofrange(self, fitsfile_4bit: str) -> None:
         fits = PFITSReader(fitsfile_4bit)
@@ -111,6 +123,10 @@ class TestPFITSReader:
             fits.read_block(-10, 100)
         with np.testing.assert_raises(ValueError):
             fits.read_block(100, fits.header.nsamples + 1)
+        with np.testing.assert_raises(ValueError):
+            fits.read_block(0, 100, nchans=1000)
+        with np.testing.assert_raises(ValueError):
+            fits.read_block(0, 100, fch1=10000)
 
     def test_read_plan(self, fitsfile_4bit: str) -> None:
         fits = PFITSReader(fitsfile_4bit)
@@ -122,13 +138,25 @@ class TestPFITSReader:
 
 
 class TestPulseExtractor:
-    def test_filterbank_single(self, filfile_4bit: str) -> None:
-        pulse = PulseExtractor(filfile_4bit, 1000, 50, 0)
-        assert pulse.pulse_toa_block == pulse.nsamps // 2
+    def test_init(self, filfile_8bit_1: str) -> None:
+        pulse = PulseExtractor(filfile_8bit_1, 1000, 50, 0, toa_freq=2366.0, nchans=416)
+        np.testing.assert_equal(pulse.filfile, filfile_8bit_1)
+        np.testing.assert_equal(pulse.pulse_toa, 1000)
+        np.testing.assert_equal(pulse.pulse_width, 50)
+        np.testing.assert_equal(pulse.pulse_dm, 0)
+        np.testing.assert_equal(pulse.toa_freq, 2366.0)
+        np.testing.assert_equal(pulse.nchans, 416)
+        np.testing.assert_equal(pulse.t_decimate, 25)
+        np.testing.assert_equal(pulse.pulse_toa_block, pulse.nsamps // 2)
+
+    def test_extract(self, filfile_8bit_1: str) -> None:
+        pulse = PulseExtractor(filfile_8bit_1, 1000, 50, 0, toa_freq=2366.0, nchans=416)
         block = pulse.get_data()
         assert isinstance(block, FilterbankBlock)
+        np.testing.assert_equal(block.header.nchans, 416)
         block = pulse.get_data(pad_mode="mean")
         assert isinstance(block, FilterbankBlock)
+        np.testing.assert_equal(block.header.nchans, 416)
         with pytest.raises(ValueError):
             pulse.get_data(pad_mode="unknown")
 
@@ -136,3 +164,4 @@ class TestPulseExtractor:
         pulse = PulseExtractor(filfile_4bit, 1000, 50, 10)
         block = pulse.get_data()
         assert isinstance(block, FilterbankBlock)
+        np.testing.assert_equal(block.header.nchans, 832)

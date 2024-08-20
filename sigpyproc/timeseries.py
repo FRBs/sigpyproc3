@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import pathlib
+from pathlib import Path
 
 import numpy as np
 from numpy import typing as npt
@@ -108,11 +108,7 @@ class TimeSeries:
         hdr_changes = {"nsamples": len(tim_data)}
         return TimeSeries(tim_data, self.header.new_header(hdr_changes))
 
-    def remove_rednoise(
-        self,
-        method: str = "mean",
-        window: float = 0.5,
-    ) -> TimeSeries:
+    def deredden(self, method: str = "mean", window: float = 0.5) -> TimeSeries:
         """Remove low-frequency red noise from time series using a moving filter.
 
         Parameters
@@ -264,7 +260,7 @@ class TimeSeries:
         :class:`~sigpyproc.timeseries.TimeSeries`
             resampled time series
         """
-        tim_ar = kernels.resample_tim(self, accel, self.header.tsamp)
+        tim_ar = kernels.resample_tim(self.data, accel, self.header.tsamp)
         hdr_changes = {"nsamples": tim_ar.size, "accel": accel}
         return TimeSeries(tim_ar, self.header.new_header(hdr_changes))
 
@@ -363,12 +359,12 @@ class TimeSeries:
         -----
         If inf is None, then the associated .inf file must be in the same directory.
         """
-        datpath = pathlib.Path(datfile).resolve()
+        datpath = Path(datfile).resolve()
         if inffile is None:
             inffile = datpath.with_suffix(".inf").as_posix()
-        if not pathlib.Path(inffile).is_file():
+        if not Path(inffile).is_file():
             msg = "No corresponding .inf file found"
-            raise OSError(msg)
+            raise FileNotFoundError(msg)
         data = np.fromfile(datfile, dtype=np.float32)
         header = Header.from_inffile(inffile)
         header.filename = datfile
@@ -404,12 +400,12 @@ class TimeSeries:
         if self.data.ndim != 1:
             msg = "Input data is not 1D"
             raise ValueError(msg)
+        if self.data.size == 0:
+            msg = "Input data is empty"
+            raise ValueError(msg)
         if len(self.data) != self.header.nsamples:
             msg = (
                 f"Input data length ({len(self.data)}) does not match "
                 f"header nsamples ({self.header.nsamples})"
             )
-            raise ValueError(msg)
-        if self.data.size == 0:
-            msg = "Input data is empty"
             raise ValueError(msg)

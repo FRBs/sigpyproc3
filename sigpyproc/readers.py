@@ -3,6 +3,7 @@ from __future__ import annotations
 import inspect
 from typing import TYPE_CHECKING
 
+import attrs
 import numpy as np
 from rich.progress import track
 from typing_extensions import Buffer
@@ -87,19 +88,39 @@ class FilReader(Filterbank):
         """int: Sample byte stride in input data."""
         return int(self.header.nchans * self.chan_stride)
 
-    def read_block(self, start: int, nsamps: int) -> FilterbankBlock:
+    def read_block(
+        self,
+        start: int,
+        nsamps: int,
+        fch1: float | None = None,
+        nchans: int | None = None,
+    ) -> FilterbankBlock:
+        fch1 = fch1 if fch1 is not None else self.header.fch1
+        nchans = nchans if nchans is not None else self.header.nchans
+        if fch1 > self.header.fch1 or nchans > self.header.nchans:
+            msg = f"requested block is out of range: fch1={fch1}, nchans={nchans}"
+            raise ValueError(msg)
         if start < 0 or start + nsamps > self.header.nsamples:
             msg = f"requested block is out of range: start={start}, nsamps={nsamps}"
             raise ValueError(msg)
+
         self._file.seek(start * self.samp_stride)
         data = self._file.cread(self.header.nchans * nsamps)
         nsamps_read = data.size // self.header.nchans
         data = data.reshape(nsamps_read, self.header.nchans).transpose()
+
+        chan_start = int((fch1 - self.header.fch1) / self.header.foff)
+        data_block = data[chan_start : chan_start + nchans]
         start_mjd = self.header.mjd_after_nsamps(start)
         new_header = self.header.new_header(
-            {"tstart": start_mjd, "nsamples": nsamps_read},
+            {
+                "tstart": start_mjd,
+                "nsamples": nsamps_read,
+                "fch1": fch1,
+                "nchans": nchans,
+            },
         )
-        return FilterbankBlock(data, new_header)
+        return FilterbankBlock(data_block, new_header)
 
     def read_dedisp_block(self, start: int, nsamps: int, dm: float) -> FilterbankBlock:
         delays = self.header.get_dmdelays(dm)
@@ -170,10 +191,10 @@ class FilReader(Filterbank):
             # be nsamps * nchans
             # Is there a way to guarantee that the behaviour is correct here?
             unpack_buffer = allocate_buffer(allocator, gulp * self.header.nchans)
-            data = np.frombuffer(unpack_buffer, dtype=self.bitsinfo.dtype)
+            data = np.frombuffer(unpack_buffer, dtype=self.bitsinfo.dtype)  # type: ignore[call-overload]
         else:
             unpack_buffer = None
-            data = np.frombuffer(read_buffer, dtype=self.bitsinfo.dtype)
+            data = np.frombuffer(read_buffer, dtype=self.bitsinfo.dtype)  # type: ignore[call-overload]
 
         self._file.seek(start * self.samp_stride)
         nreads, lastread = divmod(nsamps, (gulp - skipback))
@@ -245,7 +266,18 @@ class PFITSReader(Filterbank):
         """:class:`~sigpyproc.io.bits.BitsInfo`: Bits info of input file data."""
         return self._fitsfile.bitsinfo
 
-    def read_block(self, start: int, nsamps: int) -> FilterbankBlock:
+    def read_block(
+        self,
+        start: int,
+        nsamps: int,
+        fch1: float | None = None,
+        nchans: int | None = None,
+    ) -> FilterbankBlock:
+        fch1 = fch1 if fch1 is not None else self.header.fch1
+        nchans = nchans if nchans is not None else self.header.nchans
+        if fch1 > self.header.fch1 or nchans > self.header.nchans:
+            msg = f"requested block is out of range: fch1={fch1}, nchans={nchans}"
+            raise ValueError(msg)
         if start < 0 or start + nsamps > self.header.nsamples:
             msg = f"requested block is out of range: start={start}, nsamps={nsamps}"
             raise ValueError(msg)
@@ -254,14 +286,17 @@ class PFITSReader(Filterbank):
         nsubs = (
             nsamps + self.sub_hdr.subint_samples - 1
         ) // self.sub_hdr.subint_samples
-
         data = self._fitsfile.read_subints(startsub, nsubs)
-
         data = data[startsamp : startsamp + nsamps]
         data = data.reshape(nsamps, self.header.nchans).transpose()
+
+        chan_start = int((fch1 - self.header.fch1) / self.header.foff)
+        data_block = data[chan_start : chan_start + nchans]
         start_mjd = self.header.mjd_after_nsamps(start)
-        new_header = self.header.new_header({"tstart": start_mjd, "nsamples": nsamps})
-        return FilterbankBlock(data, new_header)
+        new_header = self.header.new_header(
+            {"tstart": start_mjd, "nsamples": nsamps, "fch1": fch1, "nchans": nchans},
+        )
+        return FilterbankBlock(data_block, new_header)
 
     def read_dedisp_block(self, start: int, nsamps: int, dm: float) -> FilterbankBlock:  # noqa: ARG002
         msg = "Not implemented for PFITSReader"
@@ -308,10 +343,11 @@ class PFITSReader(Filterbank):
             yield block, ii, data.ravel()
 
 
+@attrs.define(auto_attribs=True, slots=True)
 class PulseExtractor:
     """Extracts a data block from a filterbank file centered on a pulse.
 
-    The extracted block is centered on the given pulse toa at the highest
+    The extracted block is centered on the given pulse toa at the desired
     frequency in the band. The block is padded if the pulse is too close
     to the edge of the filterbank file.
 
@@ -320,41 +356,45 @@ class PulseExtractor:
     filfile : str
         Name of the filterbank file.
     pulse_toa : int
-        Time of arrival of the pulse in samples at the highest frequency.
+        Time of arrival of the pulse in samples at the toa_freq.
     pulse_width : int
         Width of the pulse in samples.
     pulse_dm : float
         Dispersion measure of the pulse.
+    toa_freq : float, optional
+        Frequency at which the pulse toa is given, by default None (highest frequency)
+    nchans : int, optional
+        Number of channels to extract, by default None (all channels)
     min_nsamps : int, optional
         Minimum number of samples in the extracted block, by default 256
     quiet : bool, optional
         If True, suppresses logging messages, by default False
     """
 
-    def __init__(
-        self,
-        filfile: str,
-        pulse_toa: int,
-        pulse_width: int,
-        pulse_dm: float,
-        *,
-        min_nsamps: int = 256,
-    ) -> None:
-        self.fil = FilReader(filfile)
-        self.header = self.fil.header
-        self.pulse_toa = pulse_toa
-        self.pulse_width = pulse_width
-        self.pulse_dm = pulse_dm
-        self.min_nsamps = min_nsamps
+    filfile: str
+    pulse_toa: int
+    pulse_width: int
+    pulse_dm: float
+    min_nsamps: int = 256
+    toa_freq: float | None = None
+    nchans: int | None = None
 
+    sub_hdr: Header = attrs.field(init=False)
+    _disp_delay: int = attrs.field(init=False)
+
+    def __attrs_post_init__(self) -> None:
+        hdr = Header.from_sigproc(self.filfile)
+        self.toa_freq = self.toa_freq or hdr.fch1
+        self.nchans = self.nchans or hdr.nchans
+        self.sub_hdr = hdr.new_header({"fch1": self.toa_freq, "nchans": self.nchans})
         # Just to be safe, add 5 times the pulse width
         self._disp_delay = (
-            max(np.abs(self.header.get_dmdelays(pulse_dm, in_samples=True)))
+            max(np.abs(self.sub_hdr.get_dmdelays(self.pulse_dm, in_samples=True)))
             + self.pulse_width * 5
         )
 
     @property
-    def decimation_factor(self) -> int:
+    def t_decimate(self) -> int:
         """int: Decimation factor to consider."""
         return max(1, self.pulse_width // 2)
 
@@ -366,14 +406,12 @@ class PulseExtractor:
     @property
     def block_delay(self) -> int:
         """int: Dispersion Block size in samples."""
-        return (
-            (self.disp_delay // self.decimation_factor) + 1
-        ) * self.decimation_factor
+        return ((self.disp_delay // self.t_decimate) + 1) * self.t_decimate
 
     @property
     def nsamps(self) -> int:
         """int: Number of samples in the output block."""
-        return max(2 * self.block_delay, self.min_nsamps * self.decimation_factor)
+        return max(2 * self.block_delay, self.min_nsamps * self.t_decimate)
 
     @property
     def nstart(self) -> int:
@@ -390,7 +428,7 @@ class PulseExtractor:
         """int: Number of samples to read in the file."""
         return min(
             self.nsamps + min(0, self.nstart),
-            self.header.nsamples - max(0, self.nstart),
+            self.sub_hdr.nsamples - max(0, self.nstart),
         )
 
     @property
@@ -412,56 +450,22 @@ class PulseExtractor:
             Data block.
         """
         logger.info(
-            f"PulseExtractor: Required samples = {2 * self.block_delay}, "
+            f"Required samples = {2 * self.block_delay}, "
             f"Reading samples = {self.nsamps}",
         )
-        logger.debug(f"PulseExtractor: nstart = {self.nstart}, nsamps = {self.nsamps}")
+        logger.debug(f"nstart = {self.nstart}, nsamps = {self.nsamps}")
         logger.debug(
-            f"PulseExtractor: nstart_file = {self.nstart_file}, "
-            f"nsamps_file = {self.nsamps_file}",
+            f"nstart_file = {self.nstart_file}, nsamps_file = {self.nsamps_file}",
         )
-        data = self.fil.read_block(start=self.nstart_file, nsamps=self.nsamps_file)
-
-        if self.nstart < 0 or self.nstart + self.nsamps > self.header.nsamples:
-            data = self._pad_data(data, pad_mode=pad_mode)
-        return FilterbankBlock(data, self.header.new_header())
-
-    def _pad_data(
-        self,
-        data: FilterbankBlock,
-        pad_mode: str = "median",
-    ) -> FilterbankBlock:
-        """Pad the data block with the given mode.
-
-        Parameters
-        ----------
-        data : FilterbankBlock
-            Data block to be padded.
-        pad_mode : str, optional
-            Mode for padding the data, by default "median"
-
-        Returns
-        -------
-        FilterbankBlock
-            Padded data block.
-
-        Raises
-        ------
-        ValueError
-            If the pad_mode is not "mean" or "median".
-        """
-        if pad_mode == "mean":
-            pad_arr = np.mean(data, axis=1)
-        elif pad_mode == "median":
-            pad_arr = np.median(data, axis=1)
-        else:
-            msg = f"pad_mode {pad_mode} not supported."
-            raise ValueError(msg)
-
-        data_pad = np.ones((self.header.nchans, self.nsamps), dtype=pad_arr.dtype)
-        data_pad *= pad_arr[:, None]
-
-        offset = min(0, self.nstart)
-        logger.info(f"PulseExtractor: Padding with {pad_mode}. start offset = {offset}")
-        data_pad[:, -offset : -offset + self.nsamps_file] = data
-        return FilterbankBlock(data_pad, self.header.new_header())
+        fil = FilReader(self.filfile)
+        block = fil.read_block(
+            start=self.nstart_file,
+            nsamps=self.nsamps_file,
+            fch1=self.toa_freq,
+            nchans=self.nchans,
+        )
+        if self.nstart < 0 or self.nstart + self.nsamps > self.sub_hdr.nsamples:
+            offset = abs(min(0, self.nstart))
+            logger.info(f"Padding with {pad_mode}. start offset = {offset}")
+            block = block.pad_samples(self.nsamps, offset, pad_mode=pad_mode)
+        return block

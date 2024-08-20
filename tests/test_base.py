@@ -25,30 +25,30 @@ class TestFilterbank:
     def test_collapse(self, filfile_4bit: str) -> None:
         fil = FilReader(filfile_4bit)
         tim = fil.collapse()
-        np.testing.assert_equal(tim.dtype, np.float32)
-        np.testing.assert_equal(tim.size, fil.header.nsamples)
+        np.testing.assert_equal(tim.data.dtype, np.float32)
+        np.testing.assert_equal(tim.data.size, fil.header.nsamples)
         np.testing.assert_equal(tim.header.nchans, 1)
 
     def test_bandpass(self, filfile_4bit: str) -> None:
         fil = FilReader(filfile_4bit)
         tim = fil.bandpass()
-        np.testing.assert_equal(tim.dtype, np.float32)
-        np.testing.assert_equal(tim.size, fil.header.nchans)
+        np.testing.assert_equal(tim.data.dtype, np.float32)
+        np.testing.assert_equal(tim.data.size, fil.header.nchans)
         np.testing.assert_equal(tim.header.nchans, 1)
 
     def test_dedisperse(self, filfile_4bit: str) -> None:
         dm = 100
         fil = FilReader(filfile_4bit)
         tim = fil.dedisperse(100)
-        np.testing.assert_equal(tim.dtype, np.float32)
+        np.testing.assert_equal(tim.data.dtype, np.float32)
         np.testing.assert_equal(tim.header.nchans, 1)
         np.testing.assert_equal(tim.header.dm, dm)
 
     def test_read_chan(self, filfile_4bit: str) -> None:
         fil = FilReader(filfile_4bit)
         tim = fil.read_chan(5)
-        np.testing.assert_equal(tim.dtype, np.float32)
-        np.testing.assert_equal(tim.size, fil.header.nsamples)
+        np.testing.assert_equal(tim.data.dtype, np.float32)
+        np.testing.assert_equal(tim.data.size, fil.header.nsamples)
         np.testing.assert_equal(tim.header.nchans, 1)
         with pytest.raises(ValueError):
             fil.read_chan(50000)
@@ -57,14 +57,14 @@ class TestFilterbank:
 
     def test_invert_freq(self, filfile_4bit: str, tmpfile: str) -> None:
         fil = FilReader(filfile_4bit)
-        data = fil.read_block(0, 100)
+        block = fil.read_block(0, 100)
         outfile = fil.invert_freq(outfile_name=tmpfile)
         new_fil = FilReader(outfile)
-        newdata = new_fil.read_block(0, 100)
+        block_new = new_fil.read_block(0, 100)
         np.testing.assert_equal(new_fil.header.dtype, fil.header.dtype)
         np.testing.assert_equal(new_fil.header.nsamples, fil.header.nsamples)
         np.testing.assert_equal(new_fil.header.foff, -1 * fil.header.foff)
-        np.testing.assert_array_equal(data, np.flip(newdata, axis=0))
+        np.testing.assert_array_equal(block.data, np.flip(block_new.data, axis=0))
 
     def test_apply_channel_mask(self, filfile_4bit: str, tmpfile: str) -> None:
         fil = FilReader(filfile_4bit)
@@ -72,11 +72,11 @@ class TestFilterbank:
         chanmask = rng.integers(2, size=fil.header.nchans)
         outfile = fil.apply_channel_mask(chanmask=chanmask, outfile_name=tmpfile)
         new_fil = FilReader(outfile)
-        newdata = new_fil.read_block(0, 100)
+        block_new = new_fil.read_block(0, 100)
         np.testing.assert_equal(new_fil.header.dtype, fil.header.dtype)
         np.testing.assert_equal(new_fil.header.nsamples, fil.header.nsamples)
         np.testing.assert_array_equal(
-            np.where(~newdata.any(axis=1))[0],
+            np.where(~block_new.data.any(axis=1))[0],
             np.where(chanmask == 1)[0],
         )
 
@@ -113,7 +113,7 @@ class TestFilterbank:
         for timfile in timfiles:
             timfile_path = Path(timfile)
             assert timfile_path.is_file()
-            tim = TimeSeries.read_tim(timfile)
+            tim = TimeSeries.from_tim(timfile)
             np.testing.assert_equal(tim.header.nbits, 32)
             np.testing.assert_equal(tim.header.nchans, 1)
             timfile_path.unlink()
@@ -153,6 +153,13 @@ class TestFilterbank:
                     chanpersub=chanpersub,
                 )
 
+    def test_remove_zerodm(self, filfile_4bit: str, tmpfile: str) -> None:
+        fil = FilReader(filfile_4bit)
+        outfile = fil.remove_zerodm(outfile_name=tmpfile)
+        new_fil = FilReader(outfile)
+        np.testing.assert_equal(new_fil.header.nchans, fil.header.nchans)
+        np.testing.assert_equal(new_fil.header.nsamples, fil.header.nsamples)
+
     def test_subband(self, filfile_4bit: str, tmpfile: str) -> None:
         fil = FilReader(filfile_4bit)
         outfile = fil.subband(dm=0, nsub=fil.header.nchans // 16, outfile_name=tmpfile)
@@ -165,7 +172,7 @@ class TestFilterbank:
         cube = fil.fold(period=1, dm=10, nints=16, nbins=50)
         assert isinstance(cube, FoldedData)
         np.testing.assert_equal(cube.header.nchans, fil.header.nchans)
-        np.testing.assert_equal(cube.nints, 16)
+        np.testing.assert_equal(cube.nsubints, 16)
         np.testing.assert_equal(cube.nbins, 50)
 
     def test_clean_rfi(self, filfile_4bit: str, tmpfile: str) -> None:

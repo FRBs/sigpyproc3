@@ -1,15 +1,15 @@
 import numpy as np
-from astropy.time import Time
 from astropy.coordinates import Angle, EarthLocation, SkyCoord
-
 from astropy.io import fits
+from astropy.time import Time
+
 from sigpyproc.io import pfits
 from sigpyproc.io.bits import BitsInfo
 from sigpyproc.utils import FrequencyChannels
 
 
-class TestPrimaryHdr(object):
-    def test_read(self, fitsfile_4bit):
+class TestPrimaryHdr:
+    def test_read(self, fitsfile_4bit: str) -> None:
         hdr = pfits.PrimaryHdr(fitsfile_4bit)
         assert isinstance(hdr.header, fits.Header)
         assert isinstance(hdr.location, EarthLocation)
@@ -20,8 +20,8 @@ class TestPrimaryHdr(object):
         np.testing.assert_equal(hdr.telescope, "Parkes")
 
 
-class TestSubintHdr(object):
-    def test_read(self, fitsfile_4bit):
+class TestSubintHdr:
+    def test_read(self, fitsfile_4bit: str) -> None:
         hdr = pfits.SubintHdr(fitsfile_4bit)
         assert isinstance(hdr.header, fits.Header)
         assert isinstance(hdr.azimuth, Angle)
@@ -32,49 +32,52 @@ class TestSubintHdr(object):
         np.testing.assert_equal(hdr.npol, 4)
 
 
-class TestPFITSFile(object):
-    def test_read(self, fitsfile_4bit):
+class TestPFITSFile:
+    def test_read(self, fitsfile_4bit: str) -> None:
         with pfits.PFITSFile(fitsfile_4bit) as fitsfile:
             assert isinstance(fitsfile.bitsinfo, BitsInfo)
 
-    def test_read_freqs(self, fitsfile_4bit):
+    def test_read_freqs(self, fitsfile_4bit: str) -> None:
         with pfits.PFITSFile(fitsfile_4bit) as fitsfile:
             freqs = fitsfile.read_freqs(0)
             assert isinstance(freqs, FrequencyChannels)
             np.testing.assert_equal(freqs.nchans, fitsfile.sub_hdr.nchans)
 
-    def test_read_weights(self, fitsfile_4bit):
+    def test_read_weights(self, fitsfile_4bit: str) -> None:
         with pfits.PFITSFile(fitsfile_4bit) as fitsfile:
             weights = fitsfile.read_weights(0)
             np.testing.assert_equal(weights.size, fitsfile.sub_hdr.nchans)
 
-    def test_read_scales(self, fitsfile_4bit):
+    def test_read_scales(self, fitsfile_4bit: str) -> None:
         with pfits.PFITSFile(fitsfile_4bit) as fitsfile:
             scales = fitsfile.read_scales(0)
             np.testing.assert_equal(
-                scales.shape, ((fitsfile.sub_hdr.npol, fitsfile.sub_hdr.nchans))
+                scales.shape,
+                ((fitsfile.sub_hdr.npol, fitsfile.sub_hdr.nchans)),
             )
 
-    def test_read_offsets(self, fitsfile_4bit):
+    def test_read_offsets(self, fitsfile_4bit: str) -> None:
         with pfits.PFITSFile(fitsfile_4bit) as fitsfile:
             scales = fitsfile.read_offsets(0)
             np.testing.assert_equal(
-                scales.shape, ((fitsfile.sub_hdr.npol, fitsfile.sub_hdr.nchans))
+                scales.shape,
+                ((fitsfile.sub_hdr.npol, fitsfile.sub_hdr.nchans)),
             )
 
-    def test_read_subint(self, fitsfile_4bit):
+    def test_read_subint(self, fitsfile_4bit: str) -> None:
         with pfits.PFITSFile(fitsfile_4bit) as fitsfile:
             data = fitsfile.read_subint(0)
             np.testing.assert_equal(data.shape, fitsfile.sub_hdr.subint_shape)
 
-    def test_read_subint_pol(self, fitsfile_4bit):
+    def test_read_subint_pol(self, fitsfile_4bit: str) -> None:
         with pfits.PFITSFile(fitsfile_4bit) as fitsfile:
             data = fitsfile.read_subint_pol(0, poln_select=1)
             np.testing.assert_equal(
-                data.shape, (fitsfile.sub_hdr.subint_samples, fitsfile.sub_hdr.nchans)
+                data.shape,
+                (fitsfile.sub_hdr.subint_samples, fitsfile.sub_hdr.nchans),
             )
 
-    def test_read_subints(self, fitsfile_4bit):
+    def test_read_subints(self, fitsfile_4bit: str) -> None:
         with pfits.PFITSFile(fitsfile_4bit) as fitsfile:
             nsub = 2
             data = fitsfile.read_subints(0, nsub)

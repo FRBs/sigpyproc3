@@ -273,8 +273,8 @@ def mask_channels(
 
 @njit(
     [
-        "void(u1[:], f4[:], i8[:], i4, i4, i4, i4)",
-        "void(f4[:], f4[:], i8[:], i4, i4, i4, i4)",
+        "void(u1[:], f4[:], i4[:], i8, i8, i8, i8)",
+        "void(f4[:], f4[:], i4[:], i8, i8, i8, i8)",
     ],
     cache=True,
     parallel=True,

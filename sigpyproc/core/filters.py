@@ -7,7 +7,7 @@ from astropy.modeling.models import Box1D, Gaussian1D, Lorentz1D
 from astropy.stats import gaussian_fwhm_to_sigma
 from matplotlib import pyplot as plt
 
-from sigpyproc.core.stats import estimate_noise_std
+from sigpyproc.core.stats import estimate_scale
 
 
 class MatchedFilter:
@@ -114,11 +114,9 @@ class MatchedFilter:
     @property
     def on_pulse(self) -> tuple[int, int]:
         """Best match template pulse region (`Tuple[int, int]`, read-only)."""
-        # \TODO check for edge cases
-        return (
-            self.peak_bin - round(self.best_temp.width),
-            self.peak_bin + round(self.best_temp.width),
-        )
+        start = max(0, self.peak_bin - round(self.best_temp.width))
+        end = min(self.data.size, self.peak_bin + round(self.best_temp.width))
+        return (start, end)
 
     def plot(self) -> plt.Figure:
         fig, ax = plt.subplots(figsize=(12, 6))
@@ -138,7 +136,7 @@ class MatchedFilter:
     def _get_norm_data(self, data: np.ndarray) -> np.ndarray:
         data = np.asarray(data, dtype=np.float32)
         median = np.median(data)
-        noise_std = estimate_noise_std(data, self.noise_method)
+        noise_std = estimate_scale(data, self.noise_method)
         return (data - median) / noise_std
 
     @staticmethod
