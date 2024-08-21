@@ -66,6 +66,13 @@ def nearest_factor(num: int, fac: int) -> int:
     return min(factors, key=lambda val: abs(val - fac))
 
 
+def next2_to_n(x: int) -> int:
+    if x <= 0:
+        msg = "Input must be positive."
+        raise ValueError(msg)
+    return 1 << (x - 1).bit_length()
+
+
 def get_logger(
     name: str,
     *,
@@ -113,11 +120,13 @@ def get_logger(
         logger.addHandler(file_handler)
     return logger
 
+
 def get_callerfunc(stack: list[inspect.FrameInfo]) -> str:
     for i in range(len(stack)):
         if stack[i].function == "<module>":
             return stack[i - 1].function
     return stack[1].function
+
 
 def time_after_nsamps(tstart: float, tsamp: float, nsamps: int = 0) -> Time:
     """Get time after given nsamps. If nsamps is not given then just return tstart.

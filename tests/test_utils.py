@@ -1,6 +1,7 @@
 import logging
 
 import numpy as np
+import pytest
 from astropy.time import Time
 from rich.logging import RichHandler
 
@@ -22,6 +23,19 @@ class TestUtils:
         np.testing.assert_equal(utils.nearest_factor(10, 7), 5)
         np.testing.assert_equal(utils.nearest_factor(10, 11), 10)
 
+    @pytest.mark.parametrize(
+        ("inp", "exp"),
+        [(1, 1), (2, 2), (3, 4), (4, 4), (5, 8), (1023, 1024), (1025, 2048)],
+    )
+    def test_next2_to_n(self, inp: int, exp: int) -> None:
+        np.testing.assert_equal(utils.next2_to_n(inp), exp)
+
+    def test_next2_to_n_fail(self) -> None:
+        with pytest.raises(ValueError):
+            utils.next2_to_n(0)
+        with pytest.raises(ValueError):
+            utils.next2_to_n(-1)
+
     def test_duration_string(self) -> None:
         np.testing.assert_equal(utils.duration_string(0), "0.0 seconds")
         np.testing.assert_equal(utils.duration_string(60), "1.0 minutes")
@@ -39,6 +53,7 @@ class TestUtils:
         assert isinstance(output, Time)
         np.testing.assert_equal(output.mjd, tstart + nsamps * tsamp / 86400)
 
+
 class TestLogger:
     def test_get_logger_default(self) -> None:
         name = "test_logger"
@@ -52,7 +67,6 @@ class TestLogger:
         assert len(logger.handlers) == 1
         assert isinstance(logger.handlers[0], RichHandler)
 
-
     def test_get_logger_log_file(self, tmpfile: str) -> None:
         name = "test_logger"
         logger_def = logging.getLogger(name)
@@ -63,6 +77,7 @@ class TestLogger:
         assert len(logger.handlers) == 2
         assert isinstance(logger.handlers[1], logging.FileHandler)
         assert logger.handlers[1].baseFilename == tmpfile
+
 
 class TestFrequencyChannels:
     def test_from_sig(self) -> None:
@@ -87,7 +102,7 @@ class TestFrequencyChannels:
 
     def test_fail(self) -> None:
         with np.testing.assert_raises(ValueError):
-            utils.FrequencyChannels([]) # type: ignore[arg-type]
+            utils.FrequencyChannels([])  # type: ignore[arg-type]
         arr = [1, 2, 4, 7]
         with np.testing.assert_raises(ValueError):
-            utils.FrequencyChannels(arr) # type: ignore[arg-type]
+            utils.FrequencyChannels(arr)  # type: ignore[arg-type]

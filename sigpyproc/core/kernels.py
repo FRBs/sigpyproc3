@@ -1,9 +1,7 @@
-from collections.abc import Callable
+from __future__ import annotations
 
 import numpy as np
 from numba import njit, prange, types
-from numba.experimental import jitclass
-from numba.extending import overload
 
 CONST_C_VAL = 299792458.0  # Speed of light in m/s (astropy.constants.c.value)
 
@@ -164,57 +162,37 @@ pack4_8_big_serial = packunpack_njit_serial(pack4_8_big.py_func)
 pack4_8_little_serial = packunpack_njit_serial(pack4_8_little.py_func)
 
 
-@njit(cache=True)
-def np_apply_along_axis(
-    func1d: Callable[[np.ndarray], np.ndarray],
-    axis: int,
-    arr: np.ndarray,
-) -> np.ndarray:
-    if arr.ndim != 2:
-        msg = f"np_apply_along_axis only works on 2D arrays, got {arr.ndim}"
-        raise ValueError(msg)
-    if axis not in {0, 1}:
-        msg = f"axis should be 0 or 1, got {axis}"
-        raise ValueError(msg)
-    if axis == 0:
-        result = np.empty(arr.shape[1], dtype=arr.dtype)
-        for ii in range(arr.shape[1]):
-            result[ii] = func1d(arr[:, ii])
-    else:
-        result = np.empty(arr.shape[0], dtype=arr.dtype)
-        for ii in range(arr.shape[0]):
-            result[ii] = func1d(arr[ii, :])
+@njit(
+    [
+        "u1[:](u1[:], i8)",
+        "f4[:](f4[:], i8)",
+        "f8[:](f8[:], i8)",
+    ],
+    cache=True,
+    parallel=True,
+    fastmath=True,
+    locals={"temp": types.f8},
+)
+def downsample_1d(array: np.ndarray, factor: int) -> np.ndarray:
+    nsamps_new = len(array) // factor
+    result = np.empty(nsamps_new, dtype=array.dtype)
+    for isamp in prange(nsamps_new):
+        temp = 0
+        for ifactor in range(factor):
+            temp += array[isamp * factor + ifactor]
+        result[isamp] = temp / factor
     return result
 
 
-@njit(cache=True)
-def np_mean(array: np.ndarray, axis: int) -> np.ndarray:
-    return np_apply_along_axis(np.mean, axis, array)
-
-
-def downcast(intype, result):
-    if isinstance(intype, int):
-        return np.uint8(result)
-    return np.float32(result)
-
-
-@overload(downcast)
-def ol_downcast(intype, result):
-    if isinstance(intype, types.Integer):
-        return lambda intype, result: np.uint8(result)
-    return lambda intype, result: np.float32(result)
-
-
-@njit(cache=True)
-def downsample_1d(array: np.ndarray, factor: int) -> np.ndarray:
-    reshaped_ar = np.reshape(array, (array.size // factor, factor))
-    return np_mean(reshaped_ar, 1)
-
-
 @njit(
-    ["u1[:](u1[:], i4, i4, i4, i4)", "f4[:](f4[:], i4, i4, i4, i4)"],
+    [
+        "u1[:](u1[:], i8, i8, i8, i8)",
+        "f4[:](f4[:], i8, i8, i8, i8)",
+        "f8[:](f8[:], i8, i8, i8, i8)",
+    ],
     cache=True,
     parallel=True,
+    fastmath=True,
     locals={"temp": types.f8},
 )
 def downsample_2d(
@@ -224,10 +202,11 @@ def downsample_2d(
     nchans: int,
     nsamps: int,
 ) -> np.ndarray:
+    """Assuming nchans is multiple of ffactor."""
     nsamps_new = nsamps // tfactor
     nchans_new = nchans // ffactor
     totfactor = ffactor * tfactor
-    result = np.empty(nsamps * nchans // totfactor, dtype=array.dtype)
+    result = np.empty(nsamps_new * nchans_new, dtype=array.dtype)
     for isamp in prange(nsamps_new):
         for ichan in range(nchans_new):
             pos = nchans * isamp * tfactor + ichan * ffactor
@@ -235,14 +214,15 @@ def downsample_2d(
             for ifactor in range(tfactor):
                 ipos = pos + ifactor * nchans
                 temp += np.sum(array[ipos : ipos + ffactor])
-            result[nchans_new * isamp + ichan] = downcast(array[0], temp / totfactor)
+            result[nchans_new * isamp + ichan] = temp / totfactor
     return result
 
 
 @njit(
-    ["void(u1[:], f4[:], i4, i4, i4)", "void(f4[:], f4[:], i4, i4, i4)"],
+    ["void(u1[:], f4[:], i8, i8, i8)", "void(f4[:], f4[:], i8, i8, i8)"],
     cache=True,
     parallel=True,
+    fastmath=True,
 )
 def extract_tim(
     inarray: np.ndarray,
@@ -252,27 +232,39 @@ def extract_tim(
     index: int,
 ) -> None:
     for isamp in prange(nsamps):
-        for ichan in range(nchans):
-            outarray[index + isamp] += inarray[nchans * isamp + ichan]
+        outarray[index + isamp] = np.sum(inarray[nchans * isamp : nchans * (isamp + 1)])
 
 
 @njit(
     ["void(u1[:], f4[:], i4, i4)", "void(f4[:], f4[:], i4, i4)"],
     cache=True,
     parallel=True,
+    fastmath=True,
 )
-def extract_bpass(inarray, outarray, nchans, nsamps):
+def extract_bpass(
+    inarray: np.ndarray,
+    outarray: np.ndarray,
+    nchans: int,
+    nsamps: int,
+) -> None:
     for ichan in prange(nchans):
         for isamp in range(nsamps):
             outarray[ichan] += inarray[nchans * isamp + ichan]
 
 
 @njit(
-    ["void(u1[:], b1[:], u1, i4, i4)", "void(f4[:], b1[:], f4, i4, i4)"],
+    ["void(u1[:], b1[:], u1, i8, i8)", "void(f4[:], b1[:], f4, i8, i8)"],
     cache=True,
     parallel=True,
+    fastmath=True,
 )
-def mask_channels(array, mask, maskvalue, nchans, nsamps):
+def mask_channels(
+    array: np.ndarray,
+    mask: np.ndarray,
+    maskvalue: float,
+    nchans: int,
+    nsamps: int,
+) -> None:
     for ichan in prange(nchans):
         if mask[ichan]:
             for isamp in range(nsamps):
@@ -281,30 +273,34 @@ def mask_channels(array, mask, maskvalue, nchans, nsamps):
 
 @njit(
     [
-        "void(u1[:], f4[:], i4[:], i4, i4, i4, i4)",
-        "void(f4[:], f4[:], i4[:], i4, i4, i4, i4)",
+        "void(u1[:], f4[:], i4[:], i8, i8, i8, i8)",
+        "void(f4[:], f4[:], i4[:], i8, i8, i8, i8)",
     ],
     cache=True,
     parallel=True,
+    fastmath=True,
 )
-def dedisperse(inarray, outarray, delays, maxdelay, nchans, nsamps, index):
+def dedisperse(
+    inarray: np.ndarray,
+    outarray: np.ndarray,
+    delays: np.ndarray,
+    maxdelay: int,
+    nchans: int,
+    nsamps: int,
+    index: int,
+) -> None:
     for isamp in prange(nsamps - maxdelay):
         for ichan in range(nchans):
             outarray[index + isamp] += inarray[nchans * (isamp + delays[ichan]) + ichan]
 
 
-@njit(
-    ["u1[:](u1[:], i4, i4)", "f4[:](f4[:], i4, i4)"],
-    cache=True,
-    parallel=True,
-)
-def invert_freq(array, nchans, nsamps):
+@njit(cache=True, parallel=True, fastmath=True)
+def invert_freq(array: np.ndarray, nchans: int, nsamps: int) -> np.ndarray:
     outarray = np.empty_like(array)
     for isamp in prange(nsamps):
-        for ichan in range(nchans):
-            outarray[nchans * isamp + ichan] = array[
-                nchans * isamp + (nchans - ichan - 1)
-            ]
+        outarray[nchans * isamp : nchans * (isamp + 1)] = array[
+            nchans * isamp : nchans * (isamp + 1)
+        ][::-1]
     return outarray
 
 
@@ -316,7 +312,16 @@ def invert_freq(array, nchans, nsamps):
     cache=True,
     parallel=True,
 )
-def subband(inarray, outarray, delays, chan_to_sub, maxdelay, nchans, nsubs, nsamps):
+def subband(
+    inarray: np.ndarray,
+    outarray: np.ndarray,
+    delays: np.ndarray,
+    chan_to_sub: np.ndarray,
+    maxdelay: int,
+    nchans: int,
+    nsubs: int,
+    nsamps: int,
+) -> None:
     for isamp in prange(nsamps - maxdelay):
         for ichan in range(nchans):
             outarray[nsubs * isamp + chan_to_sub[ichan]] += inarray[
@@ -332,22 +337,22 @@ def subband(inarray, outarray, delays, chan_to_sub, maxdelay, nchans, nsubs, nsa
     cache=True,
 )
 def fold(
-    inarray,
-    fold_ar,
-    count_ar,
-    delays,
-    maxdelay,
-    tsamp,
-    period,
-    accel,
-    total_nsamps,
-    nsamps,
-    nchans,
-    nbins,
-    nints,
-    nsubs,
-    index,
-):
+    inarray: np.ndarray,
+    fold_ar: np.ndarray,
+    count_ar: np.ndarray,
+    delays: np.ndarray,
+    maxdelay: int,
+    tsamp: float,
+    period: float,
+    accel: float,
+    total_nsamps: int,
+    nsamps: int,
+    nchans: int,
+    nbins: int,
+    nints: int,
+    nsubs: int,
+    index: int,
+) -> None:
     factor1 = total_nsamps / nints
     factor2 = nchans / nsubs
     tobs = total_nsamps * tsamp
@@ -369,7 +374,7 @@ def fold(
 
 
 @njit("f4[:](f4[:], f4, f4)", cache=True)
-def resample_tim(array, accel, tsamp):
+def resample_tim(array: np.ndarray, accel: float, tsamp: float) -> np.ndarray:
     nsamps = len(array) - 1 if accel > 0 else len(array)
     resampled = np.zeros(nsamps, dtype=array.dtype)
 
@@ -387,14 +392,22 @@ def resample_tim(array, accel, tsamp):
 
 @njit(
     [
-        "void(u1[:], u1[:], f4[:], f4[:], i4, i4)",
-        "void(f4[:], f4[:], f4[:], f4[:], i4, i4)",
+        "void(u1[:], u1[:], f4[:], f4[:], i8, i8)",
+        "void(f4[:], f4[:], f4[:], f4[:], i8, i8)",
     ],
     cache=True,
     parallel=True,
-    locals={"zerodm": types.f8},
+    fastmath=True,
+    locals={"zerodm": types.f8, "result": types.f8},
 )
-def remove_zerodm(inarray, outarray, bpass, chanwts, nchans, nsamps):
+def remove_zerodm(
+    inarray: np.ndarray,
+    outarray: np.ndarray,
+    bpass: np.ndarray,
+    chanwts: np.ndarray,
+    nchans: int,
+    nsamps: int,
+) -> None:
     for isamp in prange(nsamps):
         zerodm = 0
         for ichan in range(nchans):
@@ -403,240 +416,295 @@ def remove_zerodm(inarray, outarray, bpass, chanwts, nchans, nsamps):
         for ichan in range(nchans):
             pos = nchans * isamp + ichan
             result = (inarray[pos] - zerodm * chanwts[ichan]) + bpass[ichan]
-            outarray[pos] = downcast(inarray[0], result)
+            outarray[pos] = result
 
 
-@njit("f4[:](f4[:], b1)", cache=True)
-def form_spec(fft_ar, interpolated=False):
-    specsize = fft_ar.size // 2
-    spec_arr = np.zeros(shape=specsize, dtype=fft_ar.dtype)
-    if interpolated:
-        rl = 0
-        il = 0
-        for ispec in range(specsize):
-            rr = fft_ar[2 * ispec]
-            ii = fft_ar[2 * ispec + 1]
-            aa = rr**2 + ii**2
-            bb = ((rr - rl) ** 2 + (ii - il) ** 2) / 2
-            spec_arr[ispec] = np.sqrt(max(aa, bb))
-
-            rl = rr
-            il = ii
-    else:
-        for ispec in range(specsize):
-            spec_arr[ispec] = np.sqrt(
-                fft_ar[2 * ispec] ** 2 + fft_ar[2 * ispec + 1] ** 2
-            )
-    return spec_arr
+@njit("f4[:](c8[:])", cache=True, fastmath=True)
+def form_mspec(fspec: np.ndarray) -> np.ndarray:
+    nfreq = len(fspec)
+    mspec = np.zeros(nfreq, dtype=np.float32)
+    for i in range(nfreq):
+        mspec[i] = np.sqrt(fspec[i].real ** 2 + fspec[i].imag ** 2)
+    return mspec
 
 
-@njit("f4[:](f4[:], i4, i4, f4, f4)", cache=True, locals={"norm": types.f4})
-def remove_rednoise(fftbuffer, startwidth, endwidth, endfreq, tsamp):
-    outbuffer = np.zeros_like(fftbuffer, dtype=np.float32)
-    oldinbuf = np.empty(2 * endwidth, dtype=np.float32)
-    newinbuf = np.empty(2 * endwidth, dtype=np.float32)
-    realbuffer = np.empty(endwidth, dtype=np.float32)
-    nsamps = fftbuffer.size // 2
-    binnum = 1
+@njit("f4[:](c8[:])", cache=True, fastmath=True)
+def form_interp_mspec(fspec: np.ndarray) -> np.ndarray:
+    nfreq = len(fspec)
+    mspec = np.zeros(nfreq, dtype=np.float32)
+    re_prev = 0
+    im_prev = 0
+    for i in range(nfreq):
+        re, im = fspec[i].real, fspec[i].imag
+        ampsq = re**2 + im**2
+        ampsq_diff = 0.5 * ((re - re_prev) ** 2 + (im - im_prev) ** 2)
+        mspec[i] = np.sqrt(max(ampsq, ampsq_diff))
+        re_prev, im_prev = re, im
+    return mspec
+
+
+@njit("c8[:](c8[:], i8, i8, i8)", cache=True, fastmath=True)
+def fs_running_median(
+    spec_arr: np.ndarray,
+    start_width: int,
+    end_width: int,
+    end_freq_bin: int,
+) -> np.ndarray:
+    nspecs = len(spec_arr)
+    out_arr = np.zeros_like(spec_arr)
+    powbuf = np.empty(nspecs, dtype=np.float32)
+    for ii in range(nspecs):
+        powbuf[ii] = spec_arr[ii].real ** 2 + spec_arr[ii].imag ** 2
 
     # Set DC bin to 1.0
-    outbuffer[0] = 1.0
-    windex = 2
-    rindex = 2
-    numread_old = startwidth
+    out_arr[0] = 1.0 + 0j
+    rindex, windex, binnum = 1, 1, 1
+    buflen = start_width
 
-    # transfer numread_old complex samples to oldinbuf
-    oldinbuf[: 2 * numread_old] = fftbuffer[rindex : rindex + 2 * numread_old]
-    rindex += 2 * numread_old
-
-    # calculate powers for oldinbuf
-    for ispec in range(numread_old):
-        realbuffer[ispec] = oldinbuf[2 * ispec] ** 2 + oldinbuf[2 * ispec + 1] ** 2
-
-    # calculate first median of our data and determine next bufflen
-    mean_old = np.median(realbuffer) / np.log(2.0)
+    numread_old = buflen
+    mean_old = np.median(powbuf[rindex : rindex + numread_old]) / np.log(2)
+    rindex += numread_old
     binnum += numread_old
-    bufflen = round(startwidth * np.log(binnum))
+    buflen = round(start_width * np.log(binnum))
 
-    while rindex // 2 < nsamps:
-        numread_new = min(bufflen, nsamps - rindex // 2)
+    while rindex < nspecs:
+        numread_new = min(buflen, nspecs - rindex)
+        mean_new = np.median(powbuf[rindex : rindex + numread_new]) / np.log(2)
+        rindex += numread_new
 
-        # transfer numread_new complex samples to newinbuf
-        newinbuf[: 2 * numread_new] = fftbuffer[rindex : rindex + 2 * numread_new]
-        rindex += 2 * numread_new
-
-        # calculate powers for newinbuf
-        for ispec in range(numread_new):
-            realbuffer[ispec] = newinbuf[2 * ispec] ** 2 + newinbuf[2 * ispec + 1] ** 2
-
-        mean_new = np.median(realbuffer) / np.log(2.0)
         slope = (mean_new - mean_old) / (numread_old + numread_new)
+        for i in range(numread_old):
+            norm = 1 / np.sqrt(mean_old + slope * ((numread_old + numread_new) / 2 - i))
+            out_arr[windex + i] = spec_arr[windex + i] * norm
 
-        for ispec in range(numread_old):
-            norm = np.sqrt(mean_old + slope * ((numread_old + numread_new) / 2 - ispec))
-            outbuffer[2 * ispec + windex] = oldinbuf[2 * ispec] / norm
-            outbuffer[2 * ispec + 1 + windex] = oldinbuf[2 * ispec + 1] / norm
-
-        windex += 2 * numread_old
+        windex += numread_old
         binnum += numread_new
-        if binnum / (nsamps * tsamp) < endfreq:
-            bufflen = round(startwidth * np.log(binnum))
+        if binnum < end_freq_bin:
+            buflen = round(start_width * np.log(binnum))
         else:
-            bufflen = endwidth
-        numread_old = numread_new
-        mean_old = mean_new
+            buflen = end_width
+        numread_old, mean_old = numread_new, mean_new
 
-        oldinbuf[: 2 * numread_new] = newinbuf[: 2 * numread_new]
+    # Remaining samples
+    norm = 1 / np.sqrt(mean_old)
+    out_arr[windex : windex + numread_old] = (
+        spec_arr[windex : windex + numread_old] * norm
+    )
+    return out_arr
 
-    outbuffer[windex : windex + 2 * numread_old] = oldinbuf[
-        : 2 * numread_old
-    ] / np.sqrt(mean_old)
-    return outbuffer
+@njit("f4[:,:](f4[:], i8)", cache=True, fastmath=True)
+def sum_harmonics(pow_spec: np.ndarray, nfolds: int) -> np.ndarray:
+    nfreqs = len(pow_spec)
+    sum_arr = np.zeros((nfolds, nfreqs), dtype=np.float32)
+    harm_sum = pow_spec.copy()
+    nfold1 = 0  # int(self.header.tsamp*2*self.size/maxperiod)
+    for iff in range(nfolds):
+        nharm = 2 ** (iff + 1)
+        nfoldi = int(max(1, min(nharm * nfold1 - nharm // 2, nfreqs)))
+        harm_arr = np.array(
+            [kk * ll // nharm for ll in range(nharm) for kk in range(1, nharm, 2)],
+            dtype=np.int32,
+        )
+
+        facts_ar = np.array(
+            [(kk * nfoldi + nharm // 2) // nharm for kk in range(1, nharm, 2)],
+            dtype=np.int32,
+        )
+        for ifold in range(nfoldi, nfreqs - (nharm - 1), nharm):
+            for iharm in range(nharm):
+                for kk in range(nharm // 2):
+                    harm_sum[ifold + iharm] += pow_spec[
+                        facts_ar[kk] + harm_arr[iharm * nharm // 2 + kk]
+                    ]
+            for kk in range(nharm // 2):
+                facts_ar[kk] += 2 * kk + 1
+        sum_arr[iff] = harm_sum
+    return sum_arr
 
 
-@njit("void(f4[:], f4[:], i4[:], i4[:], i4, i4, i4)", cache=True)
-def sum_harms(spec_arr, sum_arr, harm_arr, fact_arr, nharms, nsamps, nfold):
-    for ifold in range(nfold, nsamps - (nharms - 1), nharms):
-        for iharm in range(nharms):
-            for kk in range(nharms // 2):
-                sum_arr[ifold + iharm] += spec_arr[
-                    fact_arr[kk] + harm_arr[iharm * nharms // 2 + kk]
-                ]
-        for kk in range(nharms // 2):
-            fact_arr[kk] += 2 * kk + 1
-
-
-@jitclass(
+moments_dtype = np.dtype(
     [
-        ("nchans", types.i4),
-        ("m1", types.f4[:]),
-        ("m2", types.f4[:]),
-        ("m3", types.f4[:]),
-        ("m4", types.f4[:]),
-        ("min", types.f4[:]),
-        ("max", types.f4[:]),
-        ("count", types.i4[:]),
+        ("count", np.int32),
+        ("m1", np.float32),
+        ("m2", np.float32),
+        ("m3", np.float32),
+        ("m4", np.float32),
+        ("min", np.float32),
+        ("max", np.float32),
     ],
+    align=True,
 )
-class MomentsBag:
-    def __init__(self, nchans: int) -> None:
-        self.nchans = nchans
-        self.m1 = np.zeros(nchans, dtype=np.float32)
-        self.m2 = np.zeros(nchans, dtype=np.float32)
-        self.m3 = np.zeros(nchans, dtype=np.float32)
-        self.m4 = np.zeros(nchans, dtype=np.float32)
-        self.min = np.zeros(nchans, dtype=np.float32)
-        self.max = np.zeros(nchans, dtype=np.float32)
-        self.count = np.zeros(nchans, dtype=np.int32)
 
 
-@njit(cache=True, parallel=True, locals={"val": types.f8})
-def compute_online_moments_basic(
-    array: np.ndarray,
-    bag: MomentsBag,
-    nsamps: int,
-    startflag: int,
-) -> None:
-    if startflag == 0:
-        for ii in range(bag.nchans):
-            bag.max[ii] = array[ii]
-            bag.min[ii] = array[ii]
+@njit(cache=True, fastmath=True)
+def update_moments(
+    val: float,
+    m1: float,
+    m2: float,
+    m3: float,
+    m4: float,
+    n: int,
+) -> tuple[float, float, float, float, int]:
+    n += 1
+    delta = val - m1
+    delta_n = delta / n
+    delta_n2 = delta_n * delta_n
+    term = delta * delta_n * (n - 1)
 
-    for ichan in prange(bag.nchans):
-        for isamp in range(nsamps):
-            val = array[isamp * bag.nchans + ichan]
-            bag.count[ichan] += 1
-            nn = bag.count[ichan]
-
-            delta = val - bag.m1[ichan]
-            delta_n = delta / nn
-            bag.m1[ichan] += delta_n
-            bag.m2[ichan] += delta * delta_n * (nn - 1)
-
-            bag.max[ichan] = max(bag.max[ichan], val)
-            bag.min[ichan] = min(bag.min[ichan], val)
+    m1 += delta_n
+    m4 += term * delta_n2 * (n * n - 3 * n + 3) + 6 * delta_n2 * m2 - 4 * delta_n * m3
+    m3 += term * delta_n * (n - 2) - 3 * delta_n * m2
+    m2 += term
+    return m1, m2, m3, m4, n
 
 
-@njit(cache=True, parallel=True, locals={"val": types.f8})
+@njit(cache=True, fastmath=True)
+def update_moments_basic(
+    val: float,
+    m1: float,
+    m2: float,
+    n: int,
+) -> tuple[float, float, int]:
+    n += 1
+    delta = val - m1
+    delta_n = delta / n
+
+    m1 += delta_n
+    m2 += delta * delta_n * (n - 1)
+    return m1, m2, n
+
+
+@njit(cache=True, parallel=True, fastmath=True, locals={"val": types.f4})
 def compute_online_moments(
     array: np.ndarray,
-    bag: MomentsBag,
-    nsamps: int,
-    startflag: int,
+    moments: np.ndarray,
+    startflag: int = 0,
 ) -> None:
     """Compute central moments in one pass through the data."""
+    nchans = moments.shape[0]
+    nsamps = array.shape[0] // nchans
+
     if startflag == 0:
-        for ii in range(bag.nchans):
-            bag.max[ii] = array[ii]
-            bag.min[ii] = array[ii]
+        for ichan in range(nchans):
+            moments[ichan]["min"] = array[ichan]
+            moments[ichan]["max"] = array[ichan]
 
-    for ichan in prange(bag.nchans):
+    for ichan in prange(nchans):
+        m1, m2, m3, m4 = (
+            moments[ichan]["m1"],
+            moments[ichan]["m2"],
+            moments[ichan]["m3"],
+            moments[ichan]["m4"],
+        )
+        count = moments[ichan]["count"]
+        min_val, max_val = moments[ichan]["min"], moments[ichan]["max"]
+
         for isamp in range(nsamps):
-            val = array[isamp * bag.nchans + ichan]
-            bag.count[ichan] += 1
-            nn = bag.count[ichan]
-
-            delta = val - bag.m1[ichan]
-            delta_n = delta / nn
-            delta_n2 = delta_n * delta_n
-            term1 = delta * delta_n * (nn - 1)
-            bag.m1[ichan] += delta_n
-            bag.m4[ichan] += (
-                term1 * delta_n2 * (nn * nn - 3 * nn + 3)
-                + 6 * delta_n2 * bag.m2[ichan]
-                - 4 * delta_n * bag.m3[ichan]
-            )
-            bag.m3[ichan] += term1 * delta_n * (nn - 2) - 3 * delta_n * bag.m2[ichan]
-            bag.m2[ichan] += term1
-
-            bag.max[ichan] = max(bag.max[ichan], val)
-            bag.min[ichan] = min(bag.min[ichan], val)
+            val = array[isamp * nchans + ichan]
+            m1, m2, m3, m4, count = update_moments(val, m1, m2, m3, m4, count)
+            min_val = min(min_val, val)
+            max_val = max(max_val, val)
+        (
+            moments[ichan]["m1"],
+            moments[ichan]["m2"],
+            moments[ichan]["m3"],
+            moments[ichan]["m4"],
+        ) = m1, m2, m3, m4
+        moments[ichan]["count"] = count
+        moments[ichan]["min"], moments[ichan]["max"] = min_val, max_val
 
 
-@njit(cache=True)
-def add_online_moments(bag_a: MomentsBag, bag_b: MomentsBag, bag_c: MomentsBag) -> None:
-    bag_c.count = bag_a.count + bag_b.count
-    delta = bag_b.m1 - bag_a.m1
+@njit(cache=True, parallel=True, fastmath=True, locals={"val": types.f4})
+def compute_online_moments_basic(
+    array: np.ndarray,
+    moments: np.ndarray,
+    startflag: int = 0,
+) -> None:
+    """Compute central moments in one pass through the data."""
+    nchans = moments.shape[0]
+    nsamps = array.shape[0] // nchans
+
+    if startflag == 0:
+        for ichan in range(nchans):
+            moments[ichan]["min"] = array[ichan]
+            moments[ichan]["max"] = array[ichan]
+
+    for ichan in prange(nchans):
+        m1, m2 = moments[ichan]["m1"], moments[ichan]["m2"]
+        count = moments[ichan]["count"]
+        min_val, max_val = moments[ichan]["min"], moments[ichan]["max"]
+
+        for isamp in range(nsamps):
+            val = array[isamp * nchans + ichan]
+            m1, m2, count = update_moments_basic(val, m1, m2, count)
+            min_val = min(min_val, val)
+            max_val = max(max_val, val)
+        moments[ichan]["m1"], moments[ichan]["m2"] = m1, m2
+        moments[ichan]["count"] = count
+        moments[ichan]["min"], moments[ichan]["max"] = min_val, max_val
+
+
+@njit(cache=True, fastmath=True)
+def add_online_moments(a: np.ndarray, b: np.ndarray, c: np.ndarray) -> None:
+    c["count"][:] = a["count"] + b["count"]
+    delta = b["m1"] - a["m1"]
     delta2 = delta * delta
     delta3 = delta * delta2
     delta4 = delta2 * delta2
 
-    bag_c.m1 = (
-        bag_a.count * bag_a.m1 / bag_c.count + bag_b.count * bag_b.m1 / bag_c.count
-    )
-    bag_c.m2 = bag_a.m2 + bag_b.m2 + delta2 * bag_a.count * bag_b.count / bag_c.count
-
-    bag_c.m3 = (
-        bag_a.m3
-        + bag_b.m3
+    c["m1"][:] = (a["count"] * a["m1"] + b["count"] * b["m1"]) / c["count"]
+    c["m2"][:] = a["m2"] + b["m2"] + delta2 * a["count"] * b["count"] / c["count"]
+    c["m3"][:] = (
+        a["m3"]
+        + b["m3"]
         + delta3
-        * bag_a.count
-        * bag_b.count
-        * (bag_a.count - bag_b.count)
-        / (bag_c.count**2)
+        * a["count"]
+        * b["count"]
+        * (a["count"] - b["count"])
+        / (c["count"] ** 2)
     )
-    bag_c.m3 += (
-        3 * delta * (bag_a.count * bag_b.m2 - bag_b.count * bag_a.m2) / bag_c.count
-    )
-
-    bag_c.m4 = (
-        bag_a.m4
-        + bag_b.m4
+    c["m3"][:] += 3 * delta * (a["count"] * b["m2"] - b["count"] * a["m2"]) / c["count"]
+    c["m4"][:] = (
+        a["m4"]
+        + b["m4"]
         + delta4
-        * bag_a.count
-        * bag_b.count
-        * (bag_a.count**2 - bag_a.count * bag_b.count + bag_b.count**2)
-        / (bag_c.count**3)
+        * a["count"]
+        * b["count"]
+        * (a["count"] ** 2 - a["count"] * b["count"] + b["count"] ** 2)
+        / (c["count"] ** 3)
     )
-    bag_c.m4 += (
+    c["m4"][:] += (
         6
         * delta2
-        * (bag_a.count * bag_a.count * bag_b.m2 + bag_b.count * bag_b.count * bag_a.m2)
-        / (bag_c.count**2)
+        * (a["count"] ** 2 * b["m2"] + b["count"] ** 2 * a["m2"])
+        / (c["count"] ** 2)
     )
-    bag_c.m4 += (
-        4 * delta * (bag_a.count * bag_b.m3 - bag_b.count * bag_a.m3) / bag_c.count
-    )
+    c["m4"][:] += 4 * delta * (a["count"] * b["m3"] - b["count"] * a["m3"]) / c["count"]
+    c["max"][:] = np.maximum(a["max"], b["max"])
+    c["min"][:] = np.minimum(a["min"], b["min"])
 
-    bag_c.max = np.maximum(bag_a.max, bag_b.max)
-    bag_c.min = np.minimum(bag_a.min, bag_b.min)
+
+@njit(cache=True, fastmath=True)
+def detrend_1d(arr: np.ndarray) -> np.ndarray:
+    """Similar to scipiy.signal.detrend. Currently for 1d arrays only."""
+    m = len(arr)
+    if m == 0:
+        msg = "Input array must be non-empty."
+        raise ValueError(msg)
+    if m == 1:
+        return np.zeros(1, dtype=arr.dtype)
+
+    x_sum = m * (m - 1) / 2
+    y_sum = 0.0
+    x_sq_sum = m * (m - 1) * (2 * m - 1) / 6
+    x_y_sum = 0.0
+
+    for i in range(m):
+        y_sum += arr[i]
+        x_y_sum += i * arr[i]
+
+    slope = (m * x_y_sum - x_sum * y_sum) / (m * x_sq_sum - x_sum**2)
+    intercept = (y_sum - slope * x_sum) / m
+    trend = slope * np.arange(m, dtype=arr.dtype) + intercept
+
+    return arr - trend.astype(arr.dtype)
