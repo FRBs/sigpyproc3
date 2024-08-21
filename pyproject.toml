@@ -58,6 +58,7 @@ docs = [
     "sphinx-click",
     "sphinx-prompt",
     "sphinx-copybutton",
+    "sphinx-autodoc-typehints",
     "myst-nb",
     "numpydoc",
 ]
