@@ -16,11 +16,11 @@ class ZScoreResult:
 
     Attributes
     ----------
-    zscores: np.ndarray
+    zscores: numpy.ndarray
         Robust Z-scores of the array.
     loc: float
         Estimated location used for the Z-score calculation.
-    scale: float | np.ndarray
+    scale: float | numpy.ndarray
         Estimated scale used for the Z-score calculation.
     """
 
@@ -83,7 +83,7 @@ def estimate_loc(array: np.ndarray, method: str = "median") -> float:
 
     Parameters
     ----------
-    array : np.ndarray
+    array : numpy.ndarray
         The array to estimate the location of.
     method : str, optional
         The method to use for estimating the location, by default "median".
@@ -119,14 +119,14 @@ def estimate_scale(array: np.ndarray, method: str = "mad") -> float | np.ndarray
 
     Parameters
     ----------
-    array : np.ndarray
+    array : numpy.ndarray
         The array to estimate the scale of.
     method : str, optional
         The method to use for estimating the scale, by default "mad".
 
     Returns
     -------
-    float | np.ndarray
+    float | numpy.ndarray
         The estimated scale of the array.
 
     Raises
@@ -178,7 +178,7 @@ def zscore(
 
     Parameters
     ----------
-    array : np.ndarray
+    array : numpy.ndarray
         The array to calculate the Z-score of.
     loc_method : str, optional
         The method to use for estimating the location, by default "median".

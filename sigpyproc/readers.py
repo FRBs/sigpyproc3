@@ -41,7 +41,7 @@ class FilReader(Filterbank):
     Notes
     -----
     To be considered as a Sigproc format filterbank file the header must only
-    contain keywords found in the :data:`~sigpyproc.io.sigproc.header_keys` dictionary.
+    contain keywords found in the :data:`sigpyproc.params.header_keys` dictionary.
     """
 
     def __init__(
@@ -446,7 +446,7 @@ class PulseExtractor:
 
         Returns
         -------
-        FilterbankBlock
+        :class:`~sigpyproc.block.FilterbankBlock`
             Data block.
         """
         logger.info(

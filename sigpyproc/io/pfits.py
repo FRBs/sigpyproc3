@@ -131,7 +131,7 @@ class PrimaryHdr:
 
     @property
     def receiver(self) -> Receiver:
-        """:class:`~sigpyproc.io.hdu.Receiver`: Receiver information."""
+        """:class:`Receiver`: Receiver information."""
         return Receiver(
             name=self.header["FRONTEND"],
             nrcvr=self.header["NRCVR"],
@@ -145,7 +145,7 @@ class PrimaryHdr:
 
     @property
     def backend(self) -> Backend:
-        """:class:`~sigpyproc.io.hdu.Backend`: Backend information."""
+        """:class:`Backend`: Backend information."""
         return Backend(
             name=self.header["BACKEND"],
             phase=self.header["BE_PHASE"],
@@ -550,7 +550,7 @@ class PFITSFile:
 
         Returns
         -------
-        FrequencyChannels
+        :py:obj:`~sigpyproc.utils.FrequencyChannels`
             Centre frequency for each channel in MHz (NCHAN)
         """
         freqs = self._fits["SUBINT"].data[isub]["DAT_FREQ"]

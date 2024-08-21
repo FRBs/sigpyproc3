@@ -148,7 +148,7 @@ class FileReader(FileBase):
 
     Parameters
     ----------
-    sinfo : StreamInfo
+    sinfo : :py:obj:`~sigpyproc.io.sigproc.StreamInfo`
         stream information object containing header and data lengths
     mode : str, optional
         file opening mode, by default "r"
@@ -397,7 +397,7 @@ class FileWriter(FileBase):
     def write(self, bo: bytes) -> None:
         """Write the given bytes-like object, bo to the file stream.
 
-        Wrapper for :py:obj:`io.RawIOBase.write()`.
+        Wrapper for :py:obj:`io.RawIOBase.write`.
 
         Parameters
         ----------

@@ -7,31 +7,33 @@ from typing import TYPE_CHECKING
 import numpy as np
 from astropy import units
 from astropy.time import Time, TimeDelta
+from numpy import typing as npt
 from rich.logging import RichHandler
 
 if TYPE_CHECKING:
     import inspect
 
 
-def roll_array(arr: np.ndarray, shift: int, axis: int = 0) -> np.ndarray:
-    """Roll the elements in the array by `shift` positions along the given axis.
+def roll_array(arr: npt.ArrayLike, shift: int, axis: int = 0) -> np.ndarray:
+    """
+    Roll the elements in the array by `shift` positions along the given axis.
 
     The shift direction is from the end towards the beginning of the axis,
     opposite to the shift direction of :py:func:`~numpy.roll`.
 
     Parameters
     ----------
-    arr : :py:obj:`~numpy.typing.ArrayLike`
-        input array to roll
+    arr : ArrayLike
+        Input array to roll.
     shift : int
-        number of bins to shift by
+        Number of bins to shift by.
     axis : int
-        axis to roll along, by default 0
+        Axis to roll along, by default 0.
 
     Returns
     -------
-    :py:obj:`~numpy.ndarray`
-        shifted numpy array
+    ndarray
+        Shifted numpy array.
     """
     arr = np.asanyarray(arr)
     arr_size = arr.shape[axis]
@@ -43,19 +45,20 @@ def roll_array(arr: np.ndarray, shift: int, axis: int = 0) -> np.ndarray:
 
 
 def nearest_factor(num: int, fac: int) -> int:
-    """Find nearest factor Calculates the factor of `num`, which is closest to `fac`.
+    """
+    Find nearest factor Calculates the factor of `num`, which is closest to `fac`.
 
     Parameters
     ----------
     num : int
-        number that we wish to factor
+        Number that we wish to factor.
     fac : int
-        number around which we wish to find factor
+        Number around which we wish to find factor.
 
     Returns
     -------
     int
-        nearest factor
+        Nearest factor.
     """
     factors = {
         factor
@@ -67,6 +70,24 @@ def nearest_factor(num: int, fac: int) -> int:
 
 
 def next2_to_n(x: int) -> int:
+    """
+    Find the next power of 2 greater than or equal to `x`.
+
+    Parameters
+    ----------
+    x : int
+        Number to find the next power of 2 for.
+
+    Returns
+    -------
+    int
+        Next power of 2 greater than or equal to `x`.
+
+    Raises
+    ------
+    ValueError
+        If `x` is not positive.
+    """
     if x <= 0:
         msg = "Input must be positive."
         raise ValueError(msg)
@@ -80,23 +101,24 @@ def get_logger(
     quiet: bool = False,
     log_file: str | None = None,
 ) -> logging.Logger:
-    """Get a fancy configured logger.
+    """
+    Get a fancy configured logger.
 
     Parameters
     ----------
     name : str
-        logger name
+        Logger name.
     level : int or str, optional
-        logging level, by default logging.INFO
+        Logging level, by default logging.INFO.
     quiet : bool, optional
-        if True set `level` as logging.WARNING, by default False
+        If True set `level` as logging.WARNING, by default False.
     log_file : str, optional
-        path to log file, by default None
+        Path to log file, by default None.
 
     Returns
     -------
     logging.Logger
-        a logging object
+        A logging object.
     """
     logger = logging.getLogger(name)
     logger.setLevel(logging.WARNING if quiet else level)
@@ -129,21 +151,22 @@ def get_callerfunc(stack: list[inspect.FrameInfo]) -> str:
 
 
 def time_after_nsamps(tstart: float, tsamp: float, nsamps: int = 0) -> Time:
-    """Get time after given nsamps. If nsamps is not given then just return tstart.
+    """
+    Get time after given nsamps. If nsamps is not given then just return tstart.
 
     Parameters
     ----------
     tstart : float
-        starting mjd.
+        Starting mjd.
     tsamp : float
-        sampling time in seconds.
+        Sampling time in seconds.
     nsamps : int, optional
-        number of samples, by default 0
+        Number of samples, by default 0.
 
     Returns
     -------
     :class:`~astropy.time.Time`
-        Astropy Time object after given nsamps
+        Astropy Time object after given nsamps.
     """
     precision = int(np.ceil(abs(np.log10(tsamp))))
     tstart = Time(tstart, format="mjd", scale="utc", precision=precision)
@@ -151,17 +174,18 @@ def time_after_nsamps(tstart: float, tsamp: float, nsamps: int = 0) -> Time:
 
 
 def duration_string(duration: float) -> str:
-    """Convert duration in seconds to human readable string.
+    """
+    Convert duration in seconds to human readable string.
 
     Parameters
     ----------
     duration : float
-        duration in seconds
+        Duration in seconds.
 
     Returns
     -------
     str
-        human readable duration string
+        Human readable duration string.
     """
     if duration < 60:
         return f"{duration:.1f} seconds"
@@ -173,12 +197,13 @@ def duration_string(duration: float) -> str:
 
 
 class FrequencyChannels:
-    """FrequencyChannels class to handle frequency channels.
+    """
+    FrequencyChannels class to handle frequency channels.
 
     Parameters
     ----------
     freqs : :py:obj:`~numpy.ndarray`
-        array of frequencies
+        Array of frequencies.
     """
 
     def __init__(self, freqs: np.ndarray) -> None:
@@ -196,7 +221,7 @@ class FrequencyChannels:
 
     @property
     def nchans(self) -> int:
-        """float: Number of channels."""
+        """int: Number of channels."""
         return self._nchans
 
     @property

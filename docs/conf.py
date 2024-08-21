@@ -10,27 +10,22 @@
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 
-import sigpyproc
-
-import os
+import datetime
 import sys
+from importlib.metadata import version as meta_version
+from pathlib import Path
 
-sys.path.insert(0, os.path.abspath("../"))
+sys.path.insert(0, Path("../").resolve().as_posix())
 
 # -- Project information -----------------------------------------------------
 
 project = "sigpyproc3"
-copyright = "2020, Fast Radio Burst Software"
 author = "Fast Radio Burst Software"
-
-# The version info for the project you're documenting, acts as replacement for
-# |version| and |release|, also used in various other places throughout the
-# built documents.
-
-# The full version, including alpha/beta/rc tags.
-version = sigpyproc.__version__
+year = datetime.datetime.now(tz=datetime.timezone.utc).date().year
+copyright = f"{year}, {author}"  # noqa: A001
+version = meta_version("sigpyproc")
 release = version
-
+master_doc = "index"
 
 # -- General configuration ---------------------------------------------------
 
@@ -38,10 +33,14 @@ release = version
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom ones.
 extensions = [
     "sphinx.ext.autodoc",
-    "sphinx.ext.napoleon",
+    "numpydoc",
+    "sphinx_autodoc_typehints",
+    "sphinx.ext.coverage",
     "sphinx.ext.intersphinx",
-    "myst_nb",
     "sphinx_click",
+    "sphinx-prompt",
+    "sphinx_copybutton",
+    "myst_nb",
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -52,6 +51,10 @@ templates_path = ["_templates"]
 # This pattern also affects html_static_path and html_extra_path.
 exclude_patterns = ["_build", "**.ipynb_checkpoints", "Thumbs.db", ".DS_Store"]
 
+rst_epilog = f"""
+.. |project| replace:: {project}
+"""
+nitpicky = True
 
 # -- Options for HTML output -------------------------------------------------
 
@@ -59,7 +62,7 @@ exclude_patterns = ["_build", "**.ipynb_checkpoints", "Thumbs.db", ".DS_Store"]
 # a list of builtin themes.
 
 html_theme = "sphinx_book_theme"
-html_title = "sigpyproc3"
+html_title = project
 html_theme_options = {
     "repository_url": "https://github.com/FRBs/sigpyproc3",
     "use_repository_button": True,
@@ -71,9 +74,6 @@ html_theme_options = {
 # so a file named "default.css" will overwrite the builtin "default.css".
 # \html_static_path = ["_static"]
 
-jupyter_execute_notebooks = "auto"
-execution_timeout = -1
-
 # -- Extension configuration -------------------------------------------------
 
 autoclass_content = "class"  # include both class docstring and __init__
@@ -81,20 +81,40 @@ autodoc_member_order = "bysource"
 autodoc_typehints = "none"
 autodoc_inherit_docstrings = True
 
-napoleon_google_docstring = False
-napoleon_numpy_docstring = True
-napoleon_include_init_with_doc = False
-napoleon_include_private_with_doc = False
-napoleon_include_special_with_doc = False
-napoleon_use_admonition_for_examples = True
-napoleon_use_admonition_for_notes = True
-napoleon_use_admonition_for_references = True
-napoleon_use_ivar = True
-napoleon_use_param = True
-napoleon_use_rtype = True
-napoleon_preprocess_types = True
-napoleon_type_aliases = None
-napoleon_attr_annotations = False
+typehints_document_rtype = False
+
+numpydoc_use_plots = True
+numpydoc_class_members_toctree = False
+numpydoc_show_inherited_class_members = False
+numpydoc_xref_param_type = True
+numpydoc_xref_aliases = {
+    "ndarray": "numpy.ndarray",
+    "dtype": "numpy.dtype",
+    "ArrayLike": "numpy.typing.ArrayLike",
+    "plt": "matplotlib.pyplot",
+    "scipy": "scipy",
+    "astropy": "astropy",
+    "attrs": "attrs",
+    "Path": "pathlib.Path",
+    "Buffer": "typing_extensions.Buffer",
+    "Iterator": "collections.abc.Iterator",
+    "Callable": "collections.abc.Callable",
+}
+numpydoc_xref_ignore = {
+    "of",
+    "shape",
+    "type",
+    "optional",
+    "default",
+}
+
+
+coverage_show_missing_items = True
+
+myst_enable_extensions = ["colon_fence"]
+
+nb_execution_mode = "auto"
+nb_execution_timeout = -1
 
 # -- Options for intersphinx extension ---------------------------------------
 
@@ -104,4 +124,6 @@ intersphinx_mapping = {
     "scipy": ("https://docs.scipy.org/doc/scipy/reference", None),
     "astropy": ("https://docs.astropy.org/en/stable/", None),
     "attrs": ("https://www.attrs.org/en/stable/", None),
+    "matplotlib": ("https://matplotlib.org/stable/", None),
+    "typing_extensions": ("https://typing-extensions.readthedocs.io/en/stable/", None),
 }
