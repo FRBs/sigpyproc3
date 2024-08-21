@@ -188,7 +188,7 @@ class RFIMask:
         with h5py.File(filename, "w") as fp:
             fp.attrs["threshold"] = self.threshold
             for key, value in attrs.asdict(self.header).items():
-                if isinstance(value, (int, float, str)):
+                if isinstance(value, (np.integer, np.floating, str)):
                     fp.attrs[key] = value
             for key, value in attrs.asdict(self).items():
                 if isinstance(value, np.ndarray):

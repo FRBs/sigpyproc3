@@ -222,10 +222,13 @@ class Header:
             raise ValueError(msg)
 
         fch_ref = getattr(self, f"f{ref_freq}")
-        delays = dm * params.DM_CONSTANT_LK * ((self.chan_freqs**-2) - (fch_ref**-2))
-        if in_samples:
-            return (delays / self.tsamp).round().astype(np.int32)
-        return delays
+        return params.compute_dmdelays(
+            self.chan_freqs,
+            dm,
+            self.tsamp,
+            fch_ref,
+            in_samples=in_samples,
+        )
 
     def new_header(self, update_dict: dict[str, Any] | None = None) -> Header:
         """Get a new instance of :class:`~sigpyproc.header.Header`.

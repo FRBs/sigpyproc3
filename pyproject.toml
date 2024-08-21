@@ -28,6 +28,7 @@ dependencies = [
     "numpy",
     "numba",
     "astropy",
+    "matplotlib",
     "h5py",
     "bottleneck",
     "attrs",
@@ -65,8 +66,10 @@ include = [
     "pyproject.toml",
     "sigpyproc/**/*.py",
     "tests/**/*.py",
-    "docs/**/*.py",
 ]
+
+exclude = ["sigpyproc/apps/spp_digifil.py"]
+
 line-length = 88
 indent-width = 4
 target-version = "py39"
@@ -80,12 +83,12 @@ select = ["ALL"]
 ignore = ["D1", "ANN1", "PLR2004", "G004"]
 
 [tool.ruff.lint.pylint]
-max-args = 10
+max-args = 15
 
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"
 
-[tool.ruff.per-file-ignores]
+[tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["S101", "FBT", "PLR2004", "PT011", "SLF001"]
 
 [tool.pytest.ini_options]

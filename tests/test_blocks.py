@@ -25,7 +25,10 @@ class TestFilterbankBlock:
         rng = np.random.default_rng()
         data = rng.normal(size=(128, 1024))
         header = Header.from_sigproc(filfile_8bit_1)
-        block = FilterbankBlock(data, header.new_header({"nchans": 128, "nsamples": 1024}))    
+        block = FilterbankBlock(
+            data,
+            header.new_header({"nchans": 128, "nsamples": 1024}),
+        )
         assert isinstance(block.header, Header)
         assert block.dm == 0
         assert isinstance(block, FilterbankBlock)
@@ -40,7 +43,10 @@ class TestFilterbankBlock:
             block_down.data.shape,
             (block.nchans // ffactor, block.nsamples // tfactor),
         )
-        np.testing.assert_equal(block_down.header.nchans, block.header.nchans // ffactor)
+        np.testing.assert_equal(
+            block_down.header.nchans,
+            block.header.nchans // ffactor,
+        )
         np.testing.assert_equal(
             block_down.header.nsamples,
             block.header.nsamples // tfactor,
@@ -110,7 +116,10 @@ class TestFilterbankBlock:
         block_dedisp = block.dedisperse(dm)
         np.testing.assert_equal(block.data.shape, block_dedisp.data.shape)
         np.testing.assert_equal(block_dedisp.dm, dm)
-        np.testing.assert_array_equal(block.data.mean(axis=1), block_dedisp.data.mean(axis=1))
+        np.testing.assert_array_equal(
+            block.data.mean(axis=1),
+            block_dedisp.data.mean(axis=1),
+        )
 
     def test_dedisperse_valid_samples(self, filfile_8bit_1: str) -> None:
         dm = 50
@@ -162,6 +171,7 @@ class TestFilterbankBlock:
         np.testing.assert_array_equal(block_new.data, block.data)
         outfile_path.unlink()
 
+
 class TestDMTBlock:
     def test_block_fails(self, filfile_8bit_1: str) -> None:
         rng = np.random.default_rng()
@@ -182,7 +192,7 @@ class TestDMTBlock:
         data = rng.normal(size=(128, 1024))
         dms = np.linspace(0, 100, 128, dtype=np.float32)
         header = Header.from_sigproc(filfile_8bit_1)
-        block = DMTBlock(data, header.new_header({"nchans": 1, "nsamples": 1024}), dms)  
+        block = DMTBlock(data, header.new_header({"nchans": 1, "nsamples": 1024}), dms)
         assert isinstance(block.header, Header)
         assert isinstance(block, DMTBlock)
         np.testing.assert_array_equal(block.dms, dms)

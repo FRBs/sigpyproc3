@@ -74,26 +74,20 @@ from sigpyproc.utils import get_logger
     help="Output filename",
 )
 def main(
-    filfile,
-    cont,
-    nbits,
-    block_size,
-    rescale_constant,
-    tscrunch_factor,
-    fscrunch_factor,
-    rescale_seconds,
-    scale_fac,
-    apply_FITS_scale_and_offset,
-):
+    filfile: str,
+    cont: bool,
+    nbits: int,
+    block_size: int,
+    rescale_constant: bool,
+    tscrunch_factor: int,
+    fscrunch_factor: int,
+    rescale_seconds: float,
+    scale_fac: float,
+    apply_FITS_scale_and_offset: bool,
+) -> None:
     """Convert to sigproc output digifil style."""
-    raise NotImplementedError("This function is not implemented yet.")
-    #logger = get_logger(__name__)
-    #nbytes_per_sample =
-    #gulpsize = block_size * 1024 * 1024 // 
-    #logger.info(f"Reading {filfile}")
-    #fil = FilReader(filfile)
-    #fil.downsample(tfactor=tfactor, ffactor=ffactor, gulp=gulp, filename=outfile)
-
+    msg = "This function is not implemented yet."
+    raise NotImplementedError(msg)
 
 
 if __name__ == "__main__":

@@ -18,6 +18,36 @@ DM_CONSTANT_SI = (
 ).value  # Precise SI constants
 
 
+def compute_dmdelays(
+    freqs: np.ndarray,
+    dm: float,
+    tsamp: float,
+    ref_freq: float,
+    *,
+    in_samples: bool = True,
+) -> np.ndarray:
+    """Compute ISM disperison delays at each channel frequency for a given DM.
+
+    Parameters
+    ----------
+    dm : float
+        dispersion measure to calculate delays for
+    in_samples : bool, optional
+        flag to return delays as numbers of samples, by default True
+    ref_freq : str, optional
+        reference frequency to calculate delays from, by default "ch1"
+
+    Returns
+    -------
+    :py:obj:`~numpy.ndarray`
+        delays for middle of each channel with respect to reference frequency
+    """
+    delays = dm * DM_CONSTANT_LK * ((freqs**-2) - (ref_freq**-2))
+    if in_samples:
+        return (delays / tsamp).round().astype(np.int32)
+    return delays
+
+
 # dictionary to define the sizes of header elements
 header_keys = {
     "filename": "str",

@@ -245,15 +245,13 @@ class TimeSeries:
         boxcar_ar = np.roll(mean_ar_norm, ref_bin)
         return TimeSeries(boxcar_ar, self.header.new_header())
 
-    def resample(self, accel: float, jerk: float = 0) -> TimeSeries:
+    def resample(self, accel: float) -> TimeSeries:
         """Perform time domain resampling to remove acceleration and jerk.
 
         Parameters
         ----------
         accel : float
             The acceleration to remove from the time series
-        jerk : float, optional
-            The jerk/jolt to remove from the time series, by default 0
 
         Returns
         -------
