@@ -138,7 +138,7 @@ class Filterbank(ABC):
 
         Yields
         ------
-        :py:obj:`~collections.abc.Iterator` (tuple(int, int, :py:obj:`~numpy.ndarray`))
+        Iterator[tuple[int, int, ndarray]]
             Tuple of number of samples read, index of read, and the unpacked data read
 
         Raises
@@ -185,7 +185,7 @@ class Filterbank(ABC):
             start sample, by default 0
         nsamps : int, optional
             number of samples to read, by default all
-        **plan_kwargs : Unpack[PlanKwargs]
+        **plan_kwargs : dict
             Keyword arguments for :func:`read_plan`.
         """
         bag = ChannelStats(self.header.nchans, self.header.nsamples)
@@ -215,7 +215,7 @@ class Filterbank(ABC):
             start sample, by default 0
         nsamps : int, optional
             number of samples to read, by default all
-        **plan_kwargs : Unpack[PlanKwargs]
+        **plan_kwargs : dict
             Keyword arguments for :func:`read_plan`.
         """
         bag = ChannelStats(self.header.nchans, self.header.nsamples)
@@ -1168,7 +1168,7 @@ class Filterbank(ABC):
 
         Returns
         -------
-        tuple(str, :class:`~sigpyproc.core.rfi.RFIMask`)
+        tuple[str, :class:`~sigpyproc.core.rfi.RFIMask`]
             Filename and mask of cleaned data
 
         Raises

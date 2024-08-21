@@ -108,7 +108,7 @@ class TestFoldedData:
     def test_methods(self, filfile_4bit: str) -> None:
         fil = FilReader(filfile_4bit)
         cube = fil.fold(period=1, dm=10, nints=16, nbins=50)
-        cube.dedisperse(20.0)
+        cube.update_dm(20.0)
         np.testing.assert_equal(cube.dm, 20.0)
         cube.update_period(2.0)
         np.testing.assert_equal(cube.period, 2.0)

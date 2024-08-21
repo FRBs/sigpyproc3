@@ -52,12 +52,19 @@ tests = [
     "mypy",
     "scipy",
 ]
-docs = ["sphinx", "sphinx-book-theme", "sphinx-click", "myst-nb"]
+docs = [
+    "sphinx",
+    "sphinx-book-theme",
+    "sphinx-click",
+    "sphinx-prompt",
+    "sphinx-copybutton",
+    "myst-nb",
+    "numpydoc",
+]
 develop = ["ruff"]
 
 [project.scripts]
 spp_header = "sigpyproc.apps.spp_header:main"
-spp_decimate = "sigpyproc.apps.spp_decimate:main"
 spp_extract = "sigpyproc.apps.spp_extract:main"
 spp_clean = "sigpyproc.apps.spp_clean:main"
 
@@ -66,6 +73,7 @@ include = [
     "pyproject.toml",
     "sigpyproc/**/*.py",
     "tests/**/*.py",
+    "docs/**/*.py",
 ]
 
 exclude = ["sigpyproc/apps/spp_digifil.py"]
@@ -117,3 +125,6 @@ exclude_lines = [
 enable_incomplete_feature = ["Unpack"]
 ignore_missing_imports = true
 plugins = ["numpy.typing.mypy_plugin"]
+
+[tool.numpydoc_validation]
+checks = ["all", "GL08", "EX01", "SA01", "ES01", "RT01", "SS02"]

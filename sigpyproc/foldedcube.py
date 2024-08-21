@@ -257,13 +257,13 @@ class FoldedData:
     def replace_nan(self) -> None:
         self.data[np.isnan(self.data)] = np.nanmedian(self.data)
 
-    def dedisperse(self, dm: float) -> None:
-        """Rotate the data cube to remove dispersion delay between subbands.
+    def update_dm(self, dm: float) -> None:
+        """Install a new DM in the data cube.
 
         Parameters
         ----------
         dm : float
-            New DM to dedisperse to
+            The new DM to dedisperse to
         """
         dmdelays = self._get_dmdelays(dm)
         for isubint in range(self.nsubints):
@@ -281,7 +281,7 @@ class FoldedData:
         Parameters
         ----------
         period : float
-            the new period to fold with
+            The new period to fold with
         """
         pdelays = self._get_pdelays(period)
         for isubint in range(self.nsubints):

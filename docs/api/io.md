@@ -1,34 +1,37 @@
-sigpyproc.io module
-===================
+# sigpyproc.io module
 
-sigpyproc.io.sigproc
---------------------
+## sigpyproc.io.sigproc
 
+```{eval-rst}
 .. automodule:: sigpyproc.io.sigproc
    :members:
    :undoc-members:
    :show-inheritance:
+```
 
-sigpyproc.io.bits
------------------
+## sigpyproc.io.bits
 
+```{eval-rst}
 .. automodule:: sigpyproc.io.bits
    :members:
    :undoc-members:
    :show-inheritance:
+```
 
-sigpyproc.io.fileio
--------------------
+## sigpyproc.io.fileio
 
+```{eval-rst}
 .. automodule:: sigpyproc.io.fileio
    :members:
    :undoc-members:
    :show-inheritance:
+```
 
-sigpyproc.io.pfits
--------------------
+## sigpyproc.io.pfits
 
+```{eval-rst}
 .. automodule:: sigpyproc.io.pfits
    :members:
    :undoc-members:
    :show-inheritance:
+```
