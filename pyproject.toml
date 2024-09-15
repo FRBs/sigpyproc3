@@ -34,6 +34,7 @@ dependencies = [
     "attrs",
     "click",
     "rich",
+    "rocket-fft",
     "bidict",
     "typing_extensions",
 ]
@@ -58,9 +59,9 @@ docs = [
     "sphinx-click",
     "sphinx-prompt",
     "sphinx-copybutton",
-    "sphinx-autodoc-typehints",
-    "myst-nb",
     "numpydoc",
+    "myst-nb",
+    "jupyter_sphinx",
 ]
 develop = ["ruff"]
 
@@ -89,7 +90,7 @@ indent-style = "space"
 
 [tool.ruff.lint]
 select = ["ALL"]
-ignore = ["D1", "ANN1", "PLR2004", "G004"]
+ignore = ["D1", "D301", "ANN1", "PLR2004", "G004"]
 
 [tool.ruff.lint.pylint]
 max-args = 15

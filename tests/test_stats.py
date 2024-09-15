@@ -126,7 +126,7 @@ class TestZScore:
         loc_method: str,
         scale_method: str,
     ) -> None:
-        zscore_re = stats.zscore(
+        zscore_re = stats.estimate_zscore(
             random_normal,
             loc_method=loc_method,
             scale_method=scale_method,
@@ -134,30 +134,30 @@ class TestZScore:
         assert isinstance(zscore_re, stats.ZScoreResult)
         np.testing.assert_almost_equal(5, zscore_re.loc, decimal=1)
         np.testing.assert_allclose(2, zscore_re.scale, atol=0.3)
-        assert zscore_re.zscores.shape == random_normal.shape
-        np.testing.assert_almost_equal(0, zscore_re.zscores.mean(), decimal=1)
-        np.testing.assert_almost_equal(1, zscore_re.zscores.std(), decimal=1)
+        assert zscore_re.data.shape == random_normal.shape
+        np.testing.assert_almost_equal(0, zscore_re.data.mean(), decimal=1)
+        np.testing.assert_almost_equal(1, zscore_re.data.std(), decimal=1)
 
     def test_zscore_double_mad(self, random_normal: np.ndarray) -> None:
-        zscore_re = stats.zscore(random_normal, scale_method="doublemad")
+        zscore_re = stats.estimate_zscore(random_normal, scale_method="doublemad")
         assert isinstance(zscore_re, stats.ZScoreResult)
         np.testing.assert_almost_equal(5, zscore_re.loc, decimal=1)
         assert isinstance(zscore_re.scale, np.ndarray)
         np.testing.assert_allclose(2, zscore_re.scale.mean(), atol=0.3)
         assert zscore_re.scale.shape == random_normal.shape
-        assert zscore_re.zscores.shape == random_normal.shape
-        np.testing.assert_almost_equal(0, zscore_re.zscores.mean(), decimal=1)
-        np.testing.assert_almost_equal(1, zscore_re.zscores.std(), decimal=1)
+        assert zscore_re.data.shape == random_normal.shape
+        np.testing.assert_almost_equal(0, zscore_re.data.mean(), decimal=1)
+        np.testing.assert_almost_equal(1, zscore_re.data.std(), decimal=1)
 
     def test_zscore_empty(self) -> None:
         with pytest.raises(ValueError):
-            stats.zscore(np.array([]))
+            stats.estimate_zscore(np.array([]))
 
     def test_zscore_invalid(self, random_normal: np.ndarray) -> None:
         with pytest.raises(ValueError):
-            stats.zscore(random_normal, loc_method="invalid")
+            stats.estimate_zscore(random_normal, loc_method="invalid")
         with pytest.raises(ValueError):
-            stats.zscore(random_normal, scale_method="invalid")
+            stats.estimate_zscore(random_normal, scale_method="invalid")
 
 
 class TestRunningFilter:

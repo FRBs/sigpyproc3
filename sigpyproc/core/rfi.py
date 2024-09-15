@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import attrs
 import h5py
@@ -14,53 +14,55 @@ if TYPE_CHECKING:
 
 
 def double_mad_mask(array: np.ndarray, threshold: float = 3) -> np.ndarray:
-    """Calculate the mask of an array using the double MAD (Modified z-score).
+    """
+    Calculate the mask of an array using the double MAD (Modified z-score).
 
     Parameters
     ----------
-    array : :py:obj:`~numpy.ndarray`
-        The array to calculate the mask of.
+    array : ndarray
+        The input array to calculate the mask of.
     threshold : float, optional
-        Threshold in sigmas, by default 3.0
+        Threshold in sigmas, by default 3.0.
 
     Returns
     -------
-    :py:obj:`~numpy.ndarray`
+    ndarray
         The mask for the array.
 
     Raises
     ------
     ValueError
-        If the threshold is not positive.
+        If the ``threshold`` is not positive.
     """
     if threshold <= 0:
         msg = f"threshold must be positive, got {threshold}"
         raise ValueError(msg)
-    zscore_re = stats.zscore(array, scale_method="doublemad")
-    return np.abs(zscore_re.zscores) > threshold
+    zscore = stats.estimate_zscore(array, scale_method="doublemad")
+    return np.abs(zscore.data) > threshold
 
 
 def iqrm_mask(array: np.ndarray, threshold: float = 3, radius: int = 5) -> np.ndarray:
-    """Calculate the mask of an array using the IQRM (Interquartile Range Method).
+    """
+    Calculate the mask of an array using the IQRM (Interquartile Range Method).
 
     Parameters
     ----------
-    array : :py:obj:`~numpy.ndarray`
-        The array to calculate the mask of.
+    array : ndarray
+        The input array to calculate the mask of.
     threshold : float, optional
-        Threshold in sigmas, by default 3.0
+        Threshold in sigmas, by default 3.0.
     radius : int, optional
-        Radius to calculate the IQRM, by default 5
+        Radius to calculate the IQRM, by default 5.
 
     Returns
     -------
-    :py:obj:`~numpy.ndarray`
+    ndarray
         The mask for the array.
 
     Raises
     ------
     ValueError
-        If the threshold is not positive.
+        If the ``threshold`` is not positive.
     """
     if threshold <= 0:
         msg = f"threshold must be positive, got {threshold}"
@@ -75,8 +77,8 @@ def iqrm_mask(array: np.ndarray, threshold: float = 3, radius: int = 5) -> np.nd
     lagged_diffs = array[:, np.newaxis] - shifted_x[:, lags + radius]
     lagged_diffs = lagged_diffs.T
     for lagged_diff in lagged_diffs:
-        zscore_re = stats.zscore(lagged_diff, scale_method="iqr")
-        mask = np.logical_or(mask, np.abs(zscore_re.zscores) > threshold)
+        zscore = stats.estimate_zscore(lagged_diff, scale_method="iqr")
+        mask = np.logical_or(mask, np.abs(zscore.data) > threshold)
     return mask
 
 
@@ -99,26 +101,27 @@ class RFIMask:
 
     @property
     def num_masked(self) -> int:
-        """int: Number of masked channels."""
+        """:obj:`int`: Number of masked channels."""
         return np.sum(self.chan_mask)
 
     @property
     def masked_fraction(self) -> float:
-        """float: Fraction of channels masked."""
+        """:obj:`float`: Fraction of channels masked."""
         return self.num_masked * 100 / self.header.nchans
 
     def apply_mask(self, chanmask: np.ndarray) -> None:
-        """Apply a channel mask to the current mask.
+        """
+        Apply a channel mask to the current mask.
 
         Parameters
         ----------
-        chanmask : :py:obj:`~numpy.typing.ArrayLike`
+        chanmask : ndarray
             User channel mask to apply.
 
         Raises
         ------
         ValueError
-            If the channel mask is not the same size as the current mask.
+            If the ``chanmask`` is not the same size as the current mask.
         """
         chanmask = np.asarray(chanmask, dtype="bool")
         if chanmask.size != self.header.nchans:
@@ -126,18 +129,19 @@ class RFIMask:
             raise ValueError(msg)
         self.chan_mask = np.logical_or(self.chan_mask, chanmask)
 
-    def apply_method(self, method: str = "mad") -> None:
-        """Apply a mask method using channel statistics.
+    def apply_method(self, method: Literal["iqrm", "mad"] = "mad") -> None:
+        """
+        Apply a mask method using channel statistics.
 
         Parameters
         ----------
-        method : str
-            Mask method to apply (`iqrm`, `mad`).
+        method : {'iqrm', 'mad'}, optional
+            Method to apply, by default 'mad'.
 
         Raises
         ------
         ValueError
-            If the method is not supported.
+            If the ``method`` is not supported.
         """
         if method == "mad":
             method_funcn = double_mad_mask
@@ -153,17 +157,18 @@ class RFIMask:
         self.chan_mask = np.logical_or(self.chan_mask, mask_stats)
 
     def apply_funcn(self, custom_funcn: Callable[[np.ndarray], np.ndarray]) -> None:
-        """Apply a custom function to the channel mask.
+        """
+        Apply a custom function to the channel mask.
 
         Parameters
         ----------
-        custom_funcn : :py:obj:`~typing.Callable`
+        custom_funcn : Callable[[ndarray], ndarray]
             Custom function to apply to the mask.
 
         Raises
         ------
         ValueError
-            If the custom_funcn is not callable.
+            If the ``custom_funcn`` is not callable.
         """
         if not callable(custom_funcn):
             msg = f"{custom_funcn} is not callable"
@@ -171,7 +176,8 @@ class RFIMask:
         self.chan_mask = custom_funcn(self.chan_mask)
 
     def to_file(self, filename: str | None = None) -> str:
-        """Write the mask to a HDF5 file.
+        """
+        Write the mask to a HDF5 file.
 
         Parameters
         ----------
@@ -197,7 +203,8 @@ class RFIMask:
 
     @classmethod
     def from_file(cls, filename: str) -> RFIMask:
-        """Load a mask from a HDF5 file.
+        """
+        Load a mask from a HDF5 file.
 
         Parameters
         ----------
