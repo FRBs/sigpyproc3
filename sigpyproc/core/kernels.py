@@ -492,6 +492,7 @@ def fs_running_median(
     )
     return out_arr
 
+
 @njit("f4[:,:](f4[:], i8)", cache=True, fastmath=True)
 def sum_harmonics(pow_spec: np.ndarray, nfolds: int) -> np.ndarray:
     nfreqs = len(pow_spec)
@@ -708,3 +709,80 @@ def detrend_1d(arr: np.ndarray) -> np.ndarray:
     trend = slope * np.arange(m, dtype=arr.dtype) + intercept
 
     return arr - trend.astype(arr.dtype)
+
+
+@njit(cache=True, fastmath=True)
+def convolve_fft(
+    data: np.ndarray,
+    temp_bank: types.List[types.Array],
+    ref_bin: types.List[int],
+) -> np.ndarray:
+    """
+    Convolve the data with the templates in the template bank.
+
+    Parameters
+    ----------
+    data : np.ndarray
+        Input data array.
+    temp_bank : list[np.ndarray]
+        List of template arrays.
+    ref_bin : list[int]
+        List of reference bin indices.
+
+    Returns
+    -------
+    np.ndarray
+        Convolved array.
+
+    Notes
+    -----
+    The reference bin is aligned to the index 0 and the template is time-reversed
+    (to perform convolution rather than correlation). The template is then
+    normalised to zero mean and unity power.
+    """
+    nbins = len(data)
+    ntemps = len(temp_bank)
+    convs = np.empty((ntemps, nbins), dtype=data.dtype)
+    data_pad = circular_pad_pow2(data)
+    data_fft = np.fft.rfft(data_pad)
+    for itemp in range(ntemps):
+        temp_kernel = temp_bank[itemp]
+        temp_pad = np.zeros(data_pad.size, dtype=data.dtype)
+        temp_pad[: len(temp_kernel)] = temp_kernel
+        # Align the reference bin to the index 0
+        temp_pad_roll = np.roll(temp_pad, -ref_bin[itemp])
+        # Time reverse the template (for convolution)
+        temp_pad_aligned = np.roll(temp_pad_roll[::-1], 1)
+        temp_norm = normalize_template(temp_pad_aligned)
+        conv = np.fft.irfft(data_fft * np.fft.rfft(temp_norm))
+        convs[itemp] = conv[:nbins]
+    return convs
+
+
+@njit(cache=True, fastmath=True)
+def circular_pad_pow2(arr: np.ndarray) -> np.ndarray:
+    nbins = len(arr)
+    nbins_pow2 = 2 ** int(np.ceil(np.log2(nbins)))
+    result = np.empty(nbins_pow2, dtype=arr.dtype)
+    for i in range(nbins_pow2):
+        result[i] = arr[i % nbins]
+    return result
+
+
+@njit(cache=True, fastmath=True)
+def normalize_template(arr: np.ndarray) -> np.ndarray:
+    """
+    Normalize the template to have zero mean and unit power.
+
+    Parameters
+    ----------
+    arr : np.ndarray
+        Template array.
+
+    Returns
+    -------
+    np.ndarray
+        Normalized template array.
+    """
+    arr_norm = arr - np.mean(arr)
+    return arr_norm / (np.dot(arr_norm, arr_norm) ** 0.5)

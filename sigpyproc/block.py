@@ -9,7 +9,8 @@ from sigpyproc.utils import roll_array
 
 
 class FilterbankBlock:
-    """An array class to handle a discrete block of data in time-major order.
+    """
+    An array class to handle a discrete block of data in time-major order.
 
     Parameters
     ----------
@@ -19,11 +20,6 @@ class FilterbankBlock:
         header object containing metadata
     dm : float, optional
         DM of the input_array, by default 0
-
-    Returns
-    -------
-    :py:obj:`~numpy.ndarray`
-        2 dimensional array of shape (nchans, nsamples) with header metadata
     """
 
     def __init__(self, data: np.ndarray, hdr: Header, dm: float = 0) -> None:

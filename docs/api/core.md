@@ -9,6 +9,15 @@
    :show-inheritance:
 ```
 
+## sigpyproc.core.filters
+
+```{eval-rst}
+.. automodule:: sigpyproc.core.filters
+   :members:
+   :undoc-members:
+   :show-inheritance:
+```
+
 ## sigpyproc.core.rfi
 
 ```{eval-rst}
