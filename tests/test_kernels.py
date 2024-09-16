@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+from numba import typed
 from scipy import signal, stats
 
 from sigpyproc.core import kernels
@@ -346,6 +347,34 @@ class TestKernels:
             kernels.detrend_1d(np.array([]))
         with pytest.raises(ValueError):
             kernels.detrend_1d.py_func(np.array([]))
+
+    def test_normalize_template(self) -> None:
+        arr = np.ones(10, dtype=np.float32)
+        temp = np.pad(arr, (0, 100 - arr.size), mode="constant")
+        temp_norm = kernels.normalize_template(temp)
+        np.testing.assert_equal(temp_norm.size, temp.size)
+        np.testing.assert_array_almost_equal(np.mean(temp_norm), 0.0, decimal=5)
+        np.testing.assert_array_almost_equal(
+            np.sqrt(np.sum(temp_norm**2)),
+            1.0,
+            decimal=5,
+        )
+        kernels.normalize_template.py_func(temp)
+
+    def test_circular_pad_pow2(self, random_normal_1d: np.ndarray) -> None:
+        padded = kernels.circular_pad_pow2(random_normal_1d)
+        np.testing.assert_equal(padded.size, 1024)
+        np.testing.assert_array_equal(padded[:1000], random_normal_1d)
+        np.testing.assert_array_equal(padded[1000:], random_normal_1d[:24])
+        kernels.circular_pad_pow2.py_func(random_normal_1d)
+
+    def test_convolve_fft(self, random_normal_1d: np.ndarray) -> None:
+        samp_temps = typed.List([np.array([0.5, 1.0, 0.5]), np.array([1.0, -1.0])])
+        ref_bins = typed.List([1, 0])
+        result = kernels.convolve_fft(random_normal_1d, samp_temps, ref_bins)
+        assert isinstance(result, np.ndarray)
+        assert result.shape == (len(samp_temps), len(random_normal_1d))
+        kernels.convolve_fft.py_func(random_normal_1d, samp_temps, ref_bins)
 
 
 class TestFourierKernels:
