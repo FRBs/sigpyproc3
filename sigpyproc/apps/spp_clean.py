@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import click
+import rich_click as click
 
 from sigpyproc.readers import FilReader
 

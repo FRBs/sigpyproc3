@@ -74,9 +74,9 @@ class TestFourierSeries:
         assert outpath.is_file()
         outpath.unlink()
 
-    def test_to_file(self, fourier_data: np.ndarray, tim_header: dict) -> None:
+    def test_to_fft(self, fourier_data: np.ndarray, tim_header: dict) -> None:
         fs = FourierSeries(fourier_data, Header(**tim_header))
-        fftfile = fs.to_file()
+        fftfile = fs.to_fft()
         fftfile_path = Path(fftfile)
         inffile_path = fftfile_path.with_suffix(".inf")
         assert fftfile_path.is_file()
@@ -84,12 +84,12 @@ class TestFourierSeries:
         fftfile_path.unlink()
         inffile_path.unlink()
 
-    def test_from_file(self, fftfile: str) -> None:
-        fs = FourierSeries.from_file(fftfile)
+    def test_from_fft(self, fftfile: str) -> None:
+        fs = FourierSeries.from_fft(fftfile)
         assert isinstance(fs, FourierSeries)
         np.testing.assert_equal(fs.data.dtype, np.complex64)
         with pytest.raises(FileNotFoundError):
-            FourierSeries.from_file("nonexistent.fft")
+            FourierSeries.from_fft("nonexistent.fft")
 
     def test_from_spec(
         self,

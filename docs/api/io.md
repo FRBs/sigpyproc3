@@ -5,7 +5,6 @@
 ```{eval-rst}
 .. automodule:: sigpyproc.io.sigproc
    :members:
-   :undoc-members:
    :show-inheritance:
 ```
 
@@ -14,7 +13,6 @@
 ```{eval-rst}
 .. automodule:: sigpyproc.io.bits
    :members:
-   :undoc-members:
    :show-inheritance:
 ```
 
@@ -23,7 +21,6 @@
 ```{eval-rst}
 .. automodule:: sigpyproc.io.fileio
    :members:
-   :undoc-members:
    :show-inheritance:
 ```
 
@@ -32,6 +29,5 @@
 ```{eval-rst}
 .. automodule:: sigpyproc.io.pfits
    :members:
-   :undoc-members:
    :show-inheritance:
 ```

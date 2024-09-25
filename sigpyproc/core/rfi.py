@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 import attrs
 import h5py
@@ -12,10 +12,11 @@ from sigpyproc.header import Header
 if TYPE_CHECKING:
     from typing import Callable
 
+    from sigpyproc.core.types import MaskMethods
+
 
 def double_mad_mask(array: np.ndarray, threshold: float = 3) -> np.ndarray:
-    """
-    Calculate the mask of an array using the double MAD (Modified z-score).
+    """Calculate the mask of an array using the double MAD (Modified z-score).
 
     Parameters
     ----------
@@ -42,8 +43,7 @@ def double_mad_mask(array: np.ndarray, threshold: float = 3) -> np.ndarray:
 
 
 def iqrm_mask(array: np.ndarray, threshold: float = 3, radius: int = 5) -> np.ndarray:
-    """
-    Calculate the mask of an array using the IQRM (Interquartile Range Method).
+    """Calculate the mask of an array using the IQRM (Interquartile Range Method).
 
     Parameters
     ----------
@@ -84,6 +84,44 @@ def iqrm_mask(array: np.ndarray, threshold: float = 3, radius: int = 5) -> np.nd
 
 @attrs.define(auto_attribs=True, slots=True)
 class RFIMask:
+    """Class to handle RFI masking.
+
+    Parameters
+    ----------
+    threshold : float
+        Threshold for the mask.
+    header : :class:`~sigpyproc.header.Header`
+        Header object containing the observation metadata.
+    chan_mean : ndarray
+        Mean of each channel.
+    chan_var : ndarray
+        Variance of each channel.
+    chan_skew : ndarray
+        Skewness of each channel.
+    chan_kurtosis : ndarray
+        Kurtosis of each channel.
+    chan_maxima : ndarray
+        Maximum of each channel.
+    chan_minima : ndarray
+        Minimum of each channel.
+    chan_mask : ndarray, optional
+        Mask of the channels, by default None.
+
+    Attributes
+    ----------
+    threshold
+    header
+    chan_mean
+    chan_var
+    chan_skew
+    chan_kurtosis
+    chan_maxima
+    chan_minima
+    chan_mask
+    num_masked
+    masked_fraction
+    """
+
     threshold: float
     header: Header
     chan_mean: np.ndarray
@@ -101,17 +139,28 @@ class RFIMask:
 
     @property
     def num_masked(self) -> int:
-        """:obj:`int`: Number of masked channels."""
+        """Get the number of masked channels.
+
+        Returns
+        -------
+        int
+            Number of masked channels.
+        """
         return np.sum(self.chan_mask)
 
     @property
     def masked_fraction(self) -> float:
-        """:obj:`float`: Fraction of channels masked."""
+        """Get the fraction of channels masked.
+
+        Returns
+        -------
+        float
+            Fraction of channels masked.
+        """
         return self.num_masked * 100 / self.header.nchans
 
     def apply_mask(self, chanmask: np.ndarray) -> None:
-        """
-        Apply a channel mask to the current mask.
+        """Apply a channel mask to the current mask.
 
         Parameters
         ----------
@@ -129,9 +178,8 @@ class RFIMask:
             raise ValueError(msg)
         self.chan_mask = np.logical_or(self.chan_mask, chanmask)
 
-    def apply_method(self, method: Literal["iqrm", "mad"] = "mad") -> None:
-        """
-        Apply a mask method using channel statistics.
+    def apply_method(self, method: MaskMethods = "mad") -> None:
+        """Apply a mask method using channel statistics.
 
         Parameters
         ----------
@@ -157,8 +205,7 @@ class RFIMask:
         self.chan_mask = np.logical_or(self.chan_mask, mask_stats)
 
     def apply_funcn(self, custom_funcn: Callable[[np.ndarray], np.ndarray]) -> None:
-        """
-        Apply a custom function to the channel mask.
+        """Apply a custom function to the channel mask.
 
         Parameters
         ----------
@@ -176,13 +223,12 @@ class RFIMask:
         self.chan_mask = custom_funcn(self.chan_mask)
 
     def to_file(self, filename: str | None = None) -> str:
-        """
-        Write the mask to a HDF5 file.
+        """Write the mask to a HDF5 file.
 
         Parameters
         ----------
         filename : str, optional
-            Filename to write the mask, by default None
+            Filename to write the mask, by default None.
 
         Returns
         -------
@@ -203,8 +249,7 @@ class RFIMask:
 
     @classmethod
     def from_file(cls, filename: str) -> RFIMask:
-        """
-        Load a mask from a HDF5 file.
+        """Load a mask from a HDF5 file.
 
         Parameters
         ----------

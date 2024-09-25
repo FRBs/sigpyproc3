@@ -1,4 +1,4 @@
-import click
+import rich_click as click
 
 from sigpyproc.readers import FilReader
 from sigpyproc.utils import get_logger

@@ -258,10 +258,10 @@ class TestKernels:
         kernels.downsample_1d.py_func(arr, factor)
 
     @pytest.mark.parametrize(
-        ("tfactor", "ffactor"),
-        [(1, 1), (2, 2), (4, 4), (7, 7), (10, 10)],
+        ("ffactor", "tfactor"),
+        [(1, 1), (1, 3), (2, 6), (7, 7), (10, 23)],
     )
-    def test_downsample_2d(self, tfactor: int, ffactor: int) -> None:
+    def test_downsample_2d(self, ffactor: int, tfactor: int) -> None:
         rng = np.random.default_rng()
         nchans = 56
         nsamps = 1000
@@ -278,11 +278,11 @@ class TestKernels:
             axis=(1, 3),
         ).flatten()
         np.testing.assert_array_almost_equal(
-            kernels.downsample_2d(arr.ravel(), tfactor, ffactor, nchans, nsamps),
+            kernels.downsample_2d(arr.ravel(), tfactor, ffactor, nsamps, nchans),
             expected,
             decimal=5,
         )
-        kernels.downsample_2d.py_func(arr, tfactor, ffactor, nchans, nsamps)
+        kernels.downsample_2d.py_func(arr.ravel(), tfactor, ffactor, nsamps, nchans)
 
     def test_extract_tim(self, random_normal_2d: np.ndarray) -> None:
         out = np.zeros(random_normal_2d.shape[1], dtype=np.float32)
@@ -361,20 +361,23 @@ class TestKernels:
         )
         kernels.normalize_template.py_func(temp)
 
-    def test_circular_pad_pow2(self, random_normal_1d: np.ndarray) -> None:
-        padded = kernels.circular_pad_pow2(random_normal_1d)
-        np.testing.assert_equal(padded.size, 1024)
-        np.testing.assert_array_equal(padded[:1000], random_normal_1d)
-        np.testing.assert_array_equal(padded[1000:], random_normal_1d[:24])
-        kernels.circular_pad_pow2.py_func(random_normal_1d)
+    def test_circular_pad_goodsize(self, random_normal_1d: np.ndarray) -> None:
+        bad_size = 937
+        good_size = kernels.nb_fft_good_size(bad_size, real=True)
+        arr = random_normal_1d[:bad_size]
+        padded = kernels.circular_pad_goodsize(arr)
+        np.testing.assert_equal(padded.size, good_size)
+        np.testing.assert_array_equal(padded[: arr.size], arr)
+        np.testing.assert_array_equal(padded[arr.size :], arr[: good_size - arr.size])
+        kernels.circular_pad_goodsize.py_func(random_normal_1d)
 
-    def test_convolve_fft(self, random_normal_1d: np.ndarray) -> None:
+    def test_convolve_templates(self, random_normal_1d: np.ndarray) -> None:
         samp_temps = typed.List([np.array([0.5, 1.0, 0.5]), np.array([1.0, -1.0])])
         ref_bins = typed.List([1, 0])
-        result = kernels.convolve_fft(random_normal_1d, samp_temps, ref_bins)
+        result = kernels.convolve_templates(random_normal_1d, samp_temps, ref_bins)
         assert isinstance(result, np.ndarray)
         assert result.shape == (len(samp_temps), len(random_normal_1d))
-        kernels.convolve_fft.py_func(random_normal_1d, samp_temps, ref_bins)
+        kernels.convolve_templates.py_func(random_normal_1d, samp_temps, ref_bins)
 
 
 class TestFourierKernels:

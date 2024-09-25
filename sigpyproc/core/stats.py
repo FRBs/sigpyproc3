@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Callable, Literal
+from typing import TYPE_CHECKING, Callable, Literal
 
 import attrs
 import bottleneck as bn
@@ -9,33 +9,29 @@ from astropy import stats as astrostats
 
 from sigpyproc.core import kernels
 
-LocMethodType = Literal["median", "mean"]
-ScaleMethodType = Literal[
-    "iqr",
-    "mad",
-    "doublemad",
-    "diffcov",
-    "biweight",
-    "qn",
-    "sn",
-    "gapper",
-]
+if TYPE_CHECKING:
+    from sigpyproc.core.types import FilterMethods, LocMethods, ScaleMethods
 
 
 @attrs.define(auto_attribs=True, slots=True, kw_only=True)
 class ZScoreResult:
-    """
-    Container for Z-score calculation results.
+    """Container for Z-score calculation results.
 
     Parameters
     ----------
-    data: ndarray
+    data : ndarray
         Robust Z-scores of the input array (normalized data).
-    loc: float
+    loc : float
         Estimated location (central tendency) used for the Z-score calculation.
-    scale: float | ndarray
+    scale : float | ndarray
         Estimated scale (variability) used for the Z-score calculation.
-        Can be a scalar or an array matching the shape of `data`.
+        Can be a scalar or an array matching the shape of ``data``.
+
+    Attributes
+    ----------
+    data
+    loc
+    scale
     """
 
     data: np.ndarray
@@ -46,12 +42,12 @@ class ZScoreResult:
 def running_filter(
     array: np.ndarray,
     window: int,
-    method: Literal["mean", "median"] = "mean",
+    method: FilterMethods = "mean",
 ) -> np.ndarray:
-    """
-    Calculate the running filter of an array.
+    """Calculate the running filter of an array.
 
     Applies a sliding window filter to the input array using the specified method.
+    Window edges are handled by reflecting about the edges of the input array.
 
     Parameters
     ----------
@@ -71,11 +67,6 @@ def running_filter(
     ------
     ValueError
         If the ``method`` is not supported.
-
-    Notes
-    -----
-    Window edges are handled by reflecting about the edges of the input array.
-
     """
     filter_methods: dict[str, Callable[[np.ndarray, int], np.ndarray]] = {
         "mean": bn.move_mean,
@@ -96,10 +87,9 @@ def running_filter(
 
 def estimate_loc(
     array: np.ndarray,
-    method: LocMethodType = "median",
+    method: LocMethods = "median",
 ) -> float:
-    """
-    Estimate the location (central tendency) of an array.
+    """Estimate the location (central tendency) of an array.
 
     Parameters
     ----------
@@ -136,7 +126,7 @@ def estimate_loc(
 
 def estimate_scale(
     array: np.ndarray,
-    method: ScaleMethodType = "mad",
+    method: ScaleMethods = "mad",
 ) -> float | np.ndarray:
     """
     Estimate the scale (variability) or standard deviation of an array.
@@ -145,19 +135,17 @@ def estimate_scale(
     ----------
     array : ndarray
         The input array to estimate the scale of.
-    method : {"iqr", "mad", "doublemad", "diffcov", "biweight", "qn",
-        "sn", "gapper"}, optional
-
+    method : {"iqr", "mad", "doublemad", "diffcov", "biweight", "qn", "sn", "gapper"}, optional
         The method to use for estimating the scale, by default "mad".
 
-        - `iqr`: Normalized Inter-quartile Range.
-        - `mad`: Median Absolute Deviation.
-        - `doublemad`: Double MAD.
-        - `diffcov`: Difference Covariance
-        - `biweight`: Biweight Midvariance
-        - `qn`: Normalized Qn scale
-        - `sn`: Normalized Sn scale
-        - `gapper`: Gapper Estimator
+        - ``iqr`` : Normalized Inter-quartile Range.
+        - ``mad`` : Median Absolute Deviation.
+        - ``doublemad`` : Double MAD.
+        - ``diffcov`` : Difference Covariance
+        - ``biweight`` : Biweight Midvariance
+        - ``qn`` : Normalized Qn scale
+        - ``sn`` : Normalized Sn scale
+        - ``gapper`` : Gapper Estimator
 
     Returns
     -------
@@ -174,8 +162,7 @@ def estimate_scale(
     ----------
     .. [1] Wikipedia, "Robust measures of scale",
         https://en.wikipedia.org/wiki/Robust_measures_of_scale
-
-    """
+    """  # noqa: E501
     scale_methods: dict[str, Callable[[np.ndarray], float | np.ndarray]] = {
         "iqr": _scale_iqr,
         "mad": _scale_mad,
@@ -200,11 +187,10 @@ def estimate_scale(
 
 def estimate_zscore(
     array: np.ndarray,
-    loc_method: LocMethodType | Literal["norm"] = "median",
-    scale_method: ScaleMethodType | Literal["norm"] = "mad",
+    loc_method: LocMethods | Literal["norm"] = "median",
+    scale_method: ScaleMethods | Literal["norm"] = "mad",
 ) -> ZScoreResult:
-    """
-    Calculate robust Z-scores of an array.
+    """Calculate robust Z-scores of an array.
 
     Parameters
     ----------
@@ -214,9 +200,7 @@ def estimate_zscore(
         The method to use for estimating the location, by default "median".
 
         Use "norm" to set the location to 0.
-    scale_method : {"mad", "iqr", "doublemad", "diffcov", "biweight", "qn", "sn",
-        "gapper", "norm"}, optional
-
+    scale_method : {"mad", "iqr", "doublemad", "diffcov", "biweight", "qn", "sn", "gapper", "norm"}, optional
         The method to use for estimating the scale, by default "mad".
 
         Use "norm" to set the scale to 1.
@@ -234,7 +218,7 @@ def estimate_zscore(
     See Also
     --------
     estimate_loc, estimate_scale
-    """
+    """  # noqa: E501
     loc = 0 if loc_method == "norm" else estimate_loc(array, loc_method)
     scale = 1 if scale_method == "norm" else estimate_scale(array, scale_method)
     diff = array - loc
@@ -243,12 +227,11 @@ def estimate_zscore(
 
 
 def _scale_iqr(array: np.ndarray) -> float:
-    """
-    Calculate the normalized Inter-quartile Range (IQR) scale of an array.
+    """Calculate the normalized Inter-quartile Range (IQR) scale of an array.
 
     Parameters
     ----------
-    array : np.ndarray
+    array : ndarray
         Input array.
 
     Returns
@@ -263,12 +246,11 @@ def _scale_iqr(array: np.ndarray) -> float:
 
 
 def _scale_mad(array: np.ndarray) -> float:
-    """
-    Calculate the Median Absolute Deviation (MAD) scale of an array.
+    """Calculate the Median Absolute Deviation (MAD) scale of an array.
 
     Parameters
     ----------
-    array : np.ndarray
+    array : ndarray
         Input array.
 
     Returns
@@ -291,17 +273,16 @@ def _scale_mad(array: np.ndarray) -> float:
 
 
 def _scale_doublemad(array: np.ndarray) -> np.ndarray:
-    """
-    Calculate the Double MAD scale of an array.
+    """Calculate the Double MAD scale of an array.
 
     Parameters
     ----------
-    array : np.ndarray
+    array : ndarray
         Input array.
 
     Returns
     -------
-    np.ndarray
+    ndarray
         The Double MAD scale of the array.
 
     References
@@ -310,7 +291,6 @@ def _scale_doublemad(array: np.ndarray) -> np.ndarray:
         https://eurekastatistics.com/using-the-median-absolute-deviation-to-find-outliers/
     .. [2] A. Akinshin, "Harrell-Davis Double MAD Outlier Detector",
         https://aakinshin.net/posts/harrell-davis-double-mad-outlier-detector/
-
     """
     norm = 0.6744897501960817  # scipy.stats.norm.ppf(0.75)
     norm_aad = np.sqrt(2 / np.pi)
@@ -332,12 +312,11 @@ def _scale_doublemad(array: np.ndarray) -> np.ndarray:
 
 
 def _scale_diffcov(array: np.ndarray) -> float:
-    """
-    Calculate the Difference Covariance scale of an array.
+    """Calculate the Difference Covariance scale of an array.
 
     Parameters
     ----------
-    array : np.ndarray
+    array : ndarray
         Input array.
 
     Returns
@@ -350,12 +329,11 @@ def _scale_diffcov(array: np.ndarray) -> float:
 
 
 def _scale_biweight(array: np.ndarray) -> float:
-    """
-    Calculate the Biweight Midvariance scale of an array.
+    """Calculate the Biweight Midvariance scale of an array.
 
     Parameters
     ----------
-    array : np.ndarray
+    array : ndarray
         Input array.
 
     Returns
@@ -367,12 +345,11 @@ def _scale_biweight(array: np.ndarray) -> float:
 
 
 def _scale_qn(array: np.ndarray) -> float:
-    """
-    Calculate the Normalized Qn scale of an array.
+    """Calculate the Normalized Qn scale of an array.
 
     Parameters
     ----------
-    array : np.ndarray
+    array : ndarray
         Input array.
 
     Returns
@@ -390,12 +367,11 @@ def _scale_qn(array: np.ndarray) -> float:
 
 
 def _scale_sn(array: np.ndarray) -> float:
-    """
-    Calculate the Normalized Sn scale of an array.
+    """Calculate the Normalized Sn scale of an array.
 
     Parameters
     ----------
-    array : np.ndarray
+    array : ndarray
         Input array.
 
     Returns
@@ -408,12 +384,11 @@ def _scale_sn(array: np.ndarray) -> float:
 
 
 def _scale_gapper(array: np.ndarray) -> float:
-    """
-    Calculate the Gapper Estimator scale of an array.
+    """Calculate the Gapper Estimator scale of an array.
 
     Parameters
     ----------
-    array : np.ndarray
+    array : ndarray
         Input array.
 
     Returns
@@ -428,8 +403,7 @@ def _scale_gapper(array: np.ndarray) -> float:
 
 
 class ChannelStats:
-    """
-    A class to compute the central moments of filterbank data in one pass.
+    """A class to compute the central moments of filterbank data in one pass.
 
     Parameters
     ----------
@@ -437,6 +411,19 @@ class ChannelStats:
         Number of channels in the data.
     nsamps : int
         Number of samples in the data.
+
+    Attributes
+    ----------
+    nchans
+    nsamps
+    moments
+    maxima
+    minima
+    mean
+    var
+    std
+    skew
+    kurtosis
 
     References
     ----------
@@ -454,48 +441,102 @@ class ChannelStats:
         self._moments = np.zeros(nchans, dtype=kernels.moments_dtype)
 
     @property
-    def moments(self) -> np.ndarray:
-        """:class:`~numpy.ndarray`: Get the central moments of the data."""
-        return self._moments
-
-    @property
     def nchans(self) -> int:
-        """:obj:`int`: Get the number of channels."""
+        """Get the number of channels.
+
+        Returns
+        -------
+        int
+            The number of channels.
+        """
         return self._nchans
 
     @property
     def nsamps(self) -> int:
-        """:obj:`int`: Get the number of samples."""
+        """Get the number of samples.
+
+        Returns
+        -------
+        int
+            The number of samples.
+        """
         return self._nsamps
 
     @property
+    def moments(self) -> np.ndarray:
+        """Get the central moments of the data.
+
+        Returns
+        -------
+        ndarray
+            The central moments of the data.
+        """
+        return self._moments
+
+    @property
     def maxima(self) -> np.ndarray:
-        """:class:`~numpy.ndarray`: Get the maximum value of each channel."""
+        """Get the maximum value of each channel.
+
+        Returns
+        -------
+        ndarray
+            The maximum value of each channel.
+        """
         return self._moments["max"]
 
     @property
     def minima(self) -> np.ndarray:
-        """:class:`~numpy.ndarray`: Get the minimum value of each channel."""
+        """Get the minimum value of each channel.
+
+        Returns
+        -------
+        ndarray
+            The minimum value of each channel.
+        """
         return self._moments["min"]
 
     @property
     def mean(self) -> np.ndarray:
-        """:class:`~numpy.ndarray`: Get the mean of each channel."""
+        """Get the mean of each channel.
+
+        Returns
+        -------
+        ndarray
+            The mean of each channel.
+        """
         return self._moments["m1"]
 
     @property
     def var(self) -> np.ndarray:
-        """:class:`~numpy.ndarray`: Get the variance of each channel."""
+        """Get the variance of each channel.
+
+        Returns
+        -------
+        ndarray
+            The variance of each channel.
+        """
         return self._moments["m2"] / self.nsamps
 
     @property
     def std(self) -> np.ndarray:
-        """:class:`~numpy.ndarray`: Get the standard deviation of each channel."""
+        """Get the standard deviation of each channel.
+
+        Returns
+        -------
+        ndarray
+            The standard deviation of each channel.
+        """
         return np.sqrt(self.var)
 
     @property
     def skew(self) -> np.ndarray:
-        """:class:`~numpy.ndarray`: Get the skewness of each channel."""
+        """Get the skewness of each channel.
+
+        Returns
+        -------
+        ndarray
+            The skewness of each channel.
+        """
         return np.divide(
             self._moments["m3"],
             np.power(self._moments["m2"], 1.5),
@@ -505,7 +546,13 @@ class ChannelStats:
 
     @property
     def kurtosis(self) -> np.ndarray:
-        """:class:`~numpy.ndarray`: Get the kurtosis of each channel."""
+        """Get the kurtosis of each channel.
+
+        Returns
+        -------
+        ndarray
+            The kurtosis of each channel.
+        """
         return (
             np.divide(
                 self._moments["m4"],
@@ -523,8 +570,7 @@ class ChannelStats:
         start_index: int,
         mode: Literal["basic", "full"] = "basic",
     ) -> None:
-        """
-        Update the central moments of the data with new samples.
+        """Update the central moments of the data with new samples.
 
         Parameters
         ----------
@@ -535,8 +581,8 @@ class ChannelStats:
         mode : {"basic", "full"}, optional
             The mode to use for computing the moments, by default "basic".
 
-            - "basic": Compute the moments upto 2nd order (variance).
-            - "full": Compute the moments upto 4th order (kurtosis).
+            - "basic" : Compute the moments upto 2nd order (variance).
+            - "full" : Compute the moments upto 4th order (kurtosis).
         """
         if mode == "basic":
             kernels.compute_online_moments_basic(
@@ -548,23 +594,22 @@ class ChannelStats:
             kernels.compute_online_moments(array, self._moments, start_index)
 
     def __add__(self, other: ChannelStats) -> ChannelStats:
-        """
-        Add two ChannelStats objects together as if all the data belonged to one.
+        """Add two ChannelStats objects together as if all the data belonged to one.
 
         Parameters
         ----------
-        other : type[ChannelStats]
-            The other ChannelStats object to add.
+        other : ChannelStats
+            The other `ChannelStats` object to add.
 
         Returns
         -------
-        type[ChannelStats]
-            The sum of the two ChannelStats objects.
+        ChannelStats
+            The sum of the two `ChannelStats` objects.
 
         Raises
         ------
         TypeError
-            If the other object is not a ChannelStats object.
+            If the other object is not a `ChannelStats` object.
         """
         if not isinstance(other, ChannelStats):
             msg = f"Only ChannelStats can be added together, not {type(other)}"

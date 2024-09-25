@@ -6,7 +6,6 @@ from numpy import typing as npt
 from sigpyproc import params
 from sigpyproc.core.filters import MatchedFilter
 from sigpyproc.header import Header
-from sigpyproc.utils import roll_array
 
 
 class Profile:
@@ -251,7 +250,7 @@ class FoldedData:
         prof = self.get_profile()
         on_pulse_region = prof.compute_mf().on_pulse
         pos = int(np.mean(on_pulse_region))
-        new_ar = roll_array(self.data, (pos - self.nbins // 2), 2)
+        new_ar = np.roll(self.data, -(pos - self.nbins // 2), axis=2)
         return FoldedData(new_ar, self.header, self.period, self.dm)
 
     def replace_nan(self) -> None:
@@ -268,10 +267,10 @@ class FoldedData:
         dmdelays = self._get_dmdelays(dm)
         for isubint in range(self.nsubints):
             for isubband in range(self.nsubbands):
-                self.data[isubint][isubband] = roll_array(
+                self.data[isubint][isubband] = np.roll(
                     self.data[isubint][isubband],
-                    dmdelays[isubband],
-                    0,
+                    -dmdelays[isubband],
+                    axis=0,
                 )
         self._dm = dm
 
@@ -286,10 +285,10 @@ class FoldedData:
         pdelays = self._get_pdelays(period)
         for isubint in range(self.nsubints):
             for isubband in range(self.nsubbands):
-                self.data[isubint][isubband] = roll_array(
+                self.data[isubint][isubband] = np.roll(
                     self.data[isubint][isubband],
-                    pdelays[isubint],
-                    0,
+                    -pdelays[isubint],
+                    axis=0,
                 )
         self._period = period
 

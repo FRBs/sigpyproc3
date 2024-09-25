@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+import rocket_fft
 from numba import njit, prange, types
 
 CONST_C_VAL = 299792458.0  # Speed of light in m/s (astropy.constants.c.value)
@@ -174,12 +175,36 @@ pack4_8_little_serial = packunpack_njit_serial(pack4_8_little.py_func)
     locals={"temp": types.f8},
 )
 def downsample_1d(array: np.ndarray, factor: int) -> np.ndarray:
+    """
+    Downsample a 1D array by averaging over bins.
+
+    Parameters
+    ----------
+    array : ndarray
+        Input 1D array to be downsampled.
+    factor : int
+        Downsampling factor. Must be a positive integer.
+
+    Returns
+    -------
+    ndarray
+        Downsampled array
+
+    Raises
+    ------
+    ValueError
+        If factor is not a positive integer.
+    """
+    if factor <= 0 or not isinstance(factor, int):
+        msg = "Factor must be a positive integer."
+        raise ValueError(msg)
     nsamps_new = len(array) // factor
     result = np.empty(nsamps_new, dtype=array.dtype)
     for isamp in prange(nsamps_new):
-        temp = 0
+        temp = 0.0
+        start = isamp * factor
         for ifactor in range(factor):
-            temp += array[isamp * factor + ifactor]
+            temp += array[start + ifactor]
         result[isamp] = temp / factor
     return result
 
@@ -197,24 +222,58 @@ def downsample_1d(array: np.ndarray, factor: int) -> np.ndarray:
 )
 def downsample_2d(
     array: np.ndarray,
-    tfactor: int,
-    ffactor: int,
-    nchans: int,
-    nsamps: int,
+    factor1: int,
+    factor2: int,
+    dim1: int,
+    dim2: int,
 ) -> np.ndarray:
-    """Assuming nchans is multiple of ffactor."""
-    nsamps_new = nsamps // tfactor
-    nchans_new = nchans // ffactor
-    totfactor = ffactor * tfactor
-    result = np.empty(nsamps_new * nchans_new, dtype=array.dtype)
-    for isamp in prange(nsamps_new):
-        for ichan in range(nchans_new):
-            pos = nchans * isamp * tfactor + ichan * ffactor
-            temp = 0
-            for ifactor in range(tfactor):
-                ipos = pos + ifactor * nchans
-                temp += np.sum(array[ipos : ipos + ffactor])
-            result[nchans_new * isamp + ichan] = temp / totfactor
+    """
+    Downsample a flattened 2D array by averaging over bins in both dimensions.
+
+    Parameters
+    ----------
+    array : np.ndarray
+        Input flattened 2D array to be downsampled.
+    factor1 : int
+        Downsampling factor for the first dimension. Must be a positive integer.
+    factor2 : int
+        Downsampling factor for the second dimension. Must be a positive integer.
+    dim1 : int
+        Number of bins in the first dimension.
+    dim2 : int
+        Number of bins in the second dimension.
+
+    Returns
+    -------
+    np.ndarray
+        Downsampled flattened 2D array
+
+    Notes
+    -----
+    dim2 must ve the fastest varying dimension.
+    """
+    if factor1 <= 0 or not isinstance(factor1, int):
+        msg = "Factor1 must be a positive integer."
+        raise ValueError(msg)
+    if factor2 <= 0 or not isinstance(factor2, int):
+        msg = "Factor2 must be a positive integer."
+        raise ValueError(msg)
+    if len(array) != dim1 * dim2:
+        msg = "Array length must be equal to dim1 * dim2."
+        raise ValueError(msg)
+
+    new_dim1 = dim1 // factor1
+    new_dim2 = dim2 // factor2
+    totfactor = factor1 * factor2
+    result = np.empty(new_dim1 * new_dim2, dtype=array.dtype)
+    for i in prange(new_dim1):
+        for j in range(new_dim2):
+            pos = dim2 * i * factor1 + j * factor2
+            temp = 0.0
+            for ifactor in range(factor1):
+                ipos = pos + ifactor * dim2
+                temp += np.sum(array[ipos : ipos + factor2])
+            result[new_dim2 * i + j] = temp / totfactor
     return result
 
 
@@ -687,7 +746,26 @@ def add_online_moments(a: np.ndarray, b: np.ndarray, c: np.ndarray) -> None:
 
 @njit(cache=True, fastmath=True)
 def detrend_1d(arr: np.ndarray) -> np.ndarray:
-    """Similar to scipiy.signal.detrend. Currently for 1d arrays only."""
+    """
+    Detrend a 1D array using a linear fit.
+
+    Similar to scipiy.signal.detrend. Currently for 1d arrays only.
+
+    Parameters
+    ----------
+    arr : np.ndarray
+        Input 1D array.
+
+    Returns
+    -------
+    np.ndarray
+        Detrended array.
+
+    Raises
+    ------
+    ValueError
+        If the input array is empty.
+    """
     m = len(arr)
     if m == 0:
         msg = "Input array must be non-empty."
@@ -712,7 +790,7 @@ def detrend_1d(arr: np.ndarray) -> np.ndarray:
 
 
 @njit(cache=True, fastmath=True)
-def convolve_fft(
+def convolve_templates(
     data: np.ndarray,
     temp_bank: types.List[types.Array],
     ref_bin: types.List[int],
@@ -743,29 +821,101 @@ def convolve_fft(
     nbins = len(data)
     ntemps = len(temp_bank)
     convs = np.empty((ntemps, nbins), dtype=data.dtype)
-    data_pad = circular_pad_pow2(data)
+    data_pad = circular_pad_goodsize(data)
     data_fft = np.fft.rfft(data_pad)
     for itemp in range(ntemps):
         temp_kernel = temp_bank[itemp]
-        temp_pad = np.zeros(data_pad.size, dtype=data.dtype)
+        temp_pad = np.zeros_like(data_pad)
         temp_pad[: len(temp_kernel)] = temp_kernel
         # Align the reference bin to the index 0
-        temp_pad_roll = np.roll(temp_pad, -ref_bin[itemp])
+        temp_pad = np.roll(temp_pad, -ref_bin[itemp])
         # Time reverse the template (for convolution)
-        temp_pad_aligned = np.roll(temp_pad_roll[::-1], 1)
-        temp_norm = normalize_template(temp_pad_aligned)
+        temp_pad = np.roll(temp_pad[::-1], 1)
+        temp_norm = normalize_template(temp_pad)
         conv = np.fft.irfft(data_fft * np.fft.rfft(temp_norm))
-        convs[itemp] = conv[:nbins]
+        convs[itemp, :] = conv[:nbins]
     return convs
 
 
 @njit(cache=True, fastmath=True)
-def circular_pad_pow2(arr: np.ndarray) -> np.ndarray:
-    nbins = len(arr)
-    nbins_pow2 = 2 ** int(np.ceil(np.log2(nbins)))
-    result = np.empty(nbins_pow2, dtype=arr.dtype)
-    for i in range(nbins_pow2):
-        result[i] = arr[i % nbins]
+def nb_fft_good_size(n: int, real: bool = False) -> int:  # noqa: FBT001, FBT002
+    """
+    Get the good size for FFT.
+
+    Parameters
+    ----------
+    n : int
+        Input size.
+
+    real : bool, optional
+        If True, the input is real, by default False
+
+    Returns
+    -------
+    int
+        Good size for FFT.
+    """
+    return rocket_fft.good_size(n, real=real)
+
+
+@njit(cache=True, fastmath=True)
+def nb_rfft(arr: np.ndarray, n: int | None = None) -> np.ndarray:
+    return np.fft.rfft(arr, n)
+
+
+@njit(cache=True, fastmath=True)
+def nb_irfft(arr: np.ndarray, n: int | None = None) -> np.ndarray:
+    return np.fft.irfft(arr, n)
+
+
+@njit(cache=True, fastmath=True)
+def nb_ifft(arr: np.ndarray, n: int | None = None) -> np.ndarray:
+    return np.fft.ifft(arr, n)
+
+
+@njit(cache=True, fastmath=True)
+def fftconvolve(in1: np.ndarray, in2: np.ndarray) -> np.ndarray:
+    """
+    Convolve two 1D arrays using FFT in mode "full".
+
+    Parameters
+    ----------
+    in1 : np.ndarray
+        First input array.
+    in2 : np.ndarray
+        Second input array.
+
+    Returns
+    -------
+    np.ndarray
+        Convolved array in mode "full".
+
+    Notes
+    -----
+    Return full discrete linear convolution of in1 and in2.
+    """
+    if in1.ndim != 1 or in2.ndim != 1:
+        msg = "Input arrays must be 1D."
+        raise ValueError(msg)
+    n1 = len(in1)
+    n2 = len(in2)
+    if n1 == 0 or n2 == 0:
+        return np.zeros(0, dtype=in1.dtype)
+    n = n1 + n2 - 1
+    n_good = nb_fft_good_size(n, real=True)
+    sp1 = np.fft.rfft(in1, n_good)
+    sp2 = np.fft.rfft(in2, n_good)
+    ret = np.fft.irfft(sp1 * sp2, n_good)
+    return ret[:n]
+
+
+@njit(cache=True, fastmath=True)
+def circular_pad_goodsize(arr: np.ndarray) -> np.ndarray:
+    n = len(arr)
+    n_good = nb_fft_good_size(n, real=True)
+    result = np.empty(n_good, dtype=arr.dtype)
+    for i in range(n_good):
+        result[i] = arr[i % n]
     return result
 
 
@@ -784,5 +934,210 @@ def normalize_template(arr: np.ndarray) -> np.ndarray:
     np.ndarray
         Normalized template array.
     """
-    arr_norm = arr - np.mean(arr)
-    return arr_norm / (np.dot(arr_norm, arr_norm) ** 0.5)
+    mean = np.mean(arr)
+    arr_norm = arr - mean
+    norm = np.sqrt(np.sum(arr_norm**2))
+    if norm == 0:
+        return arr_norm
+    return arr_norm / norm
+
+
+@njit(cache=True, nogil=True, fastmath=True)
+def nb_roll(
+    arr: np.ndarray,
+    shift: int | tuple[int, ...],
+    axis: int | tuple[int, ...] | None = None,
+) -> np.ndarray:
+    """Roll array elements along a given axis.
+
+    Implemented in ``rocket-fft``. This function is a njit-compiled wrapper
+    around `numpy.roll`.
+
+    Parameters
+    ----------
+    arr : ndarray
+        Input array.
+    shift : int | tuple[int, ...]
+        Number of bins to shift.
+    axis : int | tuple[int, ...] | None, optional
+        Axis or axes along which to roll, by default None.
+
+    Returns
+    -------
+    np.ndarray
+        Rolled array with the same shape as ``arr``.
+    """
+    return np.roll(arr, shift, axis)
+
+
+@njit(cache=True, fastmath=True)
+def roll_block(arr: np.ndarray, shifts: np.ndarray) -> np.ndarray:
+    """
+    Roll the 2D array along the second axis by the specified shifts.
+
+    Parameters
+    ----------
+    arr : np.ndarray
+        Input 2D array.
+    shifts : np.ndarray
+        Array of shifts for each row.
+
+    Returns
+    -------
+    np.ndarray
+        Rolled 2D array.
+    """
+    if arr.ndim != 2:
+        msg = "Input array must be 2D."
+        raise ValueError(msg)
+    if len(shifts) != arr.shape[0]:
+        msg = "Number of shifts must be equal to the number of rows."
+        raise ValueError(msg)
+    res = np.empty_like(arr)
+    nrows, ncols = arr.shape
+    for irow in range(nrows):
+        shift = shifts[irow] % ncols
+        res[irow, shift:] = arr[irow, : ncols - shift]
+        res[irow, :shift] = arr[irow, ncols - shift :]
+    return res
+
+
+@njit(cache=True, fastmath=True)
+def dmt_block(arr: np.ndarray, dm_delays: np.ndarray) -> np.ndarray:
+    if arr.ndim != 2 and dm_delays.ndim != 2:
+        msg = "Input array and delays must be 2D."
+        raise ValueError(msg)
+    if arr.shape[0] != dm_delays.shape[1]:
+        msg = "Number of chans must be same in both arrays."
+        raise ValueError(msg)
+    _, nsamps = arr.shape
+    ndms, _ = dm_delays.shape
+    res = np.empty((ndms, nsamps), dtype=arr.dtype)
+    for idm in range(ndms):
+        res[idm] = np.sum(roll_block(arr, dm_delays[idm]), axis=0)
+    return res
+
+
+@njit(cache=True, fastmath=True)
+def roll_block_valid(arr: np.ndarray, shifts: np.ndarray) -> np.ndarray:
+    """
+    Roll the 2D array along the second axis by the specified shifts.
+
+    Parameters
+    ----------
+    arr : np.ndarray
+        Input 2D array.
+    shifts : np.ndarray
+        Array of shifts for each row.
+
+    Returns
+    -------
+    np.ndarray
+        Rolled 2D array (excluding invalid samples, not circular rolled).
+    """
+    if arr.ndim != 2:
+        msg = "Input array must be 2D."
+        raise ValueError(msg)
+    nrows, ncols = arr.shape
+    valid_samps = ncols - shifts.max()
+    if valid_samps < 0:
+        msg = "Insufficient time samples to dedisperse."
+        raise ValueError(msg)
+    res = np.empty((nrows, valid_samps), dtype=arr.dtype)
+    for irow in range(nrows):
+        shift = shifts[irow]
+        if shift < 0:
+            res[irow] = arr[irow, -shift : valid_samps - shift]
+        else:
+            res[irow] = arr[irow, shift : valid_samps + shift]
+    return res
+
+
+@njit(cache=True, fastmath=True)
+def dmt_block_valid(arr: np.ndarray, dm_delays: np.ndarray) -> np.ndarray:
+    if arr.ndim != 2 and dm_delays.ndim != 2:
+        msg = "Input array and delays must be 2D."
+        raise ValueError(msg)
+    if arr.shape[0] != dm_delays.shape[1]:
+        msg = "Number of chans must be same in both arrays."
+        raise ValueError(msg)
+    _, nsamps = arr.shape
+    ndms, _ = dm_delays.shape
+    valid_samps = nsamps - dm_delays.max()
+    if valid_samps < 0:
+        msg = "Insufficient time samples to dedisperse."
+        raise ValueError(msg)
+    res = np.empty((ndms, valid_samps), dtype=arr.dtype)
+    for idm in range(ndms):
+        res[idm] = np.sum(roll_block_valid(arr, dm_delays[idm]), axis=0)
+    return res
+
+
+@njit(cache=True, fastmath=True, parallel=True)
+def simulate_ism(
+    signal: np.ndarray,
+    spectrum: np.ndarray,
+    dm_smear: np.ndarray,
+    tau_nus: np.ndarray,
+    over_sampling: int,
+) -> np.ndarray:
+    """
+    Convolve the input signal with the ISM effects.
+
+    Parameters
+    ----------
+    signal : np.ndarray
+        1D pulse profile template.
+    spectrum : np.ndarray
+        Spectrum of the pulse profile (length = number of frequency channels).
+    dm_smear : np.ndarray
+        DM smearing (in samples) for each frequency channel.
+    tau_nus : np.ndarray
+        Scattering timescale (in samples) for each frequency channel.
+    over_sampling : int
+        Oversampling factor for higher time resolution.
+
+    Returns
+    -------
+    np.ndarray
+        Convolved 2D pulse dynamic spectrum (nchans x nsamps).
+
+    Notes
+    -----
+    The function performs the following steps for each frequency channel:
+    - Replicate the signal across all frequency channels.
+    - Apply DM smearing via convolution with a boxcar function.
+    - Apply scattering via convolution with an exponential decay function.
+    - Normalize the scattering kernel to maintain the signal area.
+    """
+    nchans = len(spectrum)
+    over_sampling = max(over_sampling, 1)
+
+    nsamps_smear = int(max(over_sampling, np.ceil(dm_smear.max())))
+    nsamps_scat = int(max(over_sampling, np.ceil(int(6 * tau_nus.max()))))
+
+    x_scat = np.arange(nsamps_scat, dtype=signal.dtype)
+    do_smear = dm_smear.max() > 0
+    do_scatter = tau_nus.max() > 0
+    max_len = len(signal) + nsamps_smear + nsamps_scat - 2
+    final_arr = np.zeros((nchans, max_len), dtype=signal.dtype)
+
+    for ichan in prange(nchans):
+        chan_data = signal * spectrum[ichan]
+
+        # Apply dm smearing
+        if do_smear:
+            dm_smear_samps = int(max(1, np.ceil(dm_smear[ichan])))
+            dm_smear_prof = np.zeros(nsamps_smear, dtype=signal.dtype)
+            dm_smear_prof[:dm_smear_samps] = 1
+            dm_smear_prof /= dm_smear_prof.sum()
+            chan_data = fftconvolve(chan_data, dm_smear_prof)
+
+        # Apply scattering
+        if do_scatter:
+            scat_prof = np.exp(-x_scat / tau_nus[ichan])
+            scat_prof /= scat_prof.sum()
+            chan_data = fftconvolve(chan_data, scat_prof)
+
+        final_arr[ichan] = chan_data[:max_len]
+    return final_arr

@@ -9,13 +9,13 @@ from sigpyproc import utils
 
 
 class TestUtils:
-    def test_roll_array(self) -> None:
-        arr = np.arange(10)
-        np.testing.assert_equal(utils.roll_array(arr, 0), arr)
-        np.testing.assert_equal(utils.roll_array(arr, 1), np.roll(arr, -1))
-        np.testing.assert_equal(utils.roll_array(arr, -1), np.roll(arr, 1))
-        np.testing.assert_equal(utils.roll_array(arr, 10), arr)
-        np.testing.assert_equal(utils.roll_array(arr, -10), arr)
+    def test_detect_file_type(self, filfile_8bit_1: str, tmpfile: str) -> None:
+        assert utils.detect_file_type(filfile_8bit_1) == "sigproc"
+        filfile_tmp = utils.validate_path(filfile_8bit_1)
+        assert utils.detect_file_type(filfile_tmp.with_suffix(".fits")) == "pfits"
+        assert utils.detect_file_type(filfile_tmp.with_suffix(".h5")) == "fbh5"
+        with pytest.raises(ValueError):
+            utils.detect_file_type(tmpfile)
 
     def test_nearest_factor(self) -> None:
         np.testing.assert_equal(utils.nearest_factor(10, 0), 1)

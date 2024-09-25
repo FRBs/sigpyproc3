@@ -1,52 +1,54 @@
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import attrs
 import numpy as np
 from astropy import units
 from astropy.time import Time, TimeDelta
-from numpy import typing as npt
 from rich.logging import RichHandler
 
 if TYPE_CHECKING:
     import inspect
 
 
-def roll_array(arr: npt.ArrayLike, shift: int, axis: int = 0) -> np.ndarray:
+def detect_file_type(filename: str | Path) -> str:
     """
-    Roll the elements in the array by `shift` positions along the given axis.
+    Detect file type based on file extension.
 
-    The shift direction is from the end towards the beginning of the axis,
-    opposite to the shift direction of :py:func:`~numpy.roll`.
+    Supported extensions:
+
+    - sigproc (.fil).
+    - pfits (.fits, .sf).
+    - fbh5 (.h5).
 
     Parameters
     ----------
-    arr : ArrayLike
-        Input array to roll.
-    shift : int
-        Number of bins to shift by.
-    axis : int
-        Axis to roll along, by default 0.
+    filename : str | Path
+        File name to detect format for.
 
     Returns
     -------
-    ndarray
-        Shifted numpy array.
+    str
+        File type name.
     """
-    arr = np.asanyarray(arr)
-    arr_size = arr.shape[axis]
-    shift %= arr_size
-    return arr.take(
-        np.concatenate((np.arange(shift, arr_size), np.arange(shift))),
-        axis,
-    )
+    filename = Path(filename)
+    ext = filename.suffix.lower()
+    if ext == ".fil":
+        return "sigproc"
+    if ext in (".fits", ".sf"):
+        return "pfits"
+    if ext == ".h5":
+        return "fbh5"
+    msg = f"Unknown file format for file {filename}"
+    raise ValueError(msg)
 
 
 def nearest_factor(num: int, fac: int) -> int:
-    """
-    Find nearest factor Calculates the factor of `num`, which is closest to `fac`.
+    """Calculate the factor of ``num`` closest to ``fac``.
 
     Parameters
     ----------
@@ -71,7 +73,7 @@ def nearest_factor(num: int, fac: int) -> int:
 
 def next2_to_n(x: int) -> int:
     """
-    Find the next power of 2 greater than or equal to `x`.
+    Find the next power of 2 greater than or equal to ``x``.
 
     Parameters
     ----------
@@ -81,12 +83,12 @@ def next2_to_n(x: int) -> int:
     Returns
     -------
     int
-        Next power of 2 greater than or equal to `x`.
+        Next power of 2 greater than or equal to ``x``.
 
     Raises
     ------
     ValueError
-        If `x` is not positive.
+        If ``x`` is not positive.
     """
     if x <= 0:
         msg = "Input must be positive."
@@ -109,9 +111,9 @@ def get_logger(
     name : str
         Logger name.
     level : int or str, optional
-        Logging level, by default logging.INFO.
+        Logging level, by default `logging.INFO`.
     quiet : bool, optional
-        If True set `level` as logging.WARNING, by default False.
+        If True set ``level`` as `logging.WARNING`, by default False.
     log_file : str, optional
         Path to log file, by default None.
 
@@ -165,7 +167,7 @@ def time_after_nsamps(tstart: float, tsamp: float, nsamps: int = 0) -> Time:
 
     Returns
     -------
-    :class:`~astropy.time.Time`
+    astropy.time.Time
         Astropy Time object after given nsamps.
     """
     precision = int(np.ceil(abs(np.log10(tsamp))))
@@ -196,66 +198,217 @@ def duration_string(duration: float) -> str:
     return f"{duration / 86400:.1f} days"
 
 
-class FrequencyChannels:
-    """
-    FrequencyChannels class to handle frequency channels.
+def validate_path(
+    path: str | Path,
+    *,
+    exists: bool = True,
+    file_okay: bool = True,
+    dir_okay: bool = False,
+    readable: bool = True,
+    writable: bool = False,
+    resolve_path: bool = True,
+) -> Path:
+    """Validate a path based on various criteria.
 
     Parameters
     ----------
-    freqs : :py:obj:`~numpy.ndarray`
-        Array of frequencies.
+    path : str | Path
+        Path to validate.
+    exists : bool, optional
+        Whether the path must exist, by default True.
+    file_okay : bool, optional
+        Whether a file path is acceptable, by default True.
+    dir_okay : bool, optional
+        Whether a directory path is acceptable, by default False.
+    readable : bool, optional
+        Whether the path must be readable, by default True.
+    writable : bool, optional
+        Whether the path must be writable, by default False.
+    resolve_path : bool, optional
+        Whether to resolve the path to an absolute path, by default True.
+
+    Returns
+    -------
+    Path
+        Validated path.
+
+    Raises
+    ------
+    ValueError
+        If neither ``file_okay`` nor ``dir_okay`` is True.
+    FileNotFoundError
+        If ``exists`` is True and the path does not exist.
+    NotADirectoryError
+        If a directory path is expected but a file path was found.
+    IsADirectoryError
+        If a file path is expected but a directory path was found.
+    PermissionError
+        If the path lacks the required permissions.
+    """
+    if not (file_okay or dir_okay):
+        msg = "At least one of file_okay or dir_okay must be True."
+        raise ValueError(msg)
+    path = Path(path).resolve() if resolve_path else Path(path)
+    if exists:
+        if not path.exists():
+            msg = f"Path does not exist: {path}"
+            raise FileNotFoundError(msg)
+        if path.is_file() and not file_okay:
+            msg = f"Expected a directory but got a file: {path}"
+            raise NotADirectoryError(msg)
+        if path.is_dir() and not dir_okay:
+            msg = f"Expected a file but got a directory: {path}"
+            raise IsADirectoryError(msg)
+        if readable or writable:
+            mode = (os.R_OK if readable else 0) | (os.W_OK if writable else 0)
+            if not os.access(path, mode):
+                perms = []
+                if readable and not os.access(path, os.R_OK):
+                    perms.append("read")
+                if writable and not os.access(path, os.W_OK):
+                    perms.append("write")
+                msg = f"Path {path} lacks {' and '.join(perms)} permission(s)."
+                raise PermissionError(msg)
+    return path
+
+
+@attrs.define(auto_attribs=True, slots=True, frozen=True)
+class FrequencyChannels:
+    """A class to handle frequency channels.
+
+    Parameters
+    ----------
+    freqs : ArrayLike
+        Central frequencies of the channels in MHz.
+
+    Attributes
+    ----------
+    freqs : ndarray
+        Central frequencies of the channels in MHz.
+    array : ~astropy.units.Quantity
+        Frequency array in Astropy Quantity format.
+
+    nchans
+    fch1
+    foff
+    ftop
+    fcenter
+    fbottom
+    bandwidth
     """
 
-    def __init__(self, freqs: np.ndarray) -> None:
-        freqs = np.asanyarray(freqs, dtype=np.float64)
-        self._check_freqs(freqs)
-        self._array = units.Quantity(freqs, units.MHz, copy=False)
-        self._fch1 = self._array[0]
-        self._nchans = len(self._array)
-        self._foff = self._array[1] - self._array[0]
+    freqs: np.ndarray = attrs.field(converter=np.asarray)
+    array: units.Quantity = attrs.field(init=False, repr=False)
 
-    @property
-    def array(self) -> units.Quantity:
-        """:py:obj:`~numpy.ndarray`: Get the frequency array."""
-        return self._array
+    def __attrs_post_init__(self) -> None:
+        object.__setattr__(self, "array", units.Quantity(self.freqs, units.MHz))
+
+    @freqs.validator
+    def _check_freqs(self, attribute: attrs.Attribute, value: np.ndarray) -> None:
+        attr_name = attribute.name
+        if len(value) == 0:
+            msg = f"{attr_name} must not be empty."
+            raise ValueError(msg)
+        diff = np.diff(value)
+        if not np.all(np.isclose(diff, diff[0])):
+            msg = f"{attr_name} must have a constant difference between elements."
+            raise ValueError(msg)
 
     @property
     def nchans(self) -> int:
-        """int: Number of channels."""
-        return self._nchans
+        """Number of frequency channels.
+
+        Returns
+        -------
+        int
+            Number of channels.
+        """
+        return len(self.array)
 
     @property
     def fch1(self) -> units.Quantity:
-        """float: Central frequency of the first channel."""
-        return self._fch1
+        """Central frequency of the first channel.
+
+        Returns
+        -------
+        ~astropy.units.Quantity
+            Central frequency of the first channel in MHz.
+        """
+        return self.array[0]
 
     @property
     def foff(self) -> units.Quantity:
-        """float: Channel width."""
-        return self._foff
+        """Frequency offset between channels.
+
+        Returns
+        -------
+        ~astropy.units.Quantity
+            Frequency offset between channels in MHz.
+        """
+        return self.array[1] - self.array[0]
 
     @property
     def ftop(self) -> units.Quantity:
-        """float: Frequency (edge) of the top channel."""
+        """Edge frequency of the top channel.
+
+        Returns
+        -------
+        ~astropy.units.Quantity
+            Edge frequency of the top channel in MHz.
+        """
         return self.fch1 - 0.5 * self.foff
 
     @property
     def fcenter(self) -> units.Quantity:
-        """float: Central frequency of the whole band."""
+        """Central frequency of the entire band.
+
+        Returns
+        -------
+        ~astropy.units.Quantity
+            Central frequency of the entire band in MHz.
+        """
         return self.ftop + 0.5 * self.foff * self.nchans
 
     @property
     def fbottom(self) -> units.Quantity:
-        """float: Frequency (edge) of the bottom channel."""
+        """Edge frequency of the bottom channel.
+
+        Returns
+        -------
+        ~astropy.units.Quantity
+            Edge frequency of the bottom channel in MHz.
+        """
         return self.ftop + self.foff * self.nchans
 
     @property
     def bandwidth(self) -> units.Quantity:
-        """float: Bandwidth."""
+        """Bandwidth of the entire band.
+
+        Returns
+        -------
+        ~astropy.units.Quantity
+            Bandwidth in MHz.
+        """
         return abs(self.foff) * self.nchans
 
     @classmethod
     def from_sig(cls, fch1: float, foff: float, nchans: int) -> FrequencyChannels:
+        """Create from sigproc parameters.
+
+        Parameters
+        ----------
+        fch1 : float
+            Central frequency of the first channel.
+        foff : float
+            Frequency offset between channels.
+        nchans : int
+            Number of frequency channels.
+
+        Returns
+        -------
+        FrequencyChannels
+            FrequencyChannels object.
+        """
         array = np.arange(nchans, dtype=np.float64) * foff + fch1
         return cls(array)
 
@@ -266,16 +419,23 @@ class FrequencyChannels:
         bandwidth: float,
         nchans: int,
     ) -> FrequencyChannels:
+        """Create from pfits parameters.
+
+        Parameters
+        ----------
+        fcenter : float
+            Central frequency of the band.
+        bandwidth : float
+            Total bandwidth in MHz.
+        nchans : int
+            Number of frequency channels.
+
+        Returns
+        -------
+        FrequencyChannels
+            FrequencyChannels object.
+        """
         foff = bandwidth / nchans
         fch1 = fcenter - 0.5 * foff * (nchans - 1)
         array = np.arange(nchans, dtype=np.float64) * foff + fch1
         return cls(array)
-
-    def _check_freqs(self, freqs: np.ndarray) -> None:
-        if len(freqs) == 0:
-            msg = "Frequency array empty."
-            raise ValueError(msg)
-        diff = np.diff(freqs)
-        if not np.all(np.isclose(diff, diff[0])):
-            msg = "Frequencies must be equally spaced."
-            raise ValueError(msg)

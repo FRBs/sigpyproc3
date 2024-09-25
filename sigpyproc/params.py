@@ -20,32 +20,76 @@ DM_CONSTANT_SI = (
 
 def compute_dmdelays(
     freqs: np.ndarray,
-    dm: float,
+    dm: float | np.ndarray,
     tsamp: float,
     ref_freq: float,
     *,
     in_samples: bool = True,
 ) -> np.ndarray:
-    """Compute ISM disperison delays at each channel frequency for a given DM.
+    """Compute ISM disperison delays for given DM value(s).
 
     Parameters
     ----------
-    dm : float
-        dispersion measure to calculate delays for
+    freqs : ndarray
+        Frequencies of each channel.
+    dm : float | ndarray
+        Dispersion measure(s) to calculate delays for.
+    tsamp : float
+        Sampling time of the data.
+    ref_freq : float
+        Reference frequency to calculate delays from.
     in_samples : bool, optional
-        flag to return delays as numbers of samples, by default True
-    ref_freq : str, optional
-        reference frequency to calculate delays from, by default "ch1"
+        Flag to return delays as numbers of samples, by default True.
 
     Returns
     -------
-    :py:obj:`~numpy.ndarray`
-        delays for middle of each channel with respect to reference frequency
+    ndarray
+        Dispersion delays at middle of each channel with respect to reference frequency.
+
+        If dm is a scalar, returns a 1D array of delays. If dm is an array,
+        returns a 2D array with shape ``(len(dm), len(freqs))``.
     """
+    dm = np.atleast_1d(dm)[:, np.newaxis]
     delays = dm * DM_CONSTANT_LK * ((freqs**-2) - (ref_freq**-2))
     if in_samples:
-        return (delays / tsamp).round().astype(np.int32)
-    return delays
+        delays = (delays / tsamp).round().astype(np.int32)
+    return delays.squeeze()
+
+
+def compute_dmsmearing(
+    freqs: np.ndarray,
+    dm: float | np.ndarray,
+    tsamp: float,
+    *,
+    in_samples: bool = True,
+) -> np.ndarray:
+    """Compute ISM smearing due to finite bandwidth for given DM value(s).
+
+    Parameters
+    ----------
+    freqs : ndarray
+        Frequencies of each channel.
+    dm : float | ndarray
+        Dispersion measure(s) to calculate smearing for.
+    tsamp : float
+        Sampling time of the data.
+    in_samples : bool, optional
+        Flag to return smearing as numbers of samples, by default True.
+
+    Returns
+    -------
+    ndarray
+        DM smearing in the frequency channels due to finite bandwidth.
+
+        If dm is a scalar, returns a 1D array of smearing. If dm is an array,
+        returns a 2D array with shape ``(len(dm), len(freqs))``.
+    """
+    dm = np.atleast_1d(dm)[:, np.newaxis]
+    foff = np.abs(freqs[1] - freqs[0])
+    smearing = 2 * DM_CONSTANT_LK * foff * dm / freqs**3
+    if in_samples:
+        smearing = (smearing / tsamp).round().astype(np.int32)
+    return smearing.squeeze()
 
 
 # dictionary to define the sizes of header elements

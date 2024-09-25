@@ -130,14 +130,32 @@ def pack(
 class BitsInfo:
     """Class to handle bits info.
 
+    Parameters
+    ----------
+    nbits : int
+        Number of bits.
+    digi_sigma : float, optional
+        Sigma used to quantize data, by default default_sigma[nbits].
+
+    Attributes
+    ----------
+    nbits
+    digi_sigma
+    dtype
+    itemsize
+    unpack
+    bitfact
+    bitorder
+    digi_min
+    digi_max
+    digi_mean
+    digi_scale
+
     Raises
     ------
     ValueError
-        if input `nbits` not in [1, 2, 4, 8, 16, 32]
+        if input ``nbits`` not in [1, 2, 4, 8, 16, 32].
     """
-
-    nbits: int = attrs.field(validator=attrs.validators.in_(nbits_to_dtype.keys()))
-    digi_sigma: float = attrs.field()
 
     default_sigma: ClassVar[dict[int, float]] = {
         1: 0.5,
@@ -156,49 +174,110 @@ class BitsInfo:
         32: "invalid",
     }
 
+    nbits: int = attrs.field(validator=attrs.validators.in_(nbits_to_dtype.keys()))
+    digi_sigma: float = attrs.field()
+
+    @digi_sigma.default
+    def _set_digi_sigma(self) -> float:
+        return self.default_sigma[self.nbits]
+
     @property
     def dtype(self) -> np.dtype:
-        """Type of the data (`np.dtype`, read-only)."""
+        """Type of the data.
+
+        Returns
+        -------
+        dtype
+            data type.
+        """
         return np.dtype(nbits_to_dtype[self.nbits])
 
     @property
     def itemsize(self) -> int:
-        """Element size of this data-type object (`int`, read-only)."""
+        """Element size of this data-type object.
+
+        Returns
+        -------
+        int
+            Element size.
+        """
         return self.dtype.itemsize
 
     @property
     def unpack(self) -> bool:
-        """Whether to unpack bits (`bool`, read-only)."""
+        """Whether to unpack/pack bits.
+
+        Returns
+        -------
+        bool
+            True if nbits in {1, 2, 4}, False otherwise.
+        """
         return bool(self.nbits in {1, 2, 4})
 
     @property
     def bitfact(self) -> int:
-        """Bit factor to unpack/pack bits (`int`, read-only)."""
+        """Bit factor to unpack/pack bits.
+
+        Returns
+        -------
+        int
+            8 // nbits if unpack/pack, 1 otherwise.
+        """
         return 8 // self.nbits if self.unpack else 1
 
     @property
     def bitorder(self) -> str:
-        """Bit order of the packed data (`str`, read-only)."""
+        """Bit order of the packed data.
+
+        Returns
+        -------
+        str
+            Bit order.
+        """
         return self.default_bitorder[self.nbits]
 
     @property
     def digi_min(self) -> int:
-        """Minimum value used to quantize data (`int`, read-only)."""
+        """Minimum value used to quantize data.
+
+        Returns
+        -------
+        int
+            Minimum quantized value.
+        """
         return 0
 
     @property
     def digi_max(self) -> int:
-        """Maximum value used to quantize data (`int`, read-only)."""
+        """Maximum value used to quantize data.
+
+        Returns
+        -------
+        int
+            Maximum quantized value.
+        """
         return (1 << self.nbits) - 1
 
     @property
     def digi_mean(self) -> float:
-        """Mean used to quantize data (`float`, read-only)."""
+        """Mean used to quantize data.
+
+        Returns
+        -------
+        float
+            Mean quantized value.
+        """
         return (1 << (self.nbits - 1)) - 0.5
 
     @property
     def digi_scale(self) -> float:
-        """Scale used to quantize data (`float`, read-only)."""
+        """Scale used to quantize data.
+
+        Returns
+        -------
+        float
+            Scale quantized value.
+        """
         return self.digi_mean / self.digi_sigma
 
     def to_dict(self) -> dict[str, int | float | np.dtype]:
@@ -207,7 +286,7 @@ class BitsInfo:
         Returns
         -------
         dict
-            property attributes
+            Property attributes.
         """
         attributes = attrs.asdict(self)
         prop = {
@@ -223,12 +302,12 @@ class BitsInfo:
 
         Parameters
         ----------
-        arr : :py:obj:`~numpy.ndarray`
-            a 1-D numpy array containing the data to quantize.
+        arr : ndarray
+            A 1-D numpy array containing the data to quantize.
 
         Returns
         -------
-        :py:obj:`~numpy.ndarray`
+        ndarray
             Quantized data array to nbits.
 
         Notes
@@ -239,7 +318,3 @@ class BitsInfo:
         arr = arr.astype(np.int32)
         np.clip(arr, self.digi_min, self.digi_max, out=arr)
         return arr.astype(self.dtype, copy=False)
-
-    @digi_sigma.default
-    def _set_digi_sigma(self) -> float:
-        return self.default_sigma[self.nbits]

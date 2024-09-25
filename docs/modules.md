@@ -1,7 +1,7 @@
 # API Reference
 
 ```{toctree}
-:titlesonly: true
+:titlesonly:
 
 api/index
 ```

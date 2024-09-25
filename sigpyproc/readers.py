@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import attrs
@@ -18,6 +19,7 @@ from sigpyproc.utils import get_callerfunc, get_logger
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
 
+    from sigpyproc.core.types import LocMethods
     from sigpyproc.io.bits import BitsInfo
 
 logger = get_logger(__name__)
@@ -28,29 +30,29 @@ class FilReader(Filterbank):
 
     Parameters
     ----------
-    filenames : str or list of str
-        filterbank file or list of filterbank files
+    filenames : str | Path | list[str | Path]
+        Filterbank file name(s).
     check_contiguity : bool, optional
-        whether to check if files are contiguous, by default True
+        Check if the input files are contiguous, by default True.
 
     Returns
     -------
     :class:`~sigpyproc.base.Filterbank`
-        Base container of filterbank data with observational metadata
+        Base container of filterbank data with observational metadata.
 
     Notes
     -----
     To be considered as a Sigproc format filterbank file the header must only
-    contain keywords found in the :data:`sigpyproc.params.header_keys` dictionary.
+    contain keywords found in the :py:obj:`~sigpyproc.io.sigproc.header_keys` dictionary.
     """
 
     def __init__(
         self,
-        filenames: str | list[str],
+        filenames: str | Path | list[str | Path],
         *,
         check_contiguity: bool = True,
     ) -> None:
-        if isinstance(filenames, str):
+        if isinstance(filenames, (str, Path)):
             filenames = [filenames]
         self._filenames = filenames
         self._header = Header.from_sigproc(
@@ -69,7 +71,7 @@ class FilReader(Filterbank):
         return self._header
 
     @property
-    def filename(self) -> str:
+    def filename(self) -> str | Path:
         """str: Name of the input file (first file in case of multiple input files)."""
         return self._filenames[0]
 
@@ -436,12 +438,12 @@ class PulseExtractor:
         """int: Time of arrival of the pulse in the output block."""
         return self.pulse_toa - self.nstart
 
-    def get_data(self, pad_mode: str = "median") -> FilterbankBlock:
+    def get_data(self, pad_mode: LocMethods = "median") -> FilterbankBlock:
         """Extract the filterbank block centered on the pulse.
 
         Parameters
         ----------
-        pad_mode : str, optional
+        pad_mode : {'median', 'mean'}, optional
             Mode for padding the data, by default "median"
 
         Returns
