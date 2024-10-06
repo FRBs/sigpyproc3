@@ -16,7 +16,6 @@ def unpack(
     unpacked: np.ndarray | None = None,
     *,
     bitorder: str = "big",
-    parallel: bool = False,
 ) -> np.ndarray:
     """Unpack 1, 2 and 4-bit data packed as 8-bit numpy array.
 
@@ -30,8 +29,6 @@ def unpack(
         Array to unpack into.
     bitorder : str, optional
         Bit order of the packed data.
-    parallel : bool, optional
-        Whether to use parallel unpacking.
 
     Returns
     -------
@@ -56,14 +53,13 @@ def unpack(
         msg = f"bitorder must be 'big' or 'little', got {bitorder}"
         raise ValueError(msg)
     bitorder_str = "big" if bitorder[0] == "b" else "little"
-    parallel_str = "" if parallel else "_serial"
     bitfact = 8 // nbits
     if unpacked is None:
         unpacked = np.zeros(shape=array.size * bitfact, dtype=np.uint8)
     elif unpacked.size != array.size * bitfact:
         msg = f"Unpacking array must be {bitfact} x input size, got {unpacked.size}"
         raise ValueError(msg)
-    unpack_func = getattr(kernels, f"unpack{nbits:d}_8_{bitorder_str}{parallel_str}")
+    unpack_func = getattr(kernels, f"unpack{nbits:d}_8_{bitorder_str}")
     unpack_func(array, unpacked)
     return unpacked
 
@@ -74,7 +70,6 @@ def pack(
     packed: np.ndarray | None = None,
     *,
     bitorder: str = "big",
-    parallel: bool = False,
 ) -> np.ndarray:
     """Pack 1, 2 and 4-bit data into 8-bit numpy array.
 
@@ -88,8 +83,6 @@ def pack(
         Array to pack into.
     bitorder : str, optional
         Bit order in which to pack the data.
-    parallel : bool, optional
-        Whether to use parallel packing.
 
     Returns
     -------
@@ -114,14 +107,13 @@ def pack(
         msg = f"bitorder must be 'big' or 'little', got {bitorder}"
         raise ValueError(msg)
     bitorder_str = "big" if bitorder[0] == "b" else "little"
-    parallel_str = "" if parallel else "_serial"
     bitfact = 8 // nbits
     if packed is None:
         packed = np.zeros(shape=array.size // bitfact, dtype=np.uint8)
     elif packed.size != array.size // bitfact:
         msg = f"packing array must be input size // {bitfact}, got {packed.size}"
         raise ValueError(msg)
-    pack_func = getattr(kernels, f"pack{nbits:d}_8_{bitorder_str}{parallel_str}")
+    pack_func = getattr(kernels, f"pack{nbits:d}_8_{bitorder_str}")
     pack_func(array, packed)
     return packed
 

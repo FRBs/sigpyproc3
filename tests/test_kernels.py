@@ -26,11 +26,10 @@ def random_normal_1d_complex() -> np.ndarray:
     return re + 1j * im
 
 
-class TestPackUnpack:
+class TestKernelsPackUnpack:
     @pytest.mark.parametrize("nbits", [1, 2, 4])
     @pytest.mark.parametrize("bitorder", ["big", "little"])
-    @pytest.mark.parametrize("parallel", [False, True])
-    def test_unpack1_8(self, nbits: int, bitorder: str, parallel: bool) -> None:
+    def test_unpack(self, nbits: int, bitorder: str) -> None:
         input_arr = np.array([7, 23], dtype=np.uint8)
         if nbits == 1 and bitorder == "big":
             expected = np.array(
@@ -52,10 +51,9 @@ class TestPackUnpack:
             expected = np.array([7, 0, 7, 1], dtype=np.uint8)
         unpacked = np.empty_like(expected)
         bitorder_str = "big" if bitorder[0] == "b" else "little"
-        parallel_str = "" if parallel else "_serial"
         unpack_func = getattr(
             kernels,
-            f"unpack{nbits:d}_8_{bitorder_str}{parallel_str}",
+            f"unpack{nbits:d}_8_{bitorder_str}",
         )
         unpack_func(input_arr, unpacked)
         np.testing.assert_array_equal(unpacked, expected, strict=True)
@@ -64,13 +62,11 @@ class TestPackUnpack:
 
     @pytest.mark.parametrize("nbits", [1, 2, 4])
     @pytest.mark.parametrize("bitorder", ["big", "little"])
-    @pytest.mark.parametrize("parallel", [False, True])
-    def test_pack(self, nbits: int, bitorder: str, parallel: bool) -> None:
+    def test_pack(self, nbits: int, bitorder: str) -> None:
         rng = np.random.default_rng()
         arr = rng.integers(255, size=2**10, dtype=np.uint8)
-        parallel_str = "" if parallel else "_serial"
-        unpack_func = getattr(kernels, f"unpack{nbits:d}_8_{bitorder}{parallel_str}")
-        pack_func = getattr(kernels, f"pack{nbits:d}_8_{bitorder}{parallel_str}")
+        unpack_func = getattr(kernels, f"unpack{nbits:d}_8_{bitorder}")
+        pack_func = getattr(kernels, f"pack{nbits:d}_8_{bitorder}")
         unpacked = np.zeros(arr.size * 8 // nbits, dtype=np.uint8)
         unpack_func(arr, unpacked)
         packed = np.empty_like(arr)

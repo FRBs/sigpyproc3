@@ -7,45 +7,25 @@ from numba import njit, prange, types
 CONST_C_VAL = 299792458.0  # Speed of light in m/s (astropy.constants.c.value)
 
 
-def packunpack_njit(func: types.FunctionType) -> types.FunctionType:
-    return njit(
-        "void(u1[::1], u1[::1])",
-        cache=True,
-        parallel=True,
-        fastmath=True,
-        locals={"pos": types.i8},
-    )(func)
-
-
-def packunpack_njit_serial(func: types.FunctionType) -> types.FunctionType:
-    return njit(
-        "void(u1[::1], u1[::1])",
-        cache=True,
-        parallel=False,
-        fastmath=True,
-        locals={"pos": types.i8},
-    )(func)
-
-
-@packunpack_njit
+@njit("void(u1[::1], u1[::1])", cache=True, fastmath=True, locals={"pos": types.i8})
 def unpack1_8_big(array: np.ndarray, unpacked: np.ndarray) -> None:
-    for ii in prange(array.size):
+    for ii in range(array.size):
         pos = ii * 8
         for jj in range(8):
             unpacked[pos + (7 - jj)] = (array[ii] >> jj) & 1
 
 
-@packunpack_njit
+@njit("void(u1[::1], u1[::1])", cache=True, fastmath=True, locals={"pos": types.i8})
 def unpack1_8_little(array: np.ndarray, unpacked: np.ndarray) -> None:
-    for ii in prange(array.size):
+    for ii in range(array.size):
         pos = ii * 8
         for jj in range(8):
             unpacked[pos + jj] = (array[ii] >> jj) & 1
 
 
-@packunpack_njit
+@njit("void(u1[::1], u1[::1])", cache=True, fastmath=True, locals={"pos": types.i8})
 def unpack2_8_big(array: np.ndarray, unpacked: np.ndarray) -> None:
-    for ii in prange(array.size):
+    for ii in range(array.size):
         pos = ii * 4
         unpacked[pos + 3] = (array[ii] & 0x03) >> 0
         unpacked[pos + 2] = (array[ii] & 0x0C) >> 2
@@ -53,9 +33,9 @@ def unpack2_8_big(array: np.ndarray, unpacked: np.ndarray) -> None:
         unpacked[pos + 0] = (array[ii] & 0xC0) >> 6
 
 
-@packunpack_njit
+@njit("void(u1[::1], u1[::1])", cache=True, fastmath=True, locals={"pos": types.i8})
 def unpack2_8_little(array: np.ndarray, unpacked: np.ndarray) -> None:
-    for ii in prange(array.size):
+    for ii in range(array.size):
         pos = ii * 4
         unpacked[pos + 0] = (array[ii] & 0x03) >> 0
         unpacked[pos + 1] = (array[ii] & 0x0C) >> 2
@@ -63,25 +43,25 @@ def unpack2_8_little(array: np.ndarray, unpacked: np.ndarray) -> None:
         unpacked[pos + 3] = (array[ii] & 0xC0) >> 6
 
 
-@packunpack_njit
+@njit("void(u1[::1], u1[::1])", cache=True, fastmath=True, locals={"pos": types.i8})
 def unpack4_8_big(array: np.ndarray, unpacked: np.ndarray) -> None:
-    for ii in prange(array.size):
+    for ii in range(array.size):
         pos = ii * 2
         unpacked[pos + 1] = (array[ii] & 0x0F) >> 0
         unpacked[pos + 0] = (array[ii] & 0xF0) >> 4
 
 
-@packunpack_njit
+@njit("void(u1[::1], u1[::1])", cache=True, fastmath=True, locals={"pos": types.i8})
 def unpack4_8_little(array: np.ndarray, unpacked: np.ndarray) -> None:
-    for ii in prange(array.size):
+    for ii in range(array.size):
         pos = ii * 2
         unpacked[pos + 0] = (array[ii] & 0x0F) >> 0
         unpacked[pos + 1] = (array[ii] & 0xF0) >> 4
 
 
-@packunpack_njit
+@njit("void(u1[::1], u1[::1])", cache=True, fastmath=True)
 def pack1_8_big(array: np.ndarray, packed: np.ndarray) -> None:
-    for ii in prange(packed.size):
+    for ii in range(packed.size):
         pos = ii * 8
         packed[ii] = (
             (array[pos + 0] << 7)
@@ -95,9 +75,9 @@ def pack1_8_big(array: np.ndarray, packed: np.ndarray) -> None:
         )
 
 
-@packunpack_njit
+@njit("void(u1[::1], u1[::1])", cache=True, fastmath=True)
 def pack1_8_little(array: np.ndarray, packed: np.ndarray) -> None:
-    for ii in prange(packed.size):
+    for ii in range(packed.size):
         pos = ii * 8
         packed[ii] = (
             (array[pos + 7] << 7)
@@ -111,9 +91,40 @@ def pack1_8_little(array: np.ndarray, packed: np.ndarray) -> None:
         )
 
 
-@packunpack_njit
+@njit("void(u1[::1], u1[::1], b1)", cache=True, fastmath=True)
+def pack1_8_vect(
+    array: np.ndarray,
+    packed: np.ndarray,
+    *,
+    big_endian: bool = True,
+) -> None:
+    mask = types.uint64(0x0101010101010101)
+    magic = types.uint64(0x8040201008040201 if big_endian else 0x0102040810204080)
+    shift = 56
+
+    array_uint64 = array.view(np.uint64)
+    nwords = array_uint64.size
+    batch_size = 16
+    i = 0
+    while i < nwords - batch_size:
+        for j in range(batch_size):
+            x = array_uint64[i + j]
+            x &= mask
+            x *= magic
+            packed[i + j] = types.uint8(x >> shift)
+        i += batch_size
+
+    # Handle the remaining elements
+    for j in range(i, nwords):
+        x = array_uint64[j]
+        x &= mask
+        x *= magic
+        packed[j] = types.uint8(x >> shift)
+
+
+@njit("void(u1[::1], u1[::1])", cache=True, fastmath=True, locals={"pos": types.i8})
 def pack2_8_big(array: np.ndarray, packed: np.ndarray) -> None:
-    for ii in prange(packed.size):
+    for ii in range(packed.size):
         pos = ii * 4
         packed[ii] = (
             (array[pos + 0] << 6)
@@ -123,9 +134,9 @@ def pack2_8_big(array: np.ndarray, packed: np.ndarray) -> None:
         )
 
 
-@packunpack_njit
+@njit("void(u1[::1], u1[::1])", cache=True, fastmath=True, locals={"pos": types.i8})
 def pack2_8_little(array: np.ndarray, packed: np.ndarray) -> None:
-    for ii in prange(packed.size):
+    for ii in range(packed.size):
         pos = ii * 4
         packed[ii] = (
             (array[pos + 3] << 6)
@@ -135,32 +146,18 @@ def pack2_8_little(array: np.ndarray, packed: np.ndarray) -> None:
         )
 
 
-@packunpack_njit
+@njit("void(u1[::1], u1[::1])", cache=True, fastmath=True, locals={"pos": types.i8})
 def pack4_8_big(array: np.ndarray, packed: np.ndarray) -> None:
-    for ii in prange(packed.size):
+    for ii in range(packed.size):
         pos = ii * 2
         packed[ii] = (array[pos + 0] << 4) | array[pos + 1]
 
 
-@packunpack_njit
+@njit("void(u1[::1], u1[::1])", cache=True, fastmath=True, locals={"pos": types.i8})
 def pack4_8_little(array: np.ndarray, packed: np.ndarray) -> None:
-    for ii in prange(packed.size):
+    for ii in range(packed.size):
         pos = ii * 2
         packed[ii] = (array[pos + 1] << 4) | array[pos + 0]
-
-
-unpack1_8_big_serial = packunpack_njit_serial(unpack1_8_big.py_func)
-unpack1_8_little_serial = packunpack_njit_serial(unpack1_8_little.py_func)
-unpack2_8_big_serial = packunpack_njit_serial(unpack2_8_big.py_func)
-unpack2_8_little_serial = packunpack_njit_serial(unpack2_8_little.py_func)
-unpack4_8_big_serial = packunpack_njit_serial(unpack4_8_big.py_func)
-unpack4_8_little_serial = packunpack_njit_serial(unpack4_8_little.py_func)
-pack1_8_big_serial = packunpack_njit_serial(pack1_8_big.py_func)
-pack1_8_little_serial = packunpack_njit_serial(pack1_8_little.py_func)
-pack2_8_big_serial = packunpack_njit_serial(pack2_8_big.py_func)
-pack2_8_little_serial = packunpack_njit_serial(pack2_8_little.py_func)
-pack4_8_big_serial = packunpack_njit_serial(pack4_8_big.py_func)
-pack4_8_little_serial = packunpack_njit_serial(pack4_8_little.py_func)
 
 
 @njit(
