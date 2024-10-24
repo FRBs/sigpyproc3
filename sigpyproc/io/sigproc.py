@@ -51,6 +51,7 @@ telescope_ids = bidict(
         "LOFAR": 11,
         "VLA": 12,
         "CHIME": 20,
+        "MWA": 30,
         "MeerKAT": 64,
     },
 )
@@ -71,6 +72,9 @@ machine_ids = bidict(
         "COBALT": 11,
         "GMRTNEW": 14,
         "CHIME": 20,
+        "MWA-VCS": 30,
+        "MWAX-VCS": 31,
+        "MWAX-RTB": 32,
     },
 )
 
