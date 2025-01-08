@@ -1,19 +1,46 @@
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 _testdir = Path(__file__).resolve().parent
 _datadir = _testdir / "data"
 
 
-@pytest.fixture(scope="session")
-def tmpfile(tmp_path_factory: pytest.TempPathFactory, content: str = "") -> str:
-    fn = tmp_path_factory.mktemp("pytest_data") / "test.tmpfile"
-    fn.write_text(content)
-    return fn.as_posix()
+@pytest.fixture
+def tmpfile(
+    tmp_path_factory: pytest.TempPathFactory,
+    content: str = "",
+) -> Generator[str, None, None]:
+    temp_dir = tmp_path_factory.mktemp("pytest_data")
+    test_file = temp_dir / "test.tmpfile"
+    test_file.write_text(content)
+    yield test_file.as_posix()
+    if test_file.exists():
+        test_file.unlink()
+
+
+@pytest.fixture
+def tmpdir(tmp_path_factory: pytest.TempPathFactory) -> Generator[str, None, None]:
+    temp_dir = tmp_path_factory.mktemp("pytest_data")
+    yield temp_dir.as_posix()
+    if temp_dir.exists():
+        shutil.rmtree(temp_dir)
+
+
+@pytest.fixture
+def read_only_file(tmpfile: str) -> Generator[str, None, None]:
+    tmppath = Path(tmpfile)
+    tmppath.chmod(0o444)
+    yield tmppath.as_posix()
+    tmppath.chmod(0o666)
 
 
 @pytest.fixture(scope="session", autouse=True)

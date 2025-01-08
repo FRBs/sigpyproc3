@@ -2,6 +2,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from matplotlib import pyplot as plt
 
 from sigpyproc.core import rfi
 from sigpyproc.header import Header
@@ -24,6 +25,25 @@ class TestRFI:
 
 
 class TestRFIMask:
+    def test_init(self, filfile_8bit_1: str) -> None:
+        hdr = Header.from_sigproc(filfile_8bit_1)
+        chan_stats = np.arange(0, hdr.nchans)
+        threshold = 3
+        rfimask = rfi.RFIMask(
+            threshold,
+            hdr,
+            chan_stats,
+            chan_stats,
+            chan_stats,
+            chan_stats,
+            chan_stats,
+            chan_stats,
+        )
+        np.testing.assert_equal(rfimask.chan_mask.size, hdr.nchans)
+        np.testing.assert_equal(rfimask.user_mask.size, hdr.nchans)
+        np.testing.assert_equal(rfimask.stats_mask.size, hdr.nchans)
+        np.testing.assert_equal(rfimask.custom_mask.size, hdr.nchans)
+
     def test_from_file(self, maskfile: str) -> None:
         mask = rfi.RFIMask.from_file(maskfile)
         assert isinstance(mask.header, Header)
@@ -44,11 +64,13 @@ class TestRFIMask:
 
     def test_apply_mask(self, maskfile: str) -> None:
         mask = rfi.RFIMask.from_file(maskfile)
-        test_mask = np.ones(mask.header.nchans, dtype=bool)
-        mask.apply_mask(test_mask)
-        np.testing.assert_equal(mask.chan_mask, test_mask)
-        with pytest.raises(ValueError):
-            mask.apply_mask(np.zeros(mask.header.nchans - 1, dtype=bool))
+        freq_mask = [(1400.0, 1800.0), (3200.0, 3400.0)]
+        mask.apply_mask(freq_mask)
+        np.testing.assert_equal(mask.user_mask.sum(), 150)
+        mask1 = rfi.RFIMask.from_file(maskfile)
+        freq_mask = []
+        mask1.apply_mask(freq_mask)
+        np.testing.assert_equal(mask1.user_mask.sum(), 0)
 
     def test_apply_method(self, maskfile: str) -> None:
         mask = rfi.RFIMask.from_file(maskfile)
@@ -57,7 +79,7 @@ class TestRFIMask:
         mask.apply_method("iqrm")
         np.testing.assert_equal(len(mask.chan_mask), mask.header.nchans)
         with pytest.raises(ValueError):
-            mask.apply_method("invalid")
+            mask.apply_method("invalid")  # type: ignore[arg-type]
 
     def test_apply_function(self, maskfile: str) -> None:
         mask = rfi.RFIMask.from_file(maskfile)
@@ -65,3 +87,9 @@ class TestRFIMask:
         np.testing.assert_equal(len(mask.chan_mask), mask.header.nchans)
         with pytest.raises(TypeError):
             mask.apply_funcn("invalid")  # type: ignore[arg-type]
+
+    def test_plot(self, maskfile: str) -> None:
+        mask = rfi.RFIMask.from_file(maskfile)
+        fig = mask.plot()
+        assert fig is not None
+        assert isinstance(fig, plt.Figure)

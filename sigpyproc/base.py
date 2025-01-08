@@ -487,8 +487,8 @@ class Filterbank(ABC):
 
     def apply_channel_mask(
         self,
-        chanmask: np.ndarray,
-        maskvalue: float = 0,
+        chan_mask: np.ndarray,
+        mask_value: float = 0,
         outfile_name: str | None = None,
         gulp: int = 16384,
         start: int = 0,
@@ -499,10 +499,10 @@ class Filterbank(ABC):
 
         Parameters
         ----------
-        chanmask : :py:obj:`~numpy.typing.ArrayLike`
-            Boolean array of channel mask (1 or True for bad channel).
-        maskvalue : float, optional
-            Value to set the masked data to, by default 0.
+        chan_mask : ndarray
+            1D Boolean array of channel mask (1 or True for bad channels).
+        mask_value : float, optional
+            Value to replace masked channels with, by default 0.
         outfile_name : str, optional
             Name of the output filterbank file, by default ``basename_masked.fil``.
         gulp : int, optional
@@ -522,8 +522,8 @@ class Filterbank(ABC):
         if outfile_name is None:
             outfile_name = f"{self.header.basename}_masked.fil"
 
-        mask = np.array(chanmask).astype("bool")
-        maskvalue = np.float32(maskvalue).astype(self.header.dtype)
+        mask = np.array(chan_mask).astype("bool")
+        mask_value = np.float32(mask_value).astype(self.header.dtype)
         out_file = self.header.prep_outfile(outfile_name)
         for nsamps_r, _ii, data in self.read_plan(
             gulp=gulp,
@@ -531,7 +531,7 @@ class Filterbank(ABC):
             nsamps=nsamps,
             **plan_kwargs,
         ):
-            kernels.mask_channels(data, mask, maskvalue, self.header.nchans, nsamps_r)
+            kernels.mask_channels(data, mask, mask_value, self.header.nchans, nsamps_r)
             out_file.cwrite(data)
         return outfile_name
 
@@ -1159,26 +1159,29 @@ class Filterbank(ABC):
         self,
         method: MaskMethods = "mad",
         threshold: float = 3,
-        chanmask: np.ndarray | None = None,
+        freq_mask: list[tuple[float, float]] | None = None,
         custom_funcn: Callable[[np.ndarray], np.ndarray] | None = None,
+        mask_value: float | None = None,
         outfile_name: str | None = None,
         gulp: int = 16384,
         start: int = 0,
         nsamps: int | None = None,
         **plan_kwargs: Unpack[PlanKwargs],
     ) -> tuple[str, RFIMask]:
-        """Clean RFI from the data.
+        """Clean RFI from the filterbank data and write to a new file.
 
         Parameters
         ----------
         method : str, optional
             Method to use for cleaning ("mad", "iqrm"), by default "mad".
         threshold : float, optional
-            Threshold for cleaning, by default 3.
-        chanmask : :py:obj:`~numpy.typing.ArrayLike`, optional
-            User channel mask to use (1 or True for bad channels), by default None.
+            Sigma threshold for finding outliers, by default 3.
+        freq_mask : list[tuple[float, float]], optional
+            List of frequency ranges to mask, by default None.
         custom_funcn : :py:obj:`~typing.Callable`, optional
             Custom function to apply to the mask, by default None.
+        mask_value : float, optional
+            Value to replace masked channels with, by default median of channels mean.
         outfile_name : str, optional
             Output file name, by default None.
         gulp : int, optional
@@ -1200,8 +1203,6 @@ class Filterbank(ABC):
         ValueError
             If ``method`` is not "mad" or "iqrm".
         """
-        if chanmask is None:
-            chanmask = np.zeros(self.header.nchans, dtype="bool")
         if method not in {"mad", "iqrm"}:
             msg = f"Clean method must be 'mad' or 'iqrm', got {method}"
             raise ValueError(msg)
@@ -1224,16 +1225,18 @@ class Filterbank(ABC):
             self.chan_stats.maxima,
             self.chan_stats.minima,
         )
-        rfimask.apply_mask(chanmask)
+        if freq_mask is not None:
+            rfimask.apply_mask(freq_mask)
         rfimask.apply_method(method)
         if custom_funcn is not None:
             rfimask.apply_funcn(custom_funcn)
 
-        maskvalue = 0
+        if mask_value is None:
+            mask_value = np.median(self.chan_stats.mean[~rfimask.chan_mask])
         # Apply the channel mask
         out_file = self.apply_channel_mask(
             rfimask.chan_mask,
-            maskvalue,
+            mask_value,
             outfile_name=outfile_name,
             gulp=gulp,
             start=start,

@@ -1,8 +1,10 @@
 import logging
+from pathlib import Path
 
 import numpy as np
 import pytest
 from astropy.time import Time
+from matplotlib import pyplot as plt
 from rich.logging import RichHandler
 
 from sigpyproc import utils
@@ -52,6 +54,71 @@ class TestUtils:
         output = utils.time_after_nsamps(tstart, tsamp, nsamps)
         assert isinstance(output, Time)
         np.testing.assert_equal(output.mjd, tstart + nsamps * tsamp / 86400)
+
+    def test_gaussian(self) -> None:
+        x = np.linspace(-5, 5, 101)
+        result = utils.gaussian(x, mu=0, fwhm=1, amp=1)
+        assert isinstance(result, np.ndarray)
+        assert np.all(result >= 0)
+        max_idx = np.argmax(result)
+        np.testing.assert_equal(x[max_idx], 0)
+        np.testing.assert_equal(result.shape, x.shape)
+
+    def test_pad_centre(self) -> None:
+        array = np.array([1, 2, 3])
+        padded_array = utils.pad_centre(array, 7)
+        np.testing.assert_equal(padded_array, np.array([0, 0, 1, 2, 3, 0, 0]))
+        padded_array = utils.pad_centre(array, 3)
+        np.testing.assert_equal(padded_array, array)
+
+        with pytest.raises(ValueError):
+            utils.pad_centre(array, 2)
+
+    def test_pad_centre_cases(self) -> None:
+        array = np.array([1, 2])
+        padded_array = utils.pad_centre(array, 4)
+        np.testing.assert_equal(padded_array, np.array([0, 1, 2, 0]))
+        padded_array = utils.pad_centre(array, 5)
+        np.testing.assert_equal(padded_array, np.array([0, 0, 1, 2, 0]))
+
+
+class TestPaths:
+    def test_basic_file_validation(self, tmpfile: str) -> None:
+        with pytest.raises(ValueError):
+            utils.validate_path(tmpfile, file_okay=False, dir_okay=False)
+        with pytest.raises(NotADirectoryError):
+            utils.validate_path(tmpfile, file_okay=False, dir_okay=True)
+        assert utils.validate_path(tmpfile) == Path(tmpfile).resolve()
+
+    def test_basic_dir_validation(self, tmpdir: str) -> None:
+        with pytest.raises(IsADirectoryError):
+            utils.validate_path(tmpdir)
+        assert utils.validate_path(tmpdir, dir_okay=True) == Path(tmpdir).resolve()
+
+    def test_permission_validation(self, read_only_file: str) -> None:
+        assert utils.validate_path(read_only_file) == Path(read_only_file).resolve()
+        with pytest.raises(PermissionError) as exc_info:
+            utils.validate_path(read_only_file, writable=True)
+        assert "write permission" in str(exc_info.value)
+
+    def test_read_permission(self, tmpfile: str) -> None:
+        path = Path(tmpfile)
+        # Remove read permissions
+        path.chmod(0o222)  # write-only permissions
+        with pytest.raises(PermissionError) as exc_info:
+            utils.validate_path(path, readable=True, writable=False)
+        assert "read permission" in str(exc_info.value)
+        path.chmod(0o666)
+
+    def test_non_existent_path(self) -> None:
+        with pytest.raises(FileNotFoundError):
+            utils.validate_path("non_existent.txt")
+
+    def test_resolve_path_option(self, tmpfile: str) -> None:
+        assert utils.validate_path(tmpfile, resolve_path=False) == Path(tmpfile)
+        assert (
+            utils.validate_path(tmpfile, resolve_path=True) == Path(tmpfile).resolve()
+        )
 
 
 class TestLogger:
@@ -106,3 +173,15 @@ class TestFrequencyChannels:
         arr = [1, 2, 4, 7]
         with np.testing.assert_raises(ValueError):
             utils.FrequencyChannels(arr)  # type: ignore[arg-type]
+
+
+class TestPlots:
+    def test_plot_tables(self) -> None:
+        table = utils.PlotTable()
+        table.add_entry("test", 1, "s")
+        table.skip_line()
+        fig, ax = plt.subplots()
+        table.plot(ax)
+        assert not ax.axison
+        assert len(ax.texts) == 3
+        plt.close(fig)

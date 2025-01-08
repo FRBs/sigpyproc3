@@ -3,21 +3,23 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 import attrs
 import numpy as np
 from astropy import units
+from astropy.stats import gaussian_fwhm_to_sigma
 from astropy.time import Time, TimeDelta
 from rich.logging import RichHandler
 
 if TYPE_CHECKING:
     import inspect
 
+    from matplotlib import pyplot as plt
+
 
 def detect_file_type(filename: str | Path) -> str:
-    """
-    Detect file type based on file extension.
+    """Detect file type based on file extension.
 
     Supported extensions:
 
@@ -35,7 +37,7 @@ def detect_file_type(filename: str | Path) -> str:
     str
         File type name.
     """
-    filename = Path(filename)
+    filename = validate_path(filename, exists=False)
     ext = filename.suffix.lower()
     if ext == ".fil":
         return "sigproc"
@@ -134,18 +136,32 @@ def get_logger(
         )
         handler.setFormatter(formatter)
         logger.addHandler(handler)
-    if log_file and not any(
-        isinstance(hndlr, logging.FileHandler)
-        and hndlr.baseFilename == Path(log_file).resolve().as_posix()
-        for hndlr in logger.handlers
-    ):
-        file_handler = logging.FileHandler(Path(log_file).resolve().as_posix())
-        file_handler.setFormatter(formatter)
-        logger.addHandler(file_handler)
+    if log_file:
+        log_path = validate_path(log_file, writable=True)
+        if not any(
+            isinstance(hndlr, logging.FileHandler)
+            and hndlr.baseFilename == log_path.as_posix()
+            for hndlr in logger.handlers
+        ):
+            file_handler = logging.FileHandler(log_path)
+            file_handler.setFormatter(formatter)
+            logger.addHandler(file_handler)
     return logger
 
 
 def get_callerfunc(stack: list[inspect.FrameInfo]) -> str:
+    """Get the name of the function that called the current function.
+
+    Parameters
+    ----------
+    stack : list[inspect.FrameInfo]
+        Stack trace from `inspect.stack()`.
+
+    Returns
+    -------
+    str
+        Name of the calling function.
+    """
     for i in range(len(stack)):
         if stack[i].function == "<module>":
             return stack[i - 1].function
@@ -270,6 +286,69 @@ def validate_path(
                 msg = f"Path {path} lacks {' and '.join(perms)} permission(s)."
                 raise PermissionError(msg)
     return path
+
+
+def gaussian(x: np.ndarray, mu: float, fwhm: float, amp: float = 1.0) -> np.ndarray:
+    """Generate a Gaussian profile.
+
+    Parameters
+    ----------
+    x : ndarray
+        Array of x values.
+    mu : float
+        Mean of the Gaussian.
+    fwhm : float
+        Full width at half maximum.
+    amp : float, optional
+        Amplitude of the Gaussian, by default 1.0.
+
+    Returns
+    -------
+    ndarray
+        Gaussian profile.
+    """
+    x_arr = np.asarray(x)
+    sigma = gaussian_fwhm_to_sigma * fwhm
+    prof = (
+        1
+        / np.sqrt(2 * np.pi * sigma**2)
+        * np.exp(-((x_arr - mu) ** 2) / (2 * sigma**2))
+    )
+    return amp * prof
+
+
+def pad_centre(array: np.ndarray, target_length: int) -> np.ndarray:
+    """Pad an array with zeros up to the target_length.
+
+    Parameters
+    ----------
+    array : np.ndarray
+        N-D numpy array to pad
+    target_length : int
+        Target length along last axis
+
+    Returns
+    -------
+    np.ndarray
+        Padded array
+
+    Raises
+    ------
+    ValueError
+        If target_length is less than the last axis length of the array
+    """
+    current_length = array.shape[-1]
+    if target_length < current_length:
+        msg = "Target length must be greater than or equal to current length"
+        raise ValueError(msg)
+
+    pad_size = target_length - current_length
+    pad_width = ((pad_size + 1) // 2, pad_size // 2)
+    return np.pad(
+        array,
+        pad_width=(pad_width, *[(0, 0)] * (array.ndim - 1)),
+        mode="constant",
+    )
 
 
 @attrs.define(auto_attribs=True, slots=True, frozen=True)
@@ -439,3 +518,93 @@ class FrequencyChannels:
         fch1 = fcenter - 0.5 * foff * (nchans - 1)
         array = np.arange(nchans, dtype=np.float64) * foff + fch1
         return cls(array)
+
+
+@attrs.define(auto_attribs=True, slots=True, frozen=True)
+class TableEntry:
+    """Single entry in the PlotTable with optional unit."""
+
+    name: str = attrs.field(converter=str)
+    value: str = attrs.field(converter=str)
+    unit: str = attrs.field(converter=str, default="")
+    color: str = attrs.field(default="black")
+
+
+class PlotTable:
+    """A class to plot text tables in matplotlib using relative positions.
+
+    Parameters
+    ----------
+    col_offsets : dict[str, float] | None, optional
+        Dictionary of column names to x-positions (0-1), by default None.
+    top_margin : float | None, optional
+        Top margin as a fraction of the axis height, by default None.
+    line_height : float | None, optional
+        Height of each line as a fraction of the axis height, by default None.
+    font_size : int | None, optional
+        Font size, by default None.
+    font_family : str | None, optional
+        Font family, by default monospace.
+    """
+
+    DEFAULTS: ClassVar[dict] = {
+        "col_offsets": {
+            "name": 0.4,
+            "value": 0.8,
+            "unit": 0.85,
+        },
+        "top_margin": 0.05,
+        "line_height": 0.05,
+        "font_size": 12,
+        "font_family": "monospace",
+    }
+
+    def __init__(
+        self,
+        col_offsets: dict[str, float] | None = None,
+        top_margin: float | None = None,
+        line_height: float | None = None,
+        font_size: int | None = None,
+        font_family: str | None = None,
+    ) -> None:
+        self.col_offsets = col_offsets or self.DEFAULTS["col_offsets"]
+        self.top_margin = top_margin or self.DEFAULTS["top_margin"]
+        self.line_height = line_height or self.DEFAULTS["line_height"]
+        self.font_size = font_size or self.DEFAULTS["font_size"]
+        self.font_family = font_family or self.DEFAULTS["font_family"]
+
+        self.entries: list[TableEntry | None] = []
+
+    def add_entry(
+        self,
+        name: str,
+        value: str | float,
+        unit: str = "",
+        color: str = "black",
+    ) -> None:
+        """Add an entry to the table."""
+        self.entries.append(TableEntry(name, str(value), unit, color))
+
+    def skip_line(self) -> None:
+        """Add a blank line to the table."""
+        self.entries.append(None)
+
+    def plot(self, ax: plt.Axes) -> None:
+        """Plot the table on the given axis."""
+        ax.axis("off")
+        y = 1.0 - self.top_margin
+        for entry in self.entries:
+            if entry is not None:
+                for col, x in self.col_offsets.items():
+                    ax.text(
+                        x,
+                        y,
+                        getattr(entry, col),
+                        ha="right" if col != "unit" else "left",
+                        va="center",
+                        transform=ax.transAxes,
+                        family=self.font_family,
+                        size=self.font_size,
+                        color=entry.color,
+                    )
+            y -= self.line_height

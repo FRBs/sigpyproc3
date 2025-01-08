@@ -99,7 +99,10 @@ def pack1_8_vect(
     big_endian: bool = True,
 ) -> None:
     mask = types.uint64(0x0101010101010101)
-    magic = types.uint64(0x8040201008040201 if big_endian else 0x0102040810204080)
+    if big_endian:
+        magic = types.uint64(0x8040201008040201)
+    else:
+        magic = types.uint64(0x0102040810204080)
     shift = 56
 
     array_uint64 = array.view(np.uint64)
@@ -172,8 +175,7 @@ def pack4_8_little(array: np.ndarray, packed: np.ndarray) -> None:
     locals={"temp": types.f8},
 )
 def downsample_1d(array: np.ndarray, factor: int) -> np.ndarray:
-    """
-    Downsample a 1D array by averaging over bins.
+    """Downsample a 1D array by averaging over bins.
 
     Parameters
     ----------
@@ -224,8 +226,7 @@ def downsample_2d(
     dim1: int,
     dim2: int,
 ) -> np.ndarray:
-    """
-    Downsample a flattened 2D array by averaging over bins in both dimensions.
+    """Downsample a flattened 2D array by averaging over bins in both dimensions.
 
     Parameters
     ----------
@@ -464,6 +465,23 @@ def remove_zerodm(
     nchans: int,
     nsamps: int,
 ) -> None:
+    """Remove zero DM from an input array.
+
+    Parameters
+    ----------
+    inarray : np.ndarray
+        Input 2D flattened array to remove zero DM from.
+    outarray : np.ndarray
+        Output 2D flattened array with zero DM removed.
+    bpass : np.ndarray
+        Bandpass to be added back to the data.
+    chanwts : np.ndarray
+        Weights for each frequency channel.
+    nchans : int
+        Number of frequency channels in the 2D data.
+    nsamps : int
+        Number of samples in the 2D data.
+    """
     for isamp in prange(nsamps):
         zerodm = 0
         for ichan in range(nchans):
@@ -836,8 +854,7 @@ def convolve_templates(
 
 @njit(cache=True, fastmath=True)
 def nb_fft_good_size(n: int, real: bool = False) -> int:  # noqa: FBT001, FBT002
-    """
-    Get the good size for FFT.
+    """Get the good size for FFT.
 
     Parameters
     ----------
@@ -857,6 +874,20 @@ def nb_fft_good_size(n: int, real: bool = False) -> int:  # noqa: FBT001, FBT002
 
 @njit(cache=True, fastmath=True)
 def nb_rfft(arr: np.ndarray, n: int | None = None) -> np.ndarray:
+    """Compute the 1D FFT of a real array.
+
+    Parameters
+    ----------
+    arr : np.ndarray
+        Input array (real).
+    n : int | None, optional
+        Length of the FFT, by default None
+
+    Returns
+    -------
+    np.ndarray
+        Real part of the FFT.
+    """
     return np.fft.rfft(arr, n)
 
 
@@ -866,14 +897,18 @@ def nb_irfft(arr: np.ndarray, n: int | None = None) -> np.ndarray:
 
 
 @njit(cache=True, fastmath=True)
+def nb_fft(arr: np.ndarray, n: int | None = None) -> np.ndarray:
+    return np.fft.fft(arr, n)
+
+
+@njit(cache=True, fastmath=True)
 def nb_ifft(arr: np.ndarray, n: int | None = None) -> np.ndarray:
     return np.fft.ifft(arr, n)
 
 
 @njit(cache=True, fastmath=True)
 def fftconvolve(in1: np.ndarray, in2: np.ndarray) -> np.ndarray:
-    """
-    Convolve two 1D arrays using FFT in mode "full".
+    """Convolve two 1D arrays using FFT in mode "full".
 
     Parameters
     ----------
@@ -918,8 +953,7 @@ def circular_pad_goodsize(arr: np.ndarray) -> np.ndarray:
 
 @njit(cache=True, fastmath=True)
 def normalize_template(arr: np.ndarray) -> np.ndarray:
-    """
-    Normalize the template to have zero mean and unit power.
+    """Normalize the template to have zero mean and unit power.
 
     Parameters
     ----------
@@ -969,8 +1003,7 @@ def nb_roll(
 
 @njit(cache=True, fastmath=True)
 def roll_block(arr: np.ndarray, shifts: np.ndarray) -> np.ndarray:
-    """
-    Roll the 2D array along the second axis by the specified shifts.
+    """Roll the 2D array along the second axis by the specified shifts.
 
     Parameters
     ----------
@@ -1001,7 +1034,7 @@ def roll_block(arr: np.ndarray, shifts: np.ndarray) -> np.ndarray:
 
 @njit(cache=True, fastmath=True)
 def dmt_block(arr: np.ndarray, dm_delays: np.ndarray) -> np.ndarray:
-    if arr.ndim != 2 and dm_delays.ndim != 2:
+    if arr.ndim != 2 or dm_delays.ndim != 2:
         msg = "Input array and delays must be 2D."
         raise ValueError(msg)
     if arr.shape[0] != dm_delays.shape[1]:
@@ -1017,8 +1050,7 @@ def dmt_block(arr: np.ndarray, dm_delays: np.ndarray) -> np.ndarray:
 
 @njit(cache=True, fastmath=True)
 def roll_block_valid(arr: np.ndarray, shifts: np.ndarray) -> np.ndarray:
-    """
-    Roll the 2D array along the second axis by the specified shifts.
+    """Roll the 2D array along the second axis amd keep valid region.
 
     Parameters
     ----------
@@ -1035,24 +1067,29 @@ def roll_block_valid(arr: np.ndarray, shifts: np.ndarray) -> np.ndarray:
     if arr.ndim != 2:
         msg = "Input array must be 2D."
         raise ValueError(msg)
+    if len(shifts) != arr.shape[0]:
+        msg = "Number of shifts must be equal to the number of rows."
+        raise ValueError(msg)
     nrows, ncols = arr.shape
-    valid_samps = ncols - shifts.max()
+    valid_samps = ncols - np.abs(shifts).max()
     if valid_samps < 0:
         msg = "Insufficient time samples to dedisperse."
         raise ValueError(msg)
     res = np.empty((nrows, valid_samps), dtype=arr.dtype)
-    for irow in range(nrows):
-        shift = shifts[irow]
-        if shift < 0:
-            res[irow] = arr[irow, -shift : valid_samps - shift]
-        else:
-            res[irow] = arr[irow, shift : valid_samps + shift]
+    if np.any(shifts > 0):
+        for irow in range(nrows):
+            res[irow] = arr[irow, shifts[irow] : valid_samps + shifts[irow]]
+    else:
+        for irow in range(nrows):
+            end = ncols + shifts[irow]
+            start = end - valid_samps
+            res[irow] = arr[irow, start:end]
     return res
 
 
 @njit(cache=True, fastmath=True)
 def dmt_block_valid(arr: np.ndarray, dm_delays: np.ndarray) -> np.ndarray:
-    if arr.ndim != 2 and dm_delays.ndim != 2:
+    if arr.ndim != 2 or dm_delays.ndim != 2:
         msg = "Input array and delays must be 2D."
         raise ValueError(msg)
     if arr.shape[0] != dm_delays.shape[1]:
@@ -1078,8 +1115,7 @@ def simulate_ism(
     tau_nus: np.ndarray,
     over_sampling: int,
 ) -> np.ndarray:
-    """
-    Convolve the input signal with the ISM effects.
+    """Convolve the input signal with the ISM effects.
 
     Parameters
     ----------
