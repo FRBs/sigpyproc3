@@ -309,12 +309,9 @@ def gaussian(x: np.ndarray, mu: float, fwhm: float, amp: float = 1.0) -> np.ndar
     """
     x_arr = np.asarray(x)
     sigma = gaussian_fwhm_to_sigma * fwhm
-    prof = (
-        1
-        / np.sqrt(2 * np.pi * sigma**2)
-        * np.exp(-((x_arr - mu) ** 2) / (2 * sigma**2))
-    )
-    return amp * prof
+    factor = 1 / (sigma * (2 * np.pi) ** 0.5)
+    prof = np.exp(-((x_arr - mu) ** 2) / (2 * sigma**2))
+    return amp * factor * prof
 
 
 def pad_centre(array: np.ndarray, target_length: int) -> np.ndarray:
@@ -488,7 +485,7 @@ class FrequencyChannels:
         FrequencyChannels
             FrequencyChannels object.
         """
-        array = np.arange(nchans, dtype=np.float64) * foff + fch1
+        array = np.arange(nchans, dtype=np.float32) * foff + fch1
         return cls(array)
 
     @classmethod
@@ -516,7 +513,7 @@ class FrequencyChannels:
         """
         foff = bandwidth / nchans
         fch1 = fcenter - 0.5 * foff * (nchans - 1)
-        array = np.arange(nchans, dtype=np.float64) * foff + fch1
+        array = np.arange(nchans, dtype=np.float32) * foff + fch1
         return cls(array)
 
 

@@ -1107,13 +1107,54 @@ def dmt_block_valid(arr: np.ndarray, dm_delays: np.ndarray) -> np.ndarray:
     return res
 
 
+@njit(cache=True, fastmath=True)
+def disperse_block(
+    arr: np.ndarray,
+    shifts: np.ndarray,
+    nsamps_out: int = 1,
+    tfactor: int = 1,
+) -> np.ndarray:
+    """Roll the 2D array along the second axis.
+
+    Parameters
+    ----------
+    arr : np.ndarray
+        Input 2D array.
+    shifts : np.ndarray
+        Array of shifts for each row.
+    nsamps_out : int, optional
+        Desired minimum number of samples in the output, by default 1.
+    tfactor : int, optional
+        Time factor to decimate the output, by default 1.
+
+    Returns
+    -------
+    np.ndarray
+        Dispersed 2D array.
+    """
+    if arr.ndim != 2:
+        msg = "Input array must be 2D."
+        raise ValueError(msg)
+    if len(shifts) != arr.shape[0]:
+        msg = "Number of shifts must be equal to the number of rows."
+        raise ValueError(msg)
+    nrows, ncols = arr.shape
+    valid_samps = max(2 * (ncols + np.abs(shifts).max()), nsamps_out)
+    res = np.zeros((nrows, valid_samps), dtype=arr.dtype)
+    start = valid_samps // 2 - ncols // 2
+    end = start + ncols
+    for irow in range(nrows):
+        res[irow, start + shifts[irow] : end + shifts[irow]] = arr[irow]
+    return res
+
+
 @njit(cache=True, fastmath=True, parallel=True)
 def simulate_ism(
     signal: np.ndarray,
     spectrum: np.ndarray,
     dm_smear: np.ndarray,
     tau_nus: np.ndarray,
-    over_sampling: int,
+    over_sampling: int = 1,
 ) -> np.ndarray:
     """Convolve the input signal with the ISM effects.
 
@@ -1127,8 +1168,8 @@ def simulate_ism(
         DM smearing (in samples) for each frequency channel.
     tau_nus : np.ndarray
         Scattering timescale (in samples) for each frequency channel.
-    over_sampling : int
-        Oversampling factor for higher time resolution.
+    over_sampling : int, optional
+        Oversampling factor for higher time resolution, by default 1.
 
     Returns
     -------
@@ -1143,21 +1184,19 @@ def simulate_ism(
     - Apply scattering via convolution with an exponential decay function.
     - Normalize the scattering kernel to maintain the signal area.
     """
+    nsamps_pure = len(signal)
     nchans = len(spectrum)
-    over_sampling = max(over_sampling, 1)
-
     nsamps_smear = int(max(over_sampling, np.ceil(dm_smear.max())))
     nsamps_scat = int(max(over_sampling, np.ceil(int(6 * tau_nus.max()))))
+    max_len = nsamps_pure + nsamps_smear + nsamps_scat - 2
+    final_arr = np.zeros((nchans, max_len), dtype=signal.dtype)
 
     x_scat = np.arange(nsamps_scat, dtype=signal.dtype)
     do_smear = dm_smear.max() > 0
     do_scatter = tau_nus.max() > 0
-    max_len = len(signal) + nsamps_smear + nsamps_scat - 2
-    final_arr = np.zeros((nchans, max_len), dtype=signal.dtype)
 
     for ichan in prange(nchans):
         chan_data = signal * spectrum[ichan]
-
         # Apply dm smearing
         if do_smear:
             dm_smear_samps = int(max(1, np.ceil(dm_smear[ichan])))
@@ -1165,12 +1204,10 @@ def simulate_ism(
             dm_smear_prof[:dm_smear_samps] = 1
             dm_smear_prof /= dm_smear_prof.sum()
             chan_data = fftconvolve(chan_data, dm_smear_prof)
-
         # Apply scattering
         if do_scatter:
             scat_prof = np.exp(-x_scat / tau_nus[ichan])
             scat_prof /= scat_prof.sum()
             chan_data = fftconvolve(chan_data, scat_prof)
-
         final_arr[ichan] = chan_data[:max_len]
     return final_arr

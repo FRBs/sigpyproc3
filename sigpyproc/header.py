@@ -217,7 +217,7 @@ class Header:
         ndarray
             Channel center frequencies.
         """
-        return np.arange(self.nchans, dtype=np.float64) * self.foff + self.fch1
+        return np.arange(self.nchans, dtype=np.float32) * self.foff + self.fch1
 
     @property
     def fmax(self) -> float:

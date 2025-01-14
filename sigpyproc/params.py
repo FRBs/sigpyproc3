@@ -84,7 +84,7 @@ def compute_dmsmearing(
         If dm is a scalar, returns a 1D array of smearing. If dm is an array,
         returns a 2D array with shape ``(len(dm), len(freqs))``.
     """
-    dm = np.atleast_1d(dm)[:, np.newaxis]
+    dm = np.atleast_1d(dm)[:, np.newaxis].astype(np.float32)
     foff = np.abs(freqs[1] - freqs[0])
     smearing = 2 * DM_CONSTANT_LK * foff * dm / freqs**3
     if in_samples:

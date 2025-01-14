@@ -13,3 +13,13 @@ ScaleMethods = Literal[
     "gapper",
 ]
 MaskMethods = Literal["iqrm", "mad"]
+SpecSimulMethods = Literal[
+    "flat",
+    "power_law",
+    "smooth_envelope",
+    "gaussian",
+    "polynomial_peaks",
+    "scintillation",
+    "gaussian_blobs",
+    "random",
+]
