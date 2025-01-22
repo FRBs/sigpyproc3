@@ -15,7 +15,7 @@ from sigpyproc.core.stats import (
 )
 
 if TYPE_CHECKING:
-    from sigpyproc.core.types import LocMethods, ScaleMethods
+    from sigpyproc.core.custom_types import LocMethods, ScaleMethods
 
 
 class MatchedFilter:
@@ -266,7 +266,9 @@ class MatchedFilter:
             f"Best width: {self.best_temp.width:.2f}, "
             f"SNR: {self.snr:.2f})"
         )
-        stats_box = f"loc: {self.zscores.loc:.2f}, scale: {self.zscores.scale:.2f}"
+        stats_box = (
+            f"loc: {self.zscores.loc[0]:.2f}, scale: {self.zscores.scale[0]:.2f}"
+        )
         fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
         ax.plot(self.data, label="Data", lw=2)
         ax.plot(self.best_model, label="Best Model", lw=2)

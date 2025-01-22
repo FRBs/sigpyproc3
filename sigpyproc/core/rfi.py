@@ -14,7 +14,7 @@ from sigpyproc.utils import PlotTable
 if TYPE_CHECKING:
     from typing import Callable
 
-    from sigpyproc.core.types import MaskMethods
+    from sigpyproc.core.custom_types import MaskMethods
 
 
 def double_mad_mask(array: np.ndarray, threshold: float = 3) -> np.ndarray:

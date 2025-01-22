@@ -68,7 +68,7 @@ class TestTimeSeries:
         np.testing.assert_equal(tim_decimated_1.data, tim.data)
         with pytest.raises(ValueError):
             tim.downsample(factor=0)
-        with pytest.raises(TypeError):
+        with pytest.raises(ValueError):
             tim.downsample(factor=1.5) # type: ignore[arg-type]
 
     def test_pad(self, tim_data: np.ndarray, tim_header: dict) -> None:

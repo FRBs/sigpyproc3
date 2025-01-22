@@ -19,7 +19,7 @@ from sigpyproc.header import Header
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from sigpyproc.core.types import SpecSimulMethods
+    from sigpyproc.core.custom_types import SpecSimulMethods
 
 logger = logging.getLogger(__name__)
 

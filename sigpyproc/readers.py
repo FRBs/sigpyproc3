@@ -19,7 +19,7 @@ from sigpyproc.utils import get_callerfunc, get_logger
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
 
-    from sigpyproc.core.types import LocMethods
+    from sigpyproc.core.custom_types import LocMethods
     from sigpyproc.io.bits import BitsInfo
 
 logger = get_logger(__name__)
@@ -42,8 +42,8 @@ class FilReader(Filterbank):
 
     Notes
     -----
-    To be considered as a Sigproc format filterbank file the header must only
-    contain keywords found in the :py:obj:`~sigpyproc.io.sigproc.header_keys` dictionary.
+    To be considered as a Sigproc format filterbank file the header must only contain
+    keywords found in the :py:obj:`~sigpyproc.io.sigproc.header_keys` dictionary.
     """
 
     def __init__(
@@ -300,7 +300,7 @@ class PFITSReader(Filterbank):
         )
         return FilterbankBlock(data_block, new_header)
 
-    def read_dedisp_block(self, start: int, nsamps: int, dm: float) -> FilterbankBlock:  # noqa: ARG002
+    def read_dedisp_block(self, start: int, nsamps: int, dm: float) -> FilterbankBlock:
         msg = "Not implemented for PFITSReader"
         raise NotImplementedError(msg)
 

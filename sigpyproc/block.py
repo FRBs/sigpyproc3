@@ -5,13 +5,14 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from numpy import typing as npt
+from typing_extensions import Self
 
-from sigpyproc.core import kernels
+from sigpyproc.core import kernels, stats
 from sigpyproc.header import Header
 from sigpyproc.timeseries import TimeSeries
 
 if TYPE_CHECKING:
-    from sigpyproc.core.types import LocMethods
+    from sigpyproc.core.custom_types import FilterMethods, LocMethods, ScaleMethods
 
 
 class BaseBlock(ABC):
@@ -72,45 +73,37 @@ class BaseBlock(ABC):
     def normalise(
         self,
         loc_method: LocMethods = "mean",
+        scale_method: ScaleMethods = "std",
         axis: int | None = 1,
-    ) -> BaseBlock:
-        """Normalise the data block.
+    ) -> Self:
+        """Normalise/standardise the data block.
 
-        Normalisation is done by subtracting the mean/median of the data,
-        and dividing by the standard deviation.
+        Normalisation is performed by subtracting the loc estimate,
+        and dividing by the scale estimate along the given axis.
 
         Parameters
         ----------
         loc_method : {"mean", "median"}, optional
             Method to estimate location to subtract, by default "mean".
+        scale_method : {"std", "iqr", "mad"}, optional
+            Method to estimate scale to divide by, by default "std".
         axis : int, optional
-            Axis to perform normalisation on, by default 1.
+            Axis along which to perform normalisation, by default 1.
 
         Returns
         -------
         BaseBlock
             Normalised data block.
-
-        Raises
-        ------
-        ValueError
-            if ``loc_method`` is not "mean" or "median".
         """
-        if loc_method not in {"mean", "median"}:
-            msg = f"loc_method must be 'mean' or 'median', got {loc_method}"
-            raise ValueError(msg)
-        np_op = getattr(np, loc_method)
-        norm_block = self.data - np_op(self.data, axis=axis, keepdims=True)
-        data_std = np.std(norm_block, axis=axis, keepdims=True)
-        norm_block /= np.where(np.isclose(data_std, 0, atol=1e-4), 1, data_std)
-        return self.__class__(norm_block, self.header.new_header())
+        zscore_re = stats.estimate_zscore(self.data, loc_method, scale_method, axis)
+        return self.__class__(zscore_re.data, self.header.new_header())
 
     def pad_samples(
         self,
         nsamps_final: int,
         offset: int,
         pad_mode: LocMethods = "median",
-    ) -> BaseBlock:
+    ) -> Self:
         """Pad the data block with the given mode.
 
         Parameters
@@ -124,7 +117,7 @@ class BaseBlock(ABC):
 
         Returns
         -------
-        FilterbankBlock
+        BaseBlock
             Padded data block.
 
         Raises
@@ -212,46 +205,29 @@ class FilterbankBlock(BaseBlock):
         """Plot the data block."""
         raise NotImplementedError
 
-    def downsample(self, tfactor: int = 1, ffactor: int = 1) -> FilterbankBlock:
+    def downsample(
+        self,
+        ffactor: int = 1,
+        tfactor: int = 1,
+        filter_method: FilterMethods = "mean",
+    ) -> FilterbankBlock:
         """Downsample data block in frequency and/or time.
 
         Parameters
         ----------
-        tfactor : int, optional
-            Factor by which to downsample in time, by default 1.
         ffactor : int, optional
             Factor by which to downsample in frequency, by default 1.
+        tfactor : int, optional
+            Factor by which to downsample in time, by default 1.
+        filter_method : {"mean", "median"}, optional
+            Method to downsample, by default 'mean'.
 
         Returns
         -------
         FilterbankBlock
             Downsampled data block.
-
-        Raises
-        ------
-        ValueError
-            If number of channels is not divisible by ``ffactor``.
-        ValueError
-            If number of time samples is not divisible by ``tfactor``.
         """
-        if self.data.shape[0] % ffactor != 0:
-            msg = f"Bad frequency factor given: {ffactor}"
-            raise ValueError(msg)
-        if self.data.shape[1] % tfactor != 0:
-            msg = f"Bad time factor given: {tfactor}"
-            raise ValueError(msg)
-        ar = self.data.transpose().ravel().copy()
-        new_ar = kernels.downsample_2d(
-            ar,
-            tfactor,
-            ffactor,
-            self.data.shape[0],
-            self.data.shape[1],
-        )
-        new_ar = new_ar.reshape(
-            self.data.shape[1] // tfactor,
-            self.data.shape[0] // ffactor,
-        ).transpose()
+        new_ar = stats.downsample_2d(self.data, (ffactor, tfactor), filter_method)
         changes = {
             "tsamp": self.header.tsamp * tfactor,
             "foff": self.header.foff * ffactor,

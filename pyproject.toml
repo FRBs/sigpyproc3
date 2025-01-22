@@ -91,7 +91,7 @@ indent-style = "space"
 
 [tool.ruff.lint]
 select = ["ALL"]
-ignore = ["D1", "D301", "ANN1", "PLR2004", "G004"]
+ignore = ["D1", "D301", "PLR2004", "G004"]
 
 [tool.ruff.lint.pylint]
 max-args = 15
@@ -110,7 +110,7 @@ testpaths = "tests"
 source = ["./sigpyproc/"]
 
 [tool.coverage.run]
-omit = ["tests/*", "docs/*", "*__init__.py"]
+omit = ["tests/*", "docs/*", "*__init__.py", "*_types.py"]
 
 [tool.coverage.report]
 show_missing = true

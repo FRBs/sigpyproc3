@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from typing_extensions import Buffer, TypedDict, Unpack
 
     from sigpyproc.block import FilterbankBlock
-    from sigpyproc.core.types import MaskMethods
+    from sigpyproc.core.custom_types import MaskMethods
     from sigpyproc.header import Header
 
     class PlanKwargs(TypedDict, total=False):
@@ -596,7 +596,7 @@ class Filterbank(ABC):
             nsamps=nsamps,
             **plan_kwargs,
         ):
-            write_ar = kernels.downsample_2d(
+            write_ar = kernels.downsample_2d_mean_flat(
                 data,
                 tfactor,
                 ffactor,

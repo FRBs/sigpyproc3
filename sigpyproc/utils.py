@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Callable, ClassVar
 
 import attrs
 import numpy as np
@@ -286,6 +286,26 @@ def validate_path(
                 msg = f"Path {path} lacks {' and '.join(perms)} permission(s)."
                 raise PermissionError(msg)
     return path
+
+
+def apply_along_axes(
+    func: Callable[[np.ndarray], float],
+    data: np.ndarray,
+    axis: int | tuple[int, ...] | None = None,
+) -> float | np.ndarray:
+    """Apply a 1D function along one or more axes."""
+    if axis is None:
+        return func(data.ravel())
+
+    if isinstance(axis, int):
+        axis = (axis,)
+
+    # Move axes to the front and reshape
+    axis = tuple(ax % data.ndim for ax in axis)
+    moved_data = np.moveaxis(data, axis, range(len(axis)))
+    reshaped_data = moved_data.reshape(-1, *moved_data.shape[len(axis) :])
+
+    return np.apply_along_axis(func, axis=0, arr=reshaped_data)
 
 
 def gaussian(x: np.ndarray, mu: float, fwhm: float, amp: float = 1.0) -> np.ndarray:

@@ -3,6 +3,7 @@ from typing import Literal
 FilterMethods = Literal["median", "mean"]
 LocMethods = Literal["median", "mean"]
 ScaleMethods = Literal[
+    "std",
     "iqr",
     "mad",
     "doublemad",

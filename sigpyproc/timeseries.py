@@ -14,11 +14,11 @@ from sigpyproc.utils import validate_path
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from sigpyproc.core.types import FilterMethods
+    from sigpyproc.core.custom_types import FilterMethods, LocMethods, ScaleMethods
 
 
 class TimeSeries:
-    """An array class to handle pulsar/FRB time series data.
+    """Container for 1-D time series data.
 
     Parameters
     ----------
@@ -72,7 +72,36 @@ class TimeSeries:
         """
         return len(self.data)
 
-    def downsample(self, factor: int) -> TimeSeries:
+    def normalise(
+        self,
+        loc_method: LocMethods = "mean",
+        scale_method: ScaleMethods = "std",
+    ) -> TimeSeries:
+        """Normalise/standardise the time series.
+
+        Normalisation is performed by subtracting the loc estimate,
+        and dividing by the scale estimate of the data.
+
+        Parameters
+        ----------
+        loc_method : {"mean", "median"}, optional
+            Method to estimate location to subtract, by default "mean".
+        scale_method : {"std", "iqr", "mad"}, optional
+            Method to estimate scale to divide by, by default "std".
+
+        Returns
+        -------
+        TimeSeries
+            Normalised time series.
+        """
+        zscore_re = stats.estimate_zscore(self.data, loc_method, scale_method)
+        return TimeSeries(zscore_re.data, self.header.new_header())
+
+    def downsample(
+        self,
+        factor: int,
+        filter_method: FilterMethods = "mean",
+    ) -> TimeSeries:
         """Downsample the time series.
 
         Returned time series is of size ``nsamples // factor``.
@@ -81,28 +110,17 @@ class TimeSeries:
         ----------
         factor : int
             Factor by which to downsample the time series.
+        filter_method : {"mean", "median"}, optional
+            Method to downsample, by default 'mean'.
 
         Returns
         -------
         TimeSeries
             Downsampled time series.
-
-        Raises
-        ------
-        TypeError
-            If factor is not an integer.
-        ValueError
-            If factor is less than or equal to 0.
         """
-        if not isinstance(factor, int):
-            msg = "Downsample factor must be an integer"
-            raise TypeError(msg)
-        if factor <= 0:
-            msg = "Downsample factor must be greater than 0"
-            raise ValueError(msg)
         if factor == 1:
             return self
-        tim_data = kernels.downsample_1d(self.data, factor)
+        tim_data = stats.downsample_1d(self.data, factor, method=filter_method)
         hdr_changes = {"tsamp": self.header.tsamp * factor, "nsamples": len(tim_data)}
         return TimeSeries(tim_data, self.header.new_header(hdr_changes))
 
@@ -131,6 +149,8 @@ class TimeSeries:
         self,
         method: FilterMethods = "mean",
         window: float = 0.5,
+        *,
+        fast: bool = False,
     ) -> TimeSeries:
         """Remove low-frequency red noise using a moving filter.
 
@@ -140,6 +160,8 @@ class TimeSeries:
             Moving filter function to use, by default 'mean'.
         window : int, optional
             Width of moving filter window in seconds, by default 0.5 seconds.
+        fast : bool, optional
+            Use a faster but less accurate method, by default False.
 
         Returns
         -------
@@ -155,11 +177,18 @@ class TimeSeries:
             msg = "Window size must be greater than 0"
             raise ValueError(msg)
         window_bins = int(round(window / self.header.tsamp))
-        tim_filter = stats.running_filter(
-            self.data,
-            window_bins,
-            method=method,
-        )
+        if fast:
+            tim_filter = stats.running_filter_fast(
+                self.data,
+                window_bins,
+                method=method,
+            )
+        else:
+            tim_filter = stats.running_filter(
+                self.data,
+                window_bins,
+                method=method,
+            )
         tim_deredden = self.data - tim_filter
         return TimeSeries(tim_deredden, self.header)
 

@@ -7,12 +7,6 @@ from sigpyproc.core.stats import ZScoreResult
 
 
 @pytest.fixture(scope="module", autouse=True)
-def random_data() -> np.ndarray:
-    rng = np.random.default_rng(42)
-    return rng.normal(loc=0, scale=1, size=1000).astype(np.float32)
-
-
-@pytest.fixture(scope="module", autouse=True)
 def pulse_data() -> np.ndarray:
     """Generate data with a Gaussian pulse in the middle."""
     rng = np.random.default_rng(42)
@@ -87,8 +81,8 @@ class TestMatchedFilter:
         assert np.abs(mf.peak_bin - expcted_peak) <= tolerance
         assert mf.snr > 10
 
-    def test_noise(self, random_data: np.ndarray) -> None:
-        mf = MatchedFilter(random_data)
+    def test_noise(self, random_normal_1d: np.ndarray) -> None:
+        mf = MatchedFilter(random_normal_1d)
         assert mf.snr < 6
 
 

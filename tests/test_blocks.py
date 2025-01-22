@@ -38,7 +38,7 @@ class TestFilterbankBlock:
         ffactor = 2
         fil = FilReader(filfile_8bit_1)
         block = fil.read_block(100, 1024)
-        block_down = block.downsample(tfactor, ffactor)
+        block_down = block.downsample(ffactor, tfactor)
         np.testing.assert_equal(
             block_down.data.shape,
             (block.nchans // ffactor, block.nsamples // tfactor),
@@ -53,18 +53,6 @@ class TestFilterbankBlock:
         )
         np.testing.assert_equal(block_down.header.foff, block.header.foff * ffactor)
         np.testing.assert_equal(block_down.header.tsamp, block.header.tsamp * tfactor)
-
-    @pytest.mark.parametrize(("tfactor", "ffactor"), [(4, 3), (3, 4), (7, 7)])
-    def test_downsample_invalid(
-        self,
-        filfile_8bit_1: str,
-        tfactor: int,
-        ffactor: int,
-    ) -> None:
-        fil = FilReader(filfile_8bit_1)
-        data = fil.read_block(100, 1024)
-        with pytest.raises(ValueError):
-            data.downsample(tfactor, ffactor)
 
     def test_normalise_chans(self, filfile_8bit_1: str) -> None:
         fil = FilReader(filfile_8bit_1)

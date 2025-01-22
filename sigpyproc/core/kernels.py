@@ -163,18 +163,8 @@ def pack4_8_little(array: np.ndarray, packed: np.ndarray) -> None:
         packed[ii] = (array[pos + 1] << 4) | array[pos + 0]
 
 
-@njit(
-    [
-        "u1[:](u1[:], i8)",
-        "f4[:](f4[:], i8)",
-        "f8[:](f8[:], i8)",
-    ],
-    cache=True,
-    parallel=True,
-    fastmath=True,
-    locals={"temp": types.f8},
-)
-def downsample_1d(array: np.ndarray, factor: int) -> np.ndarray:
+@njit(cache=True, fastmath=True, locals={"temp": types.f8})
+def downsample_1d_mean(array: np.ndarray, factor: int) -> np.ndarray:
     """Downsample a 1D array by averaging over bins.
 
     Parameters
@@ -189,14 +179,10 @@ def downsample_1d(array: np.ndarray, factor: int) -> np.ndarray:
     ndarray
         Downsampled array
 
-    Raises
-    ------
-    ValueError
-        If factor is not a positive integer.
+    Notes
+    -----
+    Uses float64 accumulator to avoid overflow.
     """
-    if factor <= 0 or not isinstance(factor, int):
-        msg = "Factor must be a positive integer."
-        raise ValueError(msg)
     nsamps_new = len(array) // factor
     result = np.empty(nsamps_new, dtype=array.dtype)
     for isamp in prange(nsamps_new):
@@ -208,18 +194,8 @@ def downsample_1d(array: np.ndarray, factor: int) -> np.ndarray:
     return result
 
 
-@njit(
-    [
-        "u1[:](u1[:], i8, i8, i8, i8)",
-        "f4[:](f4[:], i8, i8, i8, i8)",
-        "f8[:](f8[:], i8, i8, i8, i8)",
-    ],
-    cache=True,
-    parallel=True,
-    fastmath=True,
-    locals={"temp": types.f8},
-)
-def downsample_2d(
+@njit(cache=True, fastmath=True, locals={"temp": types.f8})
+def downsample_2d_mean_flat(
     array: np.ndarray,
     factor1: int,
     factor2: int,
@@ -250,29 +226,35 @@ def downsample_2d(
     -----
     dim2 must ve the fastest varying dimension.
     """
-    if factor1 <= 0 or not isinstance(factor1, int):
-        msg = "Factor1 must be a positive integer."
-        raise ValueError(msg)
-    if factor2 <= 0 or not isinstance(factor2, int):
-        msg = "Factor2 must be a positive integer."
-        raise ValueError(msg)
-    if len(array) != dim1 * dim2:
-        msg = "Array length must be equal to dim1 * dim2."
-        raise ValueError(msg)
-
     new_dim1 = dim1 // factor1
     new_dim2 = dim2 // factor2
     totfactor = factor1 * factor2
     result = np.empty(new_dim1 * new_dim2, dtype=array.dtype)
     for i in prange(new_dim1):
         for j in range(new_dim2):
-            pos = dim2 * i * factor1 + j * factor2
             temp = 0.0
+            pos = dim2 * i * factor1 + j * factor2
             for ifactor in range(factor1):
                 ipos = pos + ifactor * dim2
-                temp += np.sum(array[ipos : ipos + factor2])
+                for ifactor2 in range(factor2):
+                    temp += array[ipos + ifactor2]
             result[new_dim2 * i + j] = temp / totfactor
     return result
+
+
+# Note: No caching, as the py_func is same.
+downsample_1d_mean_parallel = njit(
+    downsample_1d_mean.py_func,
+    parallel=True,
+    fastmath=True,
+    locals={"temp": types.f8},
+)
+downsample_2d_mean_parallel = njit(
+    downsample_2d_mean_flat.py_func,
+    parallel=True,
+    fastmath=True,
+    locals={"temp": types.f8},
+)
 
 
 @njit(

@@ -198,3 +198,30 @@ def filfile_8bit_1_header() -> dict[str, str | float]:
     header["nifs"] = 1
     header["nsamples"] = 4096
     return header
+
+
+@pytest.fixture(scope="session", autouse=True)
+def random_normal_1d() -> np.ndarray:
+    rng = np.random.default_rng(42)
+    return rng.normal(loc=5, scale=2, size=1000).astype(np.float32)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def skewed_normal_1d() -> np.ndarray:
+    rng = np.random.default_rng(42)
+    skewed = np.concatenate([rng.normal(0, 1, 900), rng.normal(10, 1, 100)])
+    return skewed.astype(np.float32)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def random_normal_2d() -> np.ndarray:
+    rng = np.random.default_rng(42)
+    return rng.normal(loc=5, scale=2, size=(10, 1000)).astype(np.float32)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def random_normal_1d_complex() -> np.ndarray:
+    rng = np.random.default_rng(42)
+    re = rng.normal(loc=5, scale=2, size=1000).astype(np.float32)
+    im = rng.normal(loc=5, scale=2, size=1000).astype(np.float32)
+    return re + 1j * im

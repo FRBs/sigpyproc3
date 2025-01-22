@@ -49,7 +49,7 @@ def compute_dmdelays(
         If dm is a scalar, returns a 1D array of delays. If dm is an array,
         returns a 2D array with shape ``(len(dm), len(freqs))``.
     """
-    dm = np.atleast_1d(dm)[:, np.newaxis]
+    dm = np.atleast_1d(dm)[:, np.newaxis].astype(np.float32)
     delays = dm * DM_CONSTANT_LK * ((freqs**-2) - (ref_freq**-2))
     if in_samples:
         delays = (delays / tsamp).round().astype(np.int32)

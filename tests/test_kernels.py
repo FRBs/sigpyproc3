@@ -6,26 +6,6 @@ from scipy import signal, stats
 from sigpyproc.core import kernels
 
 
-@pytest.fixture(scope="module", autouse=True)
-def random_normal_1d() -> np.ndarray:
-    rng = np.random.default_rng(42)
-    return rng.normal(loc=5, scale=2, size=1000).astype(np.float32)
-
-
-@pytest.fixture(scope="module", autouse=True)
-def random_normal_2d() -> np.ndarray:
-    rng = np.random.default_rng(42)
-    return rng.normal(loc=5, scale=2, size=(10, 1000)).astype(np.float32)
-
-
-@pytest.fixture(scope="module", autouse=True)
-def random_normal_1d_complex() -> np.ndarray:
-    rng = np.random.default_rng(42)
-    re = rng.normal(loc=5, scale=2, size=1000).astype(np.float32)
-    im = rng.normal(loc=5, scale=2, size=1000).astype(np.float32)
-    return re + 1j * im
-
-
 class TestKernelsPackUnpack:
     @pytest.mark.parametrize("nbits", [1, 2, 4])
     @pytest.mark.parametrize("bitorder", ["big", "little"])
@@ -250,73 +230,54 @@ class TestMoments:
 
 class TestKernels:
     @pytest.mark.parametrize("factor", [1, 2, 4, 7, 10])
-    def test_downsample_1d(self, factor: int) -> None:
-        rng = np.random.default_rng()
-        arr = rng.normal(loc=5, scale=2, size=1000).astype(np.float32)
-        nsamps_new = len(arr) // factor
-        expected = np.mean(
-            arr[: nsamps_new * factor].reshape(nsamps_new, factor),
-            axis=1,
-        )
-        np.testing.assert_array_almost_equal(
-            kernels.downsample_1d(arr, factor),
-            expected,
-            decimal=5,
-        )
-        kernels.downsample_1d.py_func(arr, factor)
-
-    def test_test_downsample_1d_fail(self) -> None:
-        rng = np.random.default_rng()
-        arr = rng.normal(loc=5, scale=2, size=1000).astype(np.float32)
-        with pytest.raises(ValueError):
-            kernels.downsample_1d(arr, 0)
-        with pytest.raises(ValueError):
-            kernels.downsample_1d.py_func(arr, 0)
+    def test_downsample_1d_mean(
+        self,
+        random_normal_1d: np.ndarray,
+        factor: int,
+    ) -> None:
+        nsamps_new = (random_normal_1d.size // factor) * factor
+        expected = np.mean(random_normal_1d[:nsamps_new].reshape(-1, factor), axis=1)
+        result = kernels.downsample_1d_mean(random_normal_1d, factor)
+        np.testing.assert_array_almost_equal(result, expected, decimal=5)
+        result = kernels.downsample_1d_mean.py_func(random_normal_1d, factor)
+        np.testing.assert_array_almost_equal(result, expected, decimal=5)
 
     @pytest.mark.parametrize(
-        ("ffactor", "tfactor"),
+        ("factor1", "factor2"),
         [(1, 1), (1, 3), (2, 6), (7, 7), (10, 23)],
     )
-    def test_downsample_2d(self, ffactor: int, tfactor: int) -> None:
-        rng = np.random.default_rng()
-        nchans = 56
-        nsamps = 1000
-        arr = rng.normal(loc=5, scale=2, size=(nsamps, nchans)).astype(np.float32)
-        nsamps_new = nsamps // tfactor
-        nchans_new = nchans // ffactor
+    def test_downsample_2d_mean_flat(
+        self,
+        random_normal_2d: np.ndarray,
+        factor1: int,
+        factor2: int,
+    ) -> None:
+        dim1, dim2 = random_normal_2d.shape
+        new_dim1 = dim1 // factor1
+        new_dim2 = dim2 // factor2
+        new_shape = (new_dim1, factor1, new_dim2, factor2)
         expected = np.mean(
-            arr[: nsamps_new * tfactor, : nchans_new * ffactor].reshape(
-                nsamps_new,
-                tfactor,
-                nchans_new,
-                ffactor,
+            random_normal_2d[: new_dim1 * factor1, : new_dim2 * factor2].reshape(
+                new_shape,
             ),
             axis=(1, 3),
-        ).flatten()
-        np.testing.assert_array_almost_equal(
-            kernels.downsample_2d(arr.ravel(), tfactor, ffactor, nsamps, nchans),
-            expected,
-            decimal=5,
         )
-        kernels.downsample_2d.py_func(arr.ravel(), tfactor, ffactor, nsamps, nchans)
-
-    def test_downsample_2d_fail(self) -> None:
-        rng = np.random.default_rng()
-        nchans = 56
-        nsamps = 1000
-        arr = rng.normal(loc=5, scale=2, size=(nsamps, nchans)).astype(np.float32)
-        with pytest.raises(ValueError):
-            kernels.downsample_2d(arr.ravel(), 0, 1, nsamps, nchans)
-        with pytest.raises(ValueError):
-            kernels.downsample_2d.py_func(arr.ravel(), 0, 1, nsamps, nchans)
-        with pytest.raises(ValueError):
-            kernels.downsample_2d(arr.ravel(), 1, 0, nsamps, nchans)
-        with pytest.raises(ValueError):
-            kernels.downsample_2d.py_func(arr.ravel(), 1, 0, nsamps, nchans)
-        with pytest.raises(ValueError):
-            kernels.downsample_2d(arr.ravel(), 1, 1, nsamps, nchans + 1)
-        with pytest.raises(ValueError):
-            kernels.downsample_2d.py_func(arr.ravel(), 1, 1, nsamps, nchans + 1)
+        result = kernels.downsample_2d_mean_flat(
+            random_normal_2d.ravel(),
+            factor1,
+            factor2,
+            dim1,
+            dim2,
+        )
+        np.testing.assert_array_almost_equal(result, expected.ravel(), decimal=5)
+        result = kernels.downsample_2d_mean_flat.py_func(
+            random_normal_2d.ravel(),
+            factor1,
+            factor2,
+            dim1,
+            dim2,
+        )
+        np.testing.assert_array_almost_equal(result, expected.ravel(), decimal=5)
 
     def test_extract_tim(self, random_normal_2d: np.ndarray) -> None:
         out = np.zeros(random_normal_2d.shape[1], dtype=np.float32)
