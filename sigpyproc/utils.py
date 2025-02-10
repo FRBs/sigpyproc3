@@ -3,19 +3,16 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, ClassVar
+from typing import TYPE_CHECKING, Callable
 
 import attrs
 import numpy as np
 from astropy import units
 from astropy.stats import gaussian_fwhm_to_sigma
-from astropy.time import Time, TimeDelta
 from rich.logging import RichHandler
 
 if TYPE_CHECKING:
     import inspect
-
-    from matplotlib import pyplot as plt
 
 
 def detect_file_type(filename: str | Path) -> str:
@@ -74,8 +71,7 @@ def nearest_factor(num: int, fac: int) -> int:
 
 
 def next2_to_n(x: int) -> int:
-    """
-    Find the next power of 2 greater than or equal to ``x``.
+    """Find the next power of 2 greater than or equal to ``x``.
 
     Parameters
     ----------
@@ -105,8 +101,7 @@ def get_logger(
     quiet: bool = False,
     log_file: str | None = None,
 ) -> logging.Logger:
-    """
-    Get a fancy configured logger.
+    """Get a fancy configured logger.
 
     Parameters
     ----------
@@ -168,32 +163,8 @@ def get_callerfunc(stack: list[inspect.FrameInfo]) -> str:
     return stack[1].function
 
 
-def time_after_nsamps(tstart: float, tsamp: float, nsamps: int = 0) -> Time:
-    """
-    Get time after given nsamps. If nsamps is not given then just return tstart.
-
-    Parameters
-    ----------
-    tstart : float
-        Starting mjd.
-    tsamp : float
-        Sampling time in seconds.
-    nsamps : int, optional
-        Number of samples, by default 0.
-
-    Returns
-    -------
-    astropy.time.Time
-        Astropy Time object after given nsamps.
-    """
-    precision = int(np.ceil(abs(np.log10(tsamp))))
-    tstart = Time(tstart, format="mjd", scale="utc", precision=precision)
-    return tstart + TimeDelta(nsamps * tsamp, format="sec")
-
-
 def duration_string(duration: float) -> str:
-    """
-    Convert duration in seconds to human readable string.
+    """Convert duration in seconds to human readable string.
 
     Parameters
     ----------
@@ -535,93 +506,3 @@ class FrequencyChannels:
         fch1 = fcenter - 0.5 * foff * (nchans - 1)
         array = np.arange(nchans, dtype=np.float32) * foff + fch1
         return cls(array)
-
-
-@attrs.define(auto_attribs=True, slots=True, frozen=True)
-class TableEntry:
-    """Single entry in the PlotTable with optional unit."""
-
-    name: str = attrs.field(converter=str)
-    value: str = attrs.field(converter=str)
-    unit: str = attrs.field(converter=str, default="")
-    color: str = attrs.field(default="black")
-
-
-class PlotTable:
-    """A class to plot text tables in matplotlib using relative positions.
-
-    Parameters
-    ----------
-    col_offsets : dict[str, float] | None, optional
-        Dictionary of column names to x-positions (0-1), by default None.
-    top_margin : float | None, optional
-        Top margin as a fraction of the axis height, by default None.
-    line_height : float | None, optional
-        Height of each line as a fraction of the axis height, by default None.
-    font_size : int | None, optional
-        Font size, by default None.
-    font_family : str | None, optional
-        Font family, by default monospace.
-    """
-
-    DEFAULTS: ClassVar[dict] = {
-        "col_offsets": {
-            "name": 0.4,
-            "value": 0.8,
-            "unit": 0.85,
-        },
-        "top_margin": 0.05,
-        "line_height": 0.05,
-        "font_size": 12,
-        "font_family": "monospace",
-    }
-
-    def __init__(
-        self,
-        col_offsets: dict[str, float] | None = None,
-        top_margin: float | None = None,
-        line_height: float | None = None,
-        font_size: int | None = None,
-        font_family: str | None = None,
-    ) -> None:
-        self.col_offsets = col_offsets or self.DEFAULTS["col_offsets"]
-        self.top_margin = top_margin or self.DEFAULTS["top_margin"]
-        self.line_height = line_height or self.DEFAULTS["line_height"]
-        self.font_size = font_size or self.DEFAULTS["font_size"]
-        self.font_family = font_family or self.DEFAULTS["font_family"]
-
-        self.entries: list[TableEntry | None] = []
-
-    def add_entry(
-        self,
-        name: str,
-        value: str | float,
-        unit: str = "",
-        color: str = "black",
-    ) -> None:
-        """Add an entry to the table."""
-        self.entries.append(TableEntry(name, str(value), unit, color))
-
-    def skip_line(self) -> None:
-        """Add a blank line to the table."""
-        self.entries.append(None)
-
-    def plot(self, ax: plt.Axes) -> None:
-        """Plot the table on the given axis."""
-        ax.axis("off")
-        y = 1.0 - self.top_margin
-        for entry in self.entries:
-            if entry is not None:
-                for col, x in self.col_offsets.items():
-                    ax.text(
-                        x,
-                        y,
-                        getattr(entry, col),
-                        ha="right" if col != "unit" else "left",
-                        va="center",
-                        transform=ax.transAxes,
-                        family=self.font_family,
-                        size=self.font_size,
-                        color=entry.color,
-                    )
-            y -= self.line_height

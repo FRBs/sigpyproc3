@@ -26,7 +26,7 @@ pol_type_to_state = {
 npol_to_state = {1: "Intensity", 2: "PPQQ", 4: "Stokes"}
 
 
-@attrs.define(auto_attribs=True, frozen=True, slots=True, kw_only=True)
+@attrs.frozen(auto_attribs=True, kw_only=True)
 class Receiver:
     """Receiver information.
 
@@ -60,7 +60,7 @@ class Receiver:
     tracking_angle: float
 
 
-@attrs.define(auto_attribs=True, frozen=True, slots=True, kw_only=True)
+@attrs.frozen(auto_attribs=True, kw_only=True)
 class Backend:
     """Backend information.
 

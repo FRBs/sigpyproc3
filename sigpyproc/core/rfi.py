@@ -9,7 +9,7 @@ from matplotlib import pyplot as plt
 
 from sigpyproc.core import stats
 from sigpyproc.header import Header
-from sigpyproc.utils import PlotTable
+from sigpyproc.viz.styles import PlotTable
 
 if TYPE_CHECKING:
     from typing import Callable
@@ -338,7 +338,7 @@ class RFIMask:
         table = PlotTable()
         table.add_entry("Source", self.header.source)
         table.add_entry("Tobs", f"{self.header.tobs:.3f}", "s")
-        table.add_entry("Tsamp", f"{self.header.tsamp*1e6:.3f}", r"$\mu$s")
+        table.add_entry("Tsamp", f"{self.header.tsamp * 1e6:.3f}", r"$\mu$s")
         table.add_entry("Nchans", self.header.nchans)
         table.add_entry("Nsamples", self.header.nsamples)
         table.skip_line()

@@ -448,10 +448,9 @@ class TimeSeries:
         if inffile is None:
             inffile = datpath.with_suffix(".inf")
         data = np.fromfile(datpath, dtype=np.float32)
-        header = Header.from_inffile(inffile)
-        header.filename = datpath.as_posix()
-        header.nsamples = data.size
-        return cls(data, header)
+        inf_hdr = Header.from_inffile(inffile)
+        hdr_changes = {"nsamples": data.size, "filename": datpath.as_posix()}
+        return cls(data, inf_hdr.new_header(hdr_changes))
 
     @classmethod
     def from_tim(cls, timfile: str | Path) -> TimeSeries:

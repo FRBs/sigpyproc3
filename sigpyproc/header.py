@@ -7,15 +7,15 @@ import attrs
 import numpy as np
 from astropy import units
 from astropy.coordinates import Angle, SkyCoord
+from astropy.time import Time, TimeDelta
 
-from sigpyproc import params
+from sigpyproc import params, utils
 from sigpyproc.io import fbh5, pfits, sigproc
 from sigpyproc.io.bits import BitsInfo
 from sigpyproc.io.fileio import FileWriter
-from sigpyproc.utils import duration_string, time_after_nsamps, validate_path
 
 
-@attrs.define(auto_attribs=True, kw_only=True)
+@attrs.frozen(auto_attribs=True, kw_only=True)
 class Header:
     """Container object to handle observation metadata.
 
@@ -103,9 +103,18 @@ class Header:
     nsamples: int
 
     nifs: int = 1
-    coord: SkyCoord = SkyCoord(0, 0, unit="deg")
-    azimuth: Angle = Angle("0d")
-    zenith: Angle = Angle("0d")
+    coord: SkyCoord = attrs.field(
+        default=SkyCoord(0, 0, unit="deg"),
+        validator=attrs.validators.instance_of(SkyCoord),
+    )
+    azimuth: Angle = attrs.field(
+        default=Angle("0d"),
+        validator=attrs.validators.instance_of(Angle),
+    )
+    zenith: Angle = attrs.field(
+        default=Angle("0d"),
+        validator=attrs.validators.instance_of(Angle),
+    )
     telescope: str = "Fake"
     backend: str = "FAKE"
     source: str = "Fake"
@@ -118,7 +127,7 @@ class Header:
     signed: bool = False
     rawdatafile: str = ""
 
-    stream_info: sigproc.StreamInfo = sigproc.StreamInfo()
+    stream_info: sigproc.StreamInfo = attrs.field(default=sigproc.StreamInfo())
 
     @property
     def basename(self) -> str:
@@ -286,6 +295,18 @@ class Header:
         return self.coord.dec.to_string(unit="deg", sep=":", pad=True)
 
     @property
+    def obs_time(self) -> Time:
+        """Observation time in Astropy Time format.
+
+        Returns
+        -------
+        Time
+            Observation time.
+        """
+        precision = int(np.ceil(abs(np.log10(self.tsamp))))
+        return Time(self.tstart, format="mjd", scale="utc", precision=precision)
+
+    @property
     def obs_date(self) -> str:
         """Observation date and time in ISO format.
 
@@ -294,7 +315,7 @@ class Header:
         str
             Observation date and time.
         """
-        return time_after_nsamps(self.tstart, self.tsamp).iso
+        return self.obs_time.iso
 
     def mjd_after_nsamps(self, nsamps: int) -> float:
         """Compute the MJD after nsamps have elapsed.
@@ -309,7 +330,8 @@ class Header:
         float
             Modified Julian Date.
         """
-        return time_after_nsamps(self.tstart, self.tsamp, nsamps).mjd
+        new_time = self.obs_time + TimeDelta(nsamps * self.tsamp, format="sec")
+        return new_time.mjd
 
     def get_dmdelays(
         self,
@@ -318,7 +340,7 @@ class Header:
         *,
         in_samples: bool = True,
     ) -> np.ndarray:
-        """Get ISM disperison delays for given DM value(s).
+        """Get ISM dispersion delays for given DM value(s).
 
         Parameters
         ----------
@@ -524,7 +546,7 @@ class Header:
                     temp.format("Number of channels", self.nchans),
                 ],
             )
-        print_dur, print_unit = duration_string(self.tobs).split()
+        print_dur, print_unit = utils.duration_string(self.tobs).split()
         hdr.extend(
             [
                 temp.format("Time stamp of first sample (MJD)", self.tstart),
@@ -630,7 +652,7 @@ class Header:
         Header
             Observational metadata.
         """
-        filepath = validate_path(filename)
+        filepath = utils.validate_path(filename)
         header: dict[str, Any] = {}
         with filepath.open("r") as fp:
             lines = fp.readlines()

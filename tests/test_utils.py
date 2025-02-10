@@ -3,8 +3,6 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from astropy.time import Time
-from matplotlib import pyplot as plt
 from rich.logging import RichHandler
 
 from sigpyproc import utils
@@ -43,17 +41,6 @@ class TestUtils:
         np.testing.assert_equal(utils.duration_string(60), "1.0 minutes")
         np.testing.assert_equal(utils.duration_string(3600), "1.0 hours")
         np.testing.assert_equal(utils.duration_string(86400), "1.0 days")
-
-    def test_time_after_nsamps(self) -> None:
-        tstart = 60000
-        tsamp = 0.1
-        output = utils.time_after_nsamps(tstart, tsamp)
-        assert isinstance(output, Time)
-        np.testing.assert_equal(output.mjd, tstart)
-        nsamps = 100
-        output = utils.time_after_nsamps(tstart, tsamp, nsamps)
-        assert isinstance(output, Time)
-        np.testing.assert_equal(output.mjd, tstart + nsamps * tsamp / 86400)
 
     def test_gaussian(self) -> None:
         x = np.linspace(-5, 5, 101)
@@ -173,15 +160,3 @@ class TestFrequencyChannels:
         arr = [1, 2, 4, 7]
         with np.testing.assert_raises(ValueError):
             utils.FrequencyChannels(arr)  # type: ignore[arg-type]
-
-
-class TestPlots:
-    def test_plot_tables(self) -> None:
-        table = utils.PlotTable()
-        table.add_entry("test", 1, "s")
-        table.skip_line()
-        fig, ax = plt.subplots()
-        table.plot(ax)
-        assert not ax.axison
-        assert len(ax.texts) == 3
-        plt.close(fig)

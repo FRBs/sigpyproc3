@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-@attrs.define(auto_attribs=True, slots=True, kw_only=True)
+@attrs.frozen(auto_attribs=True, kw_only=True)
 class PulseParams:
     """Container object to handle pulse simulation parameters.
 
@@ -77,7 +77,7 @@ class PulseParams:
     noise: float = attrs.field(default=1, validator=attrs.validators.ge(0))
 
 
-@attrs.define(auto_attribs=True, slots=True, kw_only=True)
+@attrs.frozen(auto_attribs=True, kw_only=True)
 class PulseStats:
     """Container object to store the statistics of the simulated pulse.
 
@@ -359,7 +359,9 @@ class FurbyGenerator:
             np.sum(ts_os) / np.max(ts_os) * self.tsamp_os,
         )
 
-        ts = kernels.downsample_1d(ts_os, self.params.os_fact) * self.params.os_fact
+        ts = (
+            kernels.downsample_1d_mean(ts_os, self.params.os_fact) * self.params.os_fact
+        )
         noise_ts = self.params.noise * np.sqrt(self.hdr.nchans)
 
         nbins_max = min(len(ts), len(ts[ts > 0]))

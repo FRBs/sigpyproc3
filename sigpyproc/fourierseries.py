@@ -396,9 +396,9 @@ class FourierSeries:
         if inffile is None:
             inffile = fftpath.with_suffix(".inf")
         data = np.fromfile(fftpath, dtype=np.float32)
-        header = Header.from_inffile(inffile)
-        header.filename = fftpath.as_posix()
-        return cls(data.view(np.complex64), header)
+        inf_hdr = Header.from_inffile(inffile)
+        hdr_changes = {"filename": fftpath.as_posix()}
+        return cls(data.view(np.complex64), inf_hdr.new_header(hdr_changes))
 
     @classmethod
     def from_spec(cls, filename: str | Path) -> FourierSeries:

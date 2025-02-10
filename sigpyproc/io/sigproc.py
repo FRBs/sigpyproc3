@@ -320,10 +320,10 @@ def encode_header(header: dict) -> bytes:
     """
     hdr_encoded = encode_key("HEADER_START")
 
-    for key in header:
+    for key, value in header.items():
         if key not in header_keys:
             continue
-        hdr_encoded += encode_key(key, value=header[key], value_type=header_keys[key])
+        hdr_encoded += encode_key(key, value=value, value_type=header_keys[key])
 
     hdr_encoded += encode_key("HEADER_END")
     return hdr_encoded
@@ -385,7 +385,7 @@ def parse_radec(src_raj: float, src_dej: float) -> SkyCoord:
     de, ami = divmod(abs(src_dej), 10000)
     ami, ase = divmod(ami, 100)
 
-    radec_str = f"{int(ho)} {int(mi)} {se} {sign* int(de)} {int(ami)} {ase}"
+    radec_str = f"{int(ho)} {int(mi)} {se} {sign * int(de)} {int(ami)} {ase}"
     return SkyCoord(radec_str, unit=(units.hourangle, units.deg))
 
 
