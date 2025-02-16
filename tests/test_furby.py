@@ -34,7 +34,7 @@ def dummy_header() -> Header:
 
 @pytest.fixture(scope="module", autouse=True)
 def freqs() -> np.ndarray:
-    return np.arange(1500, 1000, -1).astype(np.float32)
+    return np.arange(1500, 1000, -1)
 
 
 class TestFurbyGenerator:
@@ -78,6 +78,7 @@ class TestSpectralStructure:
     )
     def test_generate_and_normalize(self, freqs: np.ndarray, kind: str) -> None:
         spec_struct = furby.SpectralStructure(freqs, kind=kind, spec_index=0.0)
+        assert spec_struct.freqs.dtype == np.float32
         assert spec_struct.kind == kind
         assert spec_struct.nchans == freqs.shape[0]
         assert spec_struct.foff == -1.0

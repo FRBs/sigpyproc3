@@ -103,7 +103,7 @@ def pack1_8_vect(
         magic = types.uint64(0x8040201008040201)
     else:
         magic = types.uint64(0x0102040810204080)
-    shift = 56
+    shift = types.uint64(56)
 
     array_uint64 = array.view(np.uint64)
     nwords = array_uint64.size

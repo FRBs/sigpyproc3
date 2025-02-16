@@ -447,7 +447,7 @@ class SpectralStructure:
         spec_index: float = -2,
         seed: int | None = None,
     ) -> None:
-        self.freqs = freqs
+        self.freqs = np.asarray(freqs, dtype=np.float32)
         self.kind = kind
         self.spec_index = spec_index
         self.rng = np.random.default_rng(seed)
@@ -520,7 +520,7 @@ class SpectralStructure:
 
     def _spec_flat(self) -> np.ndarray:
         """Generate a flat spectrum."""
-        return np.ones_like(self.freqs, dtype=np.float32)
+        return np.ones_like(self.freqs)
 
     def _spec_power_law(self) -> np.ndarray:
         """Generate a power-law spectrum."""
