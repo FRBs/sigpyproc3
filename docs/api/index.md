@@ -1,10 +1,5 @@
 # sigpyproc
 
-```{eval-rst}
-.. py:module:: sigpyproc
-
-```
-
 ## Subpackages
 
 ```{toctree}

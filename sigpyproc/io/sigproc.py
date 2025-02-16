@@ -10,6 +10,8 @@ from astropy import units
 from astropy.coordinates import SkyCoord
 from bidict import bidict
 
+from sigpyproc.utils import validate_path
+
 header_keys = {
     "signed": "b",
     "telescope_id": "I",
@@ -34,6 +36,7 @@ header_keys = {
     "barycentric": "I",
     "pulsarcentric": "I",
 }
+"""Header keys recognised by the sigproc package."""
 
 telescope_ids = bidict(
     {
@@ -55,6 +58,7 @@ telescope_ids = bidict(
         "MeerKAT": 64,
     },
 )
+"""Telescope IDs recognised by the sigproc package."""
 
 machine_ids = bidict(
     {
@@ -77,6 +81,7 @@ machine_ids = bidict(
         "MWAX-RTB": 32,
     },
 )
+"""Machine IDs recognised by the sigproc package."""
 
 
 @attrs.define(frozen=True, kw_only=True)
@@ -145,15 +150,15 @@ class StreamInfo:
         return tsamp_check and contiguous
 
 
-def edit_header(filename: str, key: str, value: float | str) -> None:
+def edit_header(filename: str | Path, key: str, value: float | str) -> None:
     """Edit a sigproc style header directly in place for the given file.
 
     Parameters
     ----------
-    filename : str
-        name of the sigproc file to modify header.
+    filename : str | Path
+        Name of the sigproc file to modify header.
     key : str
-        name of parameter to change (must be a valid sigproc key)
+        Name of parameter to change (must be a valid sigproc key)
     value : int or float or str
         new value to enter into header
 
@@ -179,8 +184,9 @@ def edit_header(filename: str, key: str, value: float | str) -> None:
     hdr = header.copy()
     hdr.update({key: value})
     new_hdr = encode_header(hdr)
+    filepath = validate_path(filename, writable=True)
     if header["hdrlen"] == len(new_hdr):
-        with Path(filename).open("rb+") as fp:
+        with filepath.open("rb+") as fp:
             fp.seek(0)
             fp.write(new_hdr)
     else:
@@ -189,7 +195,7 @@ def edit_header(filename: str, key: str, value: float | str) -> None:
 
 
 def parse_header_multi(
-    filenames: str | list[str],
+    filenames: str | Path | list[str | Path],
     *,
     check_contiguity: bool = True,
 ) -> dict:
@@ -197,7 +203,7 @@ def parse_header_multi(
 
     Parameters
     ----------
-    filenames : str or list of str
+    filenames : str | Path | list[str | Path]
         sigproc filterbank files containing the header
 
     Returns
@@ -206,7 +212,7 @@ def parse_header_multi(
         observational metadata
 
     """
-    if isinstance(filenames, str):
+    if isinstance(filenames, str | Path):
         filenames = [filenames]
 
     header = parse_header(filenames[0])
@@ -226,13 +232,14 @@ def parse_header_multi(
     return header
 
 
-def parse_header(filename: str) -> dict:
-    """Parse the metadata from a single Sigproc-style file.
+def parse_header(filename: str | Path) -> dict:
+    """
+    Parse the metadata from a single Sigproc-style filterbank file.
 
     Parameters
     ----------
-    filename : str
-        sigproc filterbank file containing the header
+    filename : str | Path
+        Path to the sigproc filterbank file containing the header
 
     Returns
     -------
@@ -241,10 +248,11 @@ def parse_header(filename: str) -> dict:
 
     Raises
     ------
-    IOError
+    OSError
         If file header is not in sigproc format
     """
-    with Path(filename).open("rb") as fp:
+    filepath = validate_path(filename)
+    with filepath.open("rb") as fp:
         header: dict[str, float | str] = {}
         try:
             key = _read_string(fp)
@@ -274,7 +282,7 @@ def parse_header(filename: str) -> dict:
             8 * int(header["datalen"]) // int(header["nbits"]) // int(header["nchans"])
         )
         fp.seek(0)
-        header["filename"] = filename
+        header["filename"] = filepath.as_posix()
 
     return header
 
@@ -316,10 +324,10 @@ def encode_header(header: dict) -> bytes:
     """
     hdr_encoded = encode_key("HEADER_START")
 
-    for key in header:
+    for key, value in header.items():
         if key not in header_keys:
             continue
-        hdr_encoded += encode_key(key, value=header[key], value_type=header_keys[key])
+        hdr_encoded += encode_key(key, value=value, value_type=header_keys[key])
 
     hdr_encoded += encode_key("HEADER_END")
     return hdr_encoded
@@ -381,7 +389,7 @@ def parse_radec(src_raj: float, src_dej: float) -> SkyCoord:
     de, ami = divmod(abs(src_dej), 10000)
     ami, ase = divmod(ami, 100)
 
-    radec_str = f"{int(ho)} {int(mi)} {se} {sign* int(de)} {int(ami)} {ase}"
+    radec_str = f"{int(ho)} {int(mi)} {se} {sign * int(de)} {int(ami)} {ase}"
     return SkyCoord(radec_str, unit=(units.hourangle, units.deg))
 
 

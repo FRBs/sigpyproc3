@@ -69,15 +69,15 @@ class TestFilterbank:
     def test_apply_channel_mask(self, filfile_4bit: str, tmpfile: str) -> None:
         fil = FilReader(filfile_4bit)
         rng = np.random.default_rng()
-        chanmask = rng.integers(2, size=fil.header.nchans)
-        outfile = fil.apply_channel_mask(chanmask=chanmask, outfile_name=tmpfile)
+        chan_mask = rng.integers(2, size=fil.header.nchans)
+        outfile = fil.apply_channel_mask(chan_mask=chan_mask, outfile_name=tmpfile)
         new_fil = FilReader(outfile)
         block_new = new_fil.read_block(0, 100)
         np.testing.assert_equal(new_fil.header.dtype, fil.header.dtype)
         np.testing.assert_equal(new_fil.header.nsamples, fil.header.nsamples)
         np.testing.assert_array_equal(
             np.where(~block_new.data.any(axis=1))[0],
-            np.where(chanmask == 1)[0],
+            np.where(chan_mask == 1)[0],
         )
 
     def test_downsample(self, filfile_4bit: str, tmpfile: str) -> None:
@@ -182,7 +182,16 @@ class TestFilterbank:
         np.testing.assert_equal(new_fil.header.nchans, fil.header.nchans)
         np.testing.assert_equal(new_fil.header.nsamples, fil.header.nsamples)
         with pytest.raises(ValueError):
-            fil.clean_rfi(method="invalid")
+            fil.clean_rfi(method="invalid")  # type: ignore[arg-type]
+
+        def custom_funcn(x: np.ndarray) -> np.ndarray:
+            return x
+
+        out_file, rfimask = fil.clean_rfi(
+            freq_mask=[(1400.0, 1800.0)],
+            custom_funcn=custom_funcn,
+            outfile_name=tmpfile,
+        )
 
     def test_clean_rfi_mask(self, filfile_4bit: str, tmpfile: str) -> None:
         fil = FilReader(filfile_4bit)

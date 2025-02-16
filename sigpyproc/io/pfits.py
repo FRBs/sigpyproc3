@@ -26,7 +26,7 @@ pol_type_to_state = {
 npol_to_state = {1: "Intensity", 2: "PPQQ", 4: "Stokes"}
 
 
-@attrs.define(auto_attribs=True, frozen=True, slots=True, kw_only=True)
+@attrs.frozen(auto_attribs=True, kw_only=True)
 class Receiver:
     """Receiver information.
 
@@ -60,7 +60,7 @@ class Receiver:
     tracking_angle: float
 
 
-@attrs.define(auto_attribs=True, frozen=True, slots=True, kw_only=True)
+@attrs.frozen(auto_attribs=True, kw_only=True)
 class Backend:
     """Backend information.
 
@@ -89,6 +89,32 @@ class Backend:
 
 
 class PrimaryHdr:
+    """Primary header information.
+
+    Parameters
+    ----------
+    filename : str
+        Filename of the PSRFITS file.
+
+    Attributes
+    ----------
+    header
+    observer
+    project_id
+    telescope
+    location
+    receiver
+    backend
+    ibeam
+    obs_mode
+    date_obs
+    freqs
+    chan_dm
+    source
+    coord
+    tstart
+    """
+
     def __init__(self, filename: str) -> None:
         header = fits.getheader(filename, extname="PRIMARY")
         if header["FITSTYPE"] != "PSRFITS":
@@ -219,6 +245,40 @@ class PrimaryHdr:
 
 
 class SubintHdr:
+    """Sub-integration header information.
+
+    Parameters
+    ----------
+    filename : str
+        Filename of the PSRFITS file.
+
+    Attributes
+    ----------
+    header
+    subint_width
+    nsubint
+    poln_type
+    poln_state
+    npol
+    tsamp
+    nbits
+    zero_off
+    signint
+    subint_offset
+    nchans
+    chan_bw
+    channel_offset
+    subint_samples
+    nsamples
+    subint_shape
+    sub_hdr
+    tsubint
+    offs_sub
+    azimuth
+    zenith
+    freqs
+    """
+
     def __init__(self, filename: str) -> None:
         with fits.open(filename) as hdul:
             header = hdul["SUBINT"].header
@@ -360,6 +420,13 @@ class PFITSFile:
     ----------
     filename : str
         Filename of the PSRFITS file.
+
+    Attributes
+    ----------
+    filename
+    pri_hdr
+    sub_hdr
+    bitsinfo
     """
 
     def __init__(self, filename: str) -> None:
@@ -376,22 +443,46 @@ class PFITSFile:
 
     @property
     def filename(self) -> str:
-        """str: Name of file."""
+        """Name of file.
+
+        Returns
+        -------
+        str
+            Filename of the PSRFITS file.
+        """
         return self._filename
 
     @property
     def pri_hdr(self) -> PrimaryHdr:
-        """PrimaryHdr: Primary header."""
+        """Primary header object.
+
+        Returns
+        -------
+        PrimaryHdr
+            Primary header.
+        """
         return self._primary_hdr
 
     @property
     def sub_hdr(self) -> SubintHdr:
-        """SubintHdr: Subint header."""
+        """Sub-integration header object.
+
+        Returns
+        -------
+        SubintHdr
+            Subint header.
+        """
         return self._subint_hdr
 
     @property
     def bitsinfo(self) -> BitsInfo:
-        """BitsInfo: Bits information."""
+        """Bits information object.
+
+        Returns
+        -------
+        :class:`~sigpyproc.io.bits.BitsInfo`
+            Bits information.
+        """
         return BitsInfo(self.sub_hdr.nbits)
 
     def read_subints(
@@ -408,21 +499,21 @@ class PFITSFile:
         Parameters
         ----------
         startsub : int
-            index of start row (subint) to read from the SUBINT table
+            Index of start row (subint) to read from the SUBINT table.
         nsubs : int
-            number of subints to read from the SUBINT table
+            Number of subints to read from the SUBINT table.
         poln_select : int, optional
-            1=PP+QQ, 2=PP,QQ, 3=(PP+QQ)^2 4=PP,QQ,PQ,QP, by default 1
+            1=PP+QQ, 2=PP,QQ, 3=(PP+QQ)^2 4=PP,QQ,PQ,QP, by default 1.
         scloffs : bool, optional
-            apply scales and offsets when unpacking data, by default False
+            Apply scales and offsets when unpacking data, by default False.
         weights : bool, optional
-            apply weights when unpacking data, by default False
+            Apply weights when unpacking data, by default False.
 
         Returns
         -------
-        :py:obj:`numpy.ndarray`
-            subint (row) data in float32 if scloffs or weights applied,
-            otherwise in uint8 with shape (nsamps, nchan).
+        ndarray
+            Subint (row) data in ``float32`` if ``scloffs`` or ``weights`` applied,
+            otherwise in ``uint8`` with shape ``(nsamps, nchan)``.
         """
         data_list = []
         for isub in range(startsub, startsub + nsubs):
@@ -453,19 +544,26 @@ class PFITSFile:
         Parameters
         ----------
         isub : int
-            index of row (subint) to read from the SUBINT table
+            Index of row (subint) to read from the SUBINT table.
         poln_select : int, optional
-            1=PP+QQ, 2=PP,QQ, 3=(PP+QQ)^2 4=PP,QQ,PQ,QP, by default 1
+            Polarization index to select, by default 1.
+
+            Available options:
+
+            - 1=PP+QQ
+            - 2=PP,QQ
+            - 3=(PP+QQ)^2
+            - 4=PP,QQ,PQ,QP
         scloffs : bool, optional
-            apply scales and offsets when unpacking data, by default True
+            Apply scales and offsets when unpacking data, by default True
         weights : bool, optional
-            apply weights when unpacking data, by default True
+            Apply weights when unpacking data, by default True
 
         Returns
         -------
-        :py:obj:`numpy.ndarray`
-            subint (row) data in float32 if scloffs or weights applied,
-            otherwise in uint8 with shape (nsamps, nchan).
+        ndarray
+            Subint (row) data in ``float32`` if ``scloffs`` or weights applied,
+            otherwise in ``uint8`` with shape ``(nsamps, nchan)``.
         """
         sdata = self.read_subint(isub, scloffs=scloffs, weights=weights)
         if self.sub_hdr.poln_state == "Coherence":
@@ -500,17 +598,17 @@ class PFITSFile:
         Parameters
         ----------
         isub : int
-            index of row (subint) to read from the SUBINT table
+            Index of row (subint) to read from the SUBINT table.
         scloffs : bool, optional
-            apply scales and offsets when unpacking data, by default True
+            Apply scales and offsets when unpacking data, by default True.
         weights : bool, optional
-            apply weights when unpacking data, by default True
+            Apply weights when unpacking data, by default True.
 
         Returns
         -------
-        :py:obj:`numpy.ndarray`
-            subint (row) data in float32 if scale_and_offset or weights applied,
-            otherwise in uint8 with shape (nsamps, npol, nchan).
+        ndarray
+            Subint (row) data in ``float32`` if ``scale_and_offset`` or weights applied,
+            otherwise in ``uint8`` with shape ``(nsamps, npol, nchan)``.
         """
         sdata = self._fits["SUBINT"].data[isub]["DATA"]
         sdata = sdata.squeeze()
@@ -546,12 +644,12 @@ class PFITSFile:
         Parameters
         ----------
         isub : int
-            index of row (subint) to read from the SUBINT table
+            Index of row (subint) to read from the SUBINT table.
 
         Returns
         -------
-        :py:obj:`~sigpyproc.utils.FrequencyChannels`
-            Centre frequency for each channel in MHz (NCHAN)
+        :class:`~sigpyproc.utils.FrequencyChannels`
+            Centre frequency for each channel in MHz (``NCHAN``).
         """
         freqs = self._fits["SUBINT"].data[isub]["DAT_FREQ"]
         return FrequencyChannels(freqs[: self.sub_hdr.nchans])
@@ -562,12 +660,12 @@ class PFITSFile:
         Parameters
         ----------
         isub : int
-            index of row (subint) to read from the SUBINT table
+            Index of row (subint) to read from the SUBINT table,
 
         Returns
         -------
-        :py:obj:`numpy.ndarray`
-            Weights for each channel in the range 0-1 (NCHAN)
+        ndarray
+            Weights for each channel in the range 0-1 (``NCHAN``).
         """
         weights = self._fits["SUBINT"].data[isub]["DAT_WTS"]
         return weights[: self.sub_hdr.nchans]
@@ -578,12 +676,12 @@ class PFITSFile:
         Parameters
         ----------
         isub : int
-            index of row (subint) to read from the SUBINT table
+            Index of row (subint) to read from the SUBINT table.
 
         Returns
         -------
-        :py:obj:`numpy.ndarray`
-            Data scale factor for each channel (NCHAN*NPOL)
+        ndarray
+            Data scale factor for each channel (``NCHAN * NPOL``).
         """
         scales = self._fits["SUBINT"].data[isub]["DAT_SCL"]
         scales = scales[: self.sub_hdr.npol * self.sub_hdr.nchans]
@@ -595,12 +693,12 @@ class PFITSFile:
         Parameters
         ----------
         isub : int
-            index of row (subint) to read from the SUBINT table
+            Index of row (subint) to read from the SUBINT table.
 
         Returns
         -------
-        :py:obj:`numpy.ndarray`
-            Data offset for each channel (NCHAN*NPOL)
+        ndarray
+            Data offset for each channel (``NCHAN * NPOL``).
         """
         offsets = self._fits["SUBINT"].data[isub]["DAT_OFFS"]
         offsets = offsets[: self.sub_hdr.npol * self.sub_hdr.nchans]

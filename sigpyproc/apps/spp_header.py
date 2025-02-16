@@ -1,9 +1,24 @@
 from __future__ import annotations
 
-import click
+from typing import TYPE_CHECKING
+
+import rich_click as click
+from rich import print as rprint
+from rich.pretty import pprint
 
 from sigpyproc.header import Header
 from sigpyproc.io import sigproc
+from sigpyproc.utils import detect_file_type
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from pathlib import Path
+
+file_readers: dict[str, Callable] = {
+    "sigproc": Header.from_sigproc,
+    "pfits": Header.from_pfits,
+    "fbh5": Header.from_fbh5,
+}
 
 
 @click.group(
@@ -14,11 +29,33 @@ def main() -> None:
 
 
 @main.command()
-@click.argument("filfile", type=click.Path(exists=True))
-def print(filfile: str) -> None:  # noqa: A001
+@click.argument("filename", type=click.Path(exists=True))
+@click.option(
+    "-f",
+    "--file_type",
+    type=click.Choice(["auto", "sigproc", "pfits", "shdf5"]),
+    default="auto",
+    help="File type",
+)
+@click.option(
+    "--long",
+    is_flag=True,
+    default=False,
+    help="Print the full Header information",
+)
+def print(filename: str | Path, file_type: str, *, long: bool = False) -> None:  # noqa: A001
     """Print the header information."""
-    header = Header.from_sigproc(filfile)
-    click.echo(header.to_string())
+    if file_type == "auto":
+        file_type = detect_file_type(filename)
+    hdr_reader = file_readers.get(file_type)
+    if hdr_reader is None:
+        msg = f"Unsupported file format: {file_type}"
+        raise ValueError(msg)
+    header = hdr_reader(filename)
+    if long:
+        pprint(header)
+    else:
+        rprint(header.to_string())
 
 
 @main.command()

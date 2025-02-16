@@ -1,19 +1,46 @@
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 _testdir = Path(__file__).resolve().parent
 _datadir = _testdir / "data"
 
 
-@pytest.fixture(scope="session")
-def tmpfile(tmp_path_factory: pytest.TempPathFactory, content: str = "") -> str:
-    fn = tmp_path_factory.mktemp("pytest_data") / "test.tmpfile"
-    fn.write_text(content)
-    return fn.as_posix()
+@pytest.fixture
+def tmpfile(
+    tmp_path_factory: pytest.TempPathFactory,
+    content: str = "",
+) -> Generator[str, None, None]:
+    temp_dir = tmp_path_factory.mktemp("pytest_data")
+    test_file = temp_dir / "test.tmpfile"
+    test_file.write_text(content)
+    yield test_file.as_posix()
+    if test_file.exists():
+        test_file.unlink()
+
+
+@pytest.fixture
+def tmpdir(tmp_path_factory: pytest.TempPathFactory) -> Generator[str, None, None]:
+    temp_dir = tmp_path_factory.mktemp("pytest_data")
+    yield temp_dir.as_posix()
+    if temp_dir.exists():
+        shutil.rmtree(temp_dir)
+
+
+@pytest.fixture
+def read_only_file(tmpfile: str) -> Generator[str, None, None]:
+    tmppath = Path(tmpfile)
+    tmppath.chmod(0o444)
+    yield tmppath.as_posix()
+    tmppath.chmod(0o666)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -171,3 +198,30 @@ def filfile_8bit_1_header() -> dict[str, str | float]:
     header["nifs"] = 1
     header["nsamples"] = 4096
     return header
+
+
+@pytest.fixture(scope="session", autouse=True)
+def random_normal_1d() -> np.ndarray:
+    rng = np.random.default_rng(42)
+    return rng.normal(loc=5, scale=2, size=1000).astype(np.float32)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def skewed_normal_1d() -> np.ndarray:
+    rng = np.random.default_rng(42)
+    skewed = np.concatenate([rng.normal(0, 1, 900), rng.normal(10, 1, 100)])
+    return skewed.astype(np.float32)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def random_normal_2d() -> np.ndarray:
+    rng = np.random.default_rng(42)
+    return rng.normal(loc=5, scale=2, size=(10, 1000)).astype(np.float32)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def random_normal_1d_complex() -> np.ndarray:
+    rng = np.random.default_rng(42)
+    re = rng.normal(loc=5, scale=2, size=1000).astype(np.float32)
+    im = rng.normal(loc=5, scale=2, size=1000).astype(np.float32)
+    return re + 1j * im

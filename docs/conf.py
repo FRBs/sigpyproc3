@@ -57,6 +57,7 @@ templates_path = ["_templates"]
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
 exclude_patterns = ["_build", "**.ipynb_checkpoints", "Thumbs.db", ".DS_Store"]
+default_role = "any"
 
 rst_epilog = f"""
 .. |project| replace:: {project}
@@ -84,7 +85,7 @@ autoclass_content = "class"  # include both class docstring and __init__
 autodoc_member_order = "bysource"
 autodoc_typehints = "none"
 
-numpydoc_show_class_members = False
+numpydoc_show_class_members = True
 numpydoc_show_inherited_class_members = False
 numpydoc_class_members_toctree = False
 numpydoc_xref_param_type = True
@@ -92,6 +93,9 @@ numpydoc_xref_aliases = {
     "ndarray": "numpy.ndarray",
     "dtype": "numpy.dtype",
     "ArrayLike": "numpy.typing.ArrayLike",
+    "NDArray": "numpy.typing.NDArray",
+    "float32": "numpy.float32",
+    "complex64": "numpy.complex64",
     "Figure": "matplotlib.figure.Figure",
     "scipy": "scipy",
     "astropy": "astropy",
@@ -130,6 +134,7 @@ intersphinx_mapping = {
     "astropy": ("https://docs.astropy.org/en/stable/", None),
     "attrs": ("https://www.attrs.org/en/stable/", None),
     "matplotlib": ("https://matplotlib.org/stable/", None),
+    "pyfftw": ("https://pyfftw.readthedocs.io/en/latest/", None),
     "typing_extensions": ("https://typing-extensions.readthedocs.io/en/stable/", None),
 }
 

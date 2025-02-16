@@ -1,89 +1,127 @@
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 from numpy import typing as npt
 
-try:
-    from pyfftw.interfaces import numpy_fft
-except ModuleNotFoundError:
-    from numpy import fft as numpy_fft
-
-from sigpyproc import foldedcube, fourierseries
+from sigpyproc import fourierseries
 from sigpyproc.core import kernels, stats
+from sigpyproc.foldedcube import FoldedData
 from sigpyproc.header import Header
+from sigpyproc.utils import validate_path
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from pathlib import Path
+
+    from sigpyproc.core.custom_types import FilterMethods, LocMethods, ScaleMethods
 
 
 class TimeSeries:
-    """An array class to handle pulsar/FRB time series data.
+    """Container for 1-D time series data.
 
     Parameters
     ----------
-    data : :py:obj:`~numpy.typing.ArrayLike`
-        1-D time series
+    data : ArrayLike
+        1-D time series array.
     header : :class:`~sigpyproc.header.Header`
-        header object containing metadata
+        Header object containing metadata.
 
-    Returns
-    -------
-    :py:obj:`~numpy.ndarray`
-        1 dimensional time series array with header metadata
+    Attributes
+    ----------
+    data
+    header
+    nsamples
     """
 
-    def __init__(self, data: npt.ArrayLike, hdr: Header) -> None:
+    def __init__(self, data: npt.ArrayLike, header: Header) -> None:
         self._data = np.asarray(data, dtype=np.float32)
-        self._hdr = hdr
+        self._header = header
         self._check_input()
 
     @property
-    def header(self) -> Header:
-        """Header object containing metadata."""
-        return self._hdr
-
-    @property
     def data(self) -> npt.NDArray[np.float32]:
-        """Time series data array."""
+        """Time series data array.
+
+        Returns
+        -------
+        NDArray[float32]
+            1-D time series array.
+        """
         return self._data
 
     @property
+    def header(self) -> Header:
+        """Metadata header object.
+
+        Returns
+        -------
+        :class:`~sigpyproc.header.Header`
+            Header object containing metadata.
+        """
+        return self._header
+
+    @property
     def nsamples(self) -> int:
-        """Number of samples in the time series."""
+        """Number of samples.
+
+        Returns
+        -------
+        int
+            Number of samples in the time series.
+        """
         return len(self.data)
 
-    def downsample(self, factor: int) -> TimeSeries:
+    def normalise(
+        self,
+        loc_method: LocMethods = "mean",
+        scale_method: ScaleMethods = "std",
+    ) -> TimeSeries:
+        """Normalise/standardise the time series.
+
+        Normalisation is performed by subtracting the loc estimate,
+        and dividing by the scale estimate of the data.
+
+        Parameters
+        ----------
+        loc_method : {"mean", "median"}, optional
+            Method to estimate location to subtract, by default "mean".
+        scale_method : {"std", "iqr", "mad"}, optional
+            Method to estimate scale to divide by, by default "std".
+
+        Returns
+        -------
+        TimeSeries
+            Normalised time series.
+        """
+        zscore_re = stats.estimate_zscore(self.data, loc_method, scale_method)
+        return TimeSeries(zscore_re.data, self.header.new_header())
+
+    def downsample(
+        self,
+        factor: int,
+        filter_method: FilterMethods = "mean",
+    ) -> TimeSeries:
         """Downsample the time series.
+
+        Returned time series is of size ``nsamples // factor``.
 
         Parameters
         ----------
         factor : int
-            factor by which time series will be downsampled
+            Factor by which to downsample the time series.
+        filter_method : {"mean", "median"}, optional
+            Method to downsample, by default 'mean'.
 
         Returns
         -------
-        :class:`~sigpyproc.timeseries.TimeSeries`
-            downsampled time series
-
-        Raises
-        ------
-        TypeError
-            If factor is not an integer
-        ValueError
-            If factor is less than or equal to 0
-
-        Notes
-        -----
-        Returned time series is of size nsamples // factor
+        TimeSeries
+            Downsampled time series.
         """
-        if not isinstance(factor, int):
-            msg = "Downsample factor must be an integer"
-            raise TypeError(msg)
-        if factor <= 0:
-            msg = "Downsample factor must be greater than 0"
-            raise ValueError(msg)
         if factor == 1:
             return self
-        tim_data = kernels.downsample_1d(self.data, factor)
+        tim_data = stats.downsample_1d(self.data, factor, method=filter_method)
         hdr_changes = {"tsamp": self.header.tsamp * factor, "nsamples": len(tim_data)}
         return TimeSeries(tim_data, self.header.new_header(hdr_changes))
 
@@ -93,50 +131,65 @@ class TimeSeries:
         Parameters
         ----------
         npad : int
-            number of padding points (bins) to add at the end of the time series
+            Number of bins to add at the end of the time series.
         mode : str, optional
-            mode of padding (as used by :py:func:`numpy.pad()`), by default 'mean'
+            Padding mode (as used by `numpy.pad`), by default 'mean'.
         **pad_kwargs : dict
-            Keyword arguments for :py:func:`numpy.pad()`
+            Keyword arguments for `numpy.pad`.
 
         Returns
         -------
-        :class:`~sigpyproc.timeseries.TimeSeries`
-            padded time series
+        TimeSeries
+            Padded time series.
         """
         tim_data = np.pad(self.data, (0, npad), mode=mode, **pad_kwargs)  # type: ignore[call-overload]
         hdr_changes = {"nsamples": len(tim_data)}
         return TimeSeries(tim_data, self.header.new_header(hdr_changes))
 
-    def deredden(self, method: str = "mean", window: float = 0.5) -> TimeSeries:
-        """Remove low-frequency red noise from time series using a moving filter.
+    def deredden(
+        self,
+        method: FilterMethods = "mean",
+        window: float = 0.5,
+        *,
+        fast: bool = False,
+    ) -> TimeSeries:
+        """Remove low-frequency red noise using a moving filter.
 
         Parameters
         ----------
-        method : str, optional
-            Moving filter function to use, by default 'mean'
+        method : {'mean', 'median'}, optional
+            Moving filter function to use, by default 'mean'.
         window : int, optional
-            width of moving filter window in seconds, by default 0.5 seconds
+            Width of moving filter window in seconds, by default 0.5 seconds.
+        fast : bool, optional
+            Use a faster but less accurate method, by default False.
 
         Returns
         -------
-        :class:`~sigpyproc.timeseries.TimeSeries`
-            The de-reddened time series
+        TimeSeries
+            De-reddened time series.
 
         Raises
         ------
         ValueError
-            If window size < 0
+            If ``window < 0``.
         """
         if window < 0:
             msg = "Window size must be greater than 0"
             raise ValueError(msg)
         window_bins = int(round(window / self.header.tsamp))
-        tim_filter = stats.running_filter(
-            self.data,
-            window_bins,
-            method=method,
-        )
+        if fast:
+            tim_filter = stats.running_filter_fast(
+                self.data,
+                window_bins,
+                method=method,
+            )
+        else:
+            tim_filter = stats.running_filter(
+                self.data,
+                window_bins,
+                method=method,
+            )
         tim_deredden = self.data - tim_filter
         return TimeSeries(tim_deredden, self.header)
 
@@ -146,24 +199,24 @@ class TimeSeries:
         accel: float = 0,
         nbins: int = 50,
         nints: int = 32,
-    ) -> foldedcube.FoldedData:
-        """Fold time series into discrete phase and subintegration bins.
+    ) -> FoldedData:
+        """Fold time series into discrete phase and sub-integration bins.
 
         Parameters
         ----------
         period : float
-            period in seconds to fold with
+            Period to fold (in seconds).
         accel : float, optional
-            The acceleration to fold the time series, by default 0
+            Acceleration to fold, by default 0.
         nbins : int, optional
-            number of phase bins in output, by default 50
+            Number of phase bins in output, by default 50.
         nints : int, optional
-            number of subintegrations in output, by default 32
+            Number of sub-integrations in output, by default 32.
 
         Returns
         -------
         :class:`~sigpyproc.foldedcube.FoldedData`
-            data cube containing the folded data
+            Data cube containing the folded data.
 
         Raises
         ------
@@ -194,7 +247,7 @@ class TimeSeries:
         )
         fold_ar /= count_ar
         fold_ar = fold_ar.reshape(nints, 1, nbins)
-        return foldedcube.FoldedData(
+        return FoldedData(
             fold_ar,
             self.header.new_header(),
             period,
@@ -202,17 +255,37 @@ class TimeSeries:
             accel,
         )
 
-    def rfft(self) -> fourierseries.FourierSeries:
+    def rfft(
+        self,
+        fftn: Callable[[np.ndarray, int], np.ndarray] | None = None,
+    ) -> fourierseries.FourierSeries:
         """Perform 1-D real to complex forward FFT.
+
+        Time series is zero-padded to the next good size for the FFT.
+
+        Parameters
+        ----------
+        fftn : Callable[[np.ndarray], np.ndarray], optional
+            The fft function to use. Own fft implementations can be used,
+            e.g, `pyfftw.interfaces.numpy_fft.rfft`, or
+            ``mkl_fft.interfaces.numpy_fft.rfft``, by default None.
 
         Returns
         -------
         :class:`~sigpyproc.fourierseries.FourierSeries`
-            output of One-Dimensional DFTs of Real Data
+            Fourier transform of the time series.
         """
-        fftsize = self.nsamples - (self.nsamples % 2)
-        fft_ar = numpy_fft.rfft(self.data, fftsize)
-        return fourierseries.FourierSeries(fft_ar, self.header.new_header())
+        if fftn is None:
+            fftn = kernels.nb_rfft
+        if not callable(fftn):
+            msg = f"Input fftn is not callable: {fftn}"
+            raise TypeError(msg)
+        n_good = kernels.nb_fft_good_size(self.nsamples, real=True)
+        hdr_changes = {"nsamples": n_good}
+        return fourierseries.FourierSeries(
+            fftn(self.data, n_good),
+            self.header.new_header(hdr_changes),
+        )
 
     def apply_boxcar(self, width: int) -> TimeSeries:
         """Apply a square-normalized boxcar filter to the time series.
@@ -220,17 +293,17 @@ class TimeSeries:
         Parameters
         ----------
         width : int
-            width of boxcar to apply in bins
+            Width of boxcar to apply in bins.
 
         Returns
         -------
-        :class:`~sigpyproc.timeseries.TimeSeries`
-            filtered time series
+        TimeSeries
+            Filtered time series.
 
         Raises
         ------
         ValueError
-            If boxcar width < 1
+            If ``width < 1``.
 
         Notes
         -----
@@ -246,44 +319,62 @@ class TimeSeries:
         return TimeSeries(boxcar_ar, self.header.new_header())
 
     def resample(self, accel: float) -> TimeSeries:
-        """Perform time domain resampling to remove acceleration and jerk.
+        """Perform time domain resampling to remove acceleration.
 
         Parameters
         ----------
         accel : float
-            The acceleration to remove from the time series
+            Acceleration to remove from the time series.
 
         Returns
         -------
-        :class:`~sigpyproc.timeseries.TimeSeries`
-            resampled time series
+        TimeSeries
+            Resampled time series.
         """
         tim_ar = kernels.resample_tim(self.data, accel, self.header.tsamp)
         hdr_changes = {"nsamples": tim_ar.size, "accel": accel}
         return TimeSeries(tim_ar, self.header.new_header(hdr_changes))
 
-    def correlate(self, other: TimeSeries | npt.ArrayLike) -> TimeSeries:
-        """Cross correlate with another time series of the same length.
+    def correlate(self, other: TimeSeries | np.ndarray) -> TimeSeries:
+        """Perform cross correlation with another time series using FFTs.
+
+        This method implements correlation equivalent to
+        `scipy.signal.correlate` with ``mode='full'`` and ``method='fft'``.
+        Correlation lags will be ``np.arange(-len(other) + 1, nsamples)``.
 
         Parameters
         ----------
-        other : TimeSeries or :py:obj:`~numpy.typing.ArrayLike`
-            array to correlate with
+        other : TimeSeries | np.ndarray
+            Array to correlate with.
 
         Returns
         -------
-        :class:`~sigpyproc.timeseries.TimeSeries`
-            time series containing the correlation
+        TimeSeries
+            Time series containing the full correlation.
 
         Raises
         ------
-        IOError
-            if input array ``other`` is not array like
+        OSError
+            If input array ``other`` is not `TimeSeries` or `ndarray`.
+
+        See Also
+        --------
+        scipy.signal.correlate
+        scipy.signal.correlation_lags
         """
-        if not isinstance(other, TimeSeries):
-            other = TimeSeries(other, self.header.new_header())
-        corr_ar = self.rfft().multiply(other.rfft())
-        return corr_ar.ifft()
+        if isinstance(other, TimeSeries):
+            other_data = other.data
+        elif isinstance(other, np.ndarray):
+            other_data = other.astype(np.float32)
+        else:
+            msg = "Input data is not array like"
+            raise OSError(msg)
+        other_data_conj = np.conj(other_data[::-1])
+        corr_ar = kernels.fftconvolve(self.data, other_data_conj)
+        header_changes = {
+            "nsamples": corr_ar.size,
+        }
+        return TimeSeries(corr_ar, self.header.new_header(header_changes))
 
     def to_dat(self, basename: str | None = None) -> str:
         """Write time series in presto ``.dat`` format.
@@ -291,26 +382,23 @@ class TimeSeries:
         Parameters
         ----------
         basename : str, optional
-            file basename for output ``.dat`` and ``.inf`` files, by default None
+            File basename for output ``.dat`` and ``.inf`` files, by default None.
 
         Returns
         -------
         str
-            output ``.dat`` file name
+            Output ``.dat`` file name.
 
         Notes
         -----
-        Method also writes a corresponding .inf file from the header data
+        Method also writes a corresponding .inf file from the header data.
         """
         if basename is None:
             basename = self.header.basename
         self.header.make_inf(outfile=f"{basename}.inf")
         out_filename = f"{basename}.dat"
         with self.header.prep_outfile(out_filename, nbits=32) as outfile:
-            if self.nsamples % 2 == 0:
-                outfile.cwrite(self.data)
-            else:
-                outfile.cwrite(self.data[:-1])
+            outfile.cwrite(self.data)
         return out_filename
 
     def to_tim(self, filename: str | None = None) -> str:
@@ -319,12 +407,12 @@ class TimeSeries:
         Parameters
         ----------
         filename : str, optional
-            name of file to write to, by default ``basename.tim``
+            Name of file to write to, by default ``basename.tim``.
 
         Returns
         -------
         str
-            output ``.tim`` file name
+            Output ``.tim`` file name.
         """
         if filename is None:
             filename = f"{self.header.basename}.tim"
@@ -333,55 +421,51 @@ class TimeSeries:
         return filename
 
     @classmethod
-    def from_dat(cls, datfile: str, inffile: str | None = None) -> TimeSeries:
-        """Read a presto format ``.dat`` file.
+    def from_dat(
+        cls,
+        datfile: str | Path,
+        inffile: str | Path | None = None,
+    ) -> TimeSeries:
+        """Read a Presto format ``.dat`` file.
 
         Parameters
         ----------
-        datfile : str
-            the name of the ``.dat`` file to read
-        inffile : str, optional
-            the name of the corresponding ``.inf`` file, by default None
+        datfile : str | Path
+            Name of the ``.dat`` file to read.
+        inffile : str | Path, optional
+            Name of the corresponding ``.inf`` file, by default None.
 
         Returns
         -------
-        :class:`~sigpyproc.timeseries.TimeSeries`
-            a new TimeSeries object
-
-        Raises
-        ------
-        IOError
-            If no ``.inf`` file found in the same directory of ``.dat`` file.
+        TimeSeries
+            TimeSeries object.
 
         Notes
         -----
-        If inf is None, then the associated .inf file must be in the same directory.
+        If ``inffile`` is None, then the associated .inf file must be in
+        the same directory.
         """
-        datpath = Path(datfile).resolve()
+        datpath = validate_path(datfile)
         if inffile is None:
-            inffile = datpath.with_suffix(".inf").as_posix()
-        if not Path(inffile).is_file():
-            msg = "No corresponding .inf file found"
-            raise FileNotFoundError(msg)
-        data = np.fromfile(datfile, dtype=np.float32)
-        header = Header.from_inffile(inffile)
-        header.filename = datfile
-        header.nsamples = data.size
-        return cls(data, header)
+            inffile = datpath.with_suffix(".inf")
+        data = np.fromfile(datpath, dtype=np.float32)
+        inf_hdr = Header.from_inffile(inffile)
+        hdr_changes = {"nsamples": data.size, "filename": datpath.as_posix()}
+        return cls(data, inf_hdr.new_header(hdr_changes))
 
     @classmethod
-    def from_tim(cls, timfile: str) -> TimeSeries:
+    def from_tim(cls, timfile: str | Path) -> TimeSeries:
         """Read a sigproc format ``.tim`` file.
 
         Parameters
         ----------
-        timfile : str
-            the name of the ``.tim`` file to read
+        timfile : str | Path
+            Name of the ``.tim`` file to read.
 
         Returns
         -------
-        :class:`~sigpyproc.timeseries.TimeSeries`
-            a new TimeSeries object
+        TimeSeries
+            TimeSeries object.
         """
         header = Header.from_sigproc(timfile)
         data = np.fromfile(

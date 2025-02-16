@@ -7,18 +7,22 @@ from sigpyproc.core.stats import ZScoreResult
 
 
 @pytest.fixture(scope="module", autouse=True)
-def random_data() -> np.ndarray:
-    rng = np.random.default_rng(42)
-    return rng.normal(loc=0, scale=1, size=1000).astype(np.float32)
-
-
-@pytest.fixture(scope="module", autouse=True)
 def pulse_data() -> np.ndarray:
+    """Generate data with a Gaussian pulse in the middle."""
     rng = np.random.default_rng(42)
     x = np.linspace(-10, 10, 1000, dtype=np.float32)
     pulse = np.exp(-0.5 * (x**2))
     noise = rng.normal(0, 0.1, 1000).astype(np.float32)
     return pulse + noise
+
+@pytest.fixture(scope="module")
+def edge_pulse_data() -> np.ndarray:
+    """Generate data with a pulse at the edge."""
+    rng = np.random.default_rng(42)
+    data = rng.normal(0, 0.1, 1000).astype(np.float32)
+    # Add a pulse at the very beginning
+    data[:50] += np.exp(-0.5 * (np.linspace(-2, 2, 50) ** 2))
+    return data
 
 
 class TestMatchedFilter:
@@ -28,10 +32,12 @@ class TestMatchedFilter:
         assert mf.data.shape == pulse_data.shape
         assert mf.temp_kind == "boxcar"
         assert isinstance(mf.zscores, ZScoreResult)
+
+        # Test invalid data dimensions
         with pytest.raises(ValueError):
             MatchedFilter(np.zeros((2, 2), dtype=np.float32))
 
-    def test_fails(self, pulse_data: np.ndarray) -> None:
+    def test_invalid_parameters(self, pulse_data: np.ndarray) -> None:
         with pytest.raises(ValueError):
             MatchedFilter(pulse_data, temp_kind="gaussian", spacing_factor=1)
         with pytest.raises(ValueError):
@@ -61,6 +67,24 @@ class TestMatchedFilter:
         assert np.all(np.diff(widths) > 0)
         assert widths[-1] <= size_max
 
+    def test_detection_accuracy(self, pulse_data: np.ndarray) -> None:
+        mf = MatchedFilter(pulse_data, temp_kind="gaussian")
+        expected_peak = len(pulse_data) // 2
+        tolerance = 5
+        assert np.abs(mf.peak_bin - expected_peak) <= tolerance
+        assert mf.snr > 10
+
+    def test_edge_pulse(self, edge_pulse_data: np.ndarray) -> None:
+        mf = MatchedFilter(edge_pulse_data, temp_kind="gaussian")
+        expcted_peak = 25
+        tolerance = 5
+        assert np.abs(mf.peak_bin - expcted_peak) <= tolerance
+        assert mf.snr > 10
+
+    def test_noise(self, random_normal_1d: np.ndarray) -> None:
+        mf = MatchedFilter(random_normal_1d)
+        assert mf.snr < 6
+
 
 class TestTemplate:
     @pytest.mark.parametrize("width", [1, 5, 10])
@@ -88,10 +112,10 @@ class TestTemplate:
         assert isinstance(temp, Template)
         assert temp.kind == "lorentzian"
         np.testing.assert_equal(temp.width, width)
-        expected_size = int(np.ceil(extent * width / 2.355) * 2 + 1)
+        expected_size = int(np.ceil(extent * width / 2) * 2 + 1)
         np.testing.assert_equal(temp.data.size, expected_size)
 
-    def test_fails(self) -> None:
+    def test_invalid_template_parameters(self) -> None:
         with pytest.raises(ValueError):
             Template.gen_boxcar(-1)
         with pytest.raises(ValueError):

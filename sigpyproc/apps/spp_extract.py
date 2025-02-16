@@ -1,5 +1,5 @@
-import click
 import numpy as np
+import rich_click as click
 
 from sigpyproc.readers import FilReader
 

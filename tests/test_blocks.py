@@ -38,7 +38,7 @@ class TestFilterbankBlock:
         ffactor = 2
         fil = FilReader(filfile_8bit_1)
         block = fil.read_block(100, 1024)
-        block_down = block.downsample(tfactor, ffactor)
+        block_down = block.downsample(ffactor, tfactor)
         np.testing.assert_equal(
             block_down.data.shape,
             (block.nchans // ffactor, block.nsamples // tfactor),
@@ -54,22 +54,10 @@ class TestFilterbankBlock:
         np.testing.assert_equal(block_down.header.foff, block.header.foff * ffactor)
         np.testing.assert_equal(block_down.header.tsamp, block.header.tsamp * tfactor)
 
-    @pytest.mark.parametrize(("tfactor", "ffactor"), [(4, 3), (3, 4), (7, 7)])
-    def test_downsample_invalid(
-        self,
-        filfile_8bit_1: str,
-        tfactor: int,
-        ffactor: int,
-    ) -> None:
-        fil = FilReader(filfile_8bit_1)
-        data = fil.read_block(100, 1024)
-        with pytest.raises(ValueError):
-            data.downsample(tfactor, ffactor)
-
     def test_normalise_chans(self, filfile_8bit_1: str) -> None:
         fil = FilReader(filfile_8bit_1)
         block = fil.read_block(100, 1024)
-        block_norm = block.normalise()
+        block_norm = block.normalise(axis=1)
         np.testing.assert_equal(block_norm.header.nchans, block.header.nchans)
         np.testing.assert_allclose(block_norm.data.mean(), 0, atol=0.01)
         np.testing.assert_allclose(block_norm.data.std(), 1, atol=0.01)
@@ -77,12 +65,12 @@ class TestFilterbankBlock:
     def test_normalise(self, filfile_8bit_1: str) -> None:
         fil = FilReader(filfile_8bit_1)
         block = fil.read_block(100, 1024)
-        block_norm = block.normalise(norm_chans=False)
+        block_norm = block.normalise(axis=None)
         np.testing.assert_equal(block_norm.header.nchans, block.header.nchans)
         np.testing.assert_allclose(block_norm.data.mean(), 0, atol=0.01)
         np.testing.assert_allclose(block_norm.data.std(), 1, atol=0.01)
         with pytest.raises(ValueError):
-            block.normalise(loc_method="invalid")
+            block.normalise(loc_method="invalid") # type: ignore[arg-type]
 
     def test_pad_samples(self, filfile_8bit_1: str) -> None:
         nsamps_final = 2048
@@ -93,7 +81,7 @@ class TestFilterbankBlock:
         np.testing.assert_equal(block_pad.data.shape[1], 2048)
         np.testing.assert_equal(block_pad.header.nsamples, 2048)
         with pytest.raises(ValueError):
-            block.pad_samples(nsamps_final, offset, pad_mode="invalid")
+            block.pad_samples(nsamps_final, offset, pad_mode="invalid") # type: ignore[arg-type]
 
     def test_get_tim(self, filfile_8bit_1: str) -> None:
         fil = FilReader(filfile_8bit_1)

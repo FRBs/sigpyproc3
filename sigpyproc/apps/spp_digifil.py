@@ -1,4 +1,4 @@
-import click
+import rich_click as click
 
 from sigpyproc.readers import FilReader
 from sigpyproc.utils import get_logger
@@ -85,7 +85,7 @@ def main(
     scale_fac: float,
     apply_FITS_scale_and_offset: bool,
 ) -> None:
-    """Convert to sigproc output digifil style."""
+    """Convert to Sigproc filterbank format in digifil style."""
     msg = "This function is not implemented yet."
     raise NotImplementedError(msg)
 

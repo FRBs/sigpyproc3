@@ -5,7 +5,6 @@
 ```{eval-rst}
 .. automodule:: sigpyproc.core.stats
    :members:
-   :undoc-members:
    :show-inheritance:
 ```
 
@@ -14,7 +13,6 @@
 ```{eval-rst}
 .. automodule:: sigpyproc.core.filters
    :members:
-   :undoc-members:
    :show-inheritance:
 ```
 
@@ -23,7 +21,6 @@
 ```{eval-rst}
 .. automodule:: sigpyproc.core.rfi
    :members:
-   :undoc-members:
    :show-inheritance:
 
 ```
@@ -33,6 +30,5 @@
 ```{eval-rst}
 .. automodule:: sigpyproc.core.kernels
    :members:
-   :undoc-members:
    :show-inheritance:
 ```

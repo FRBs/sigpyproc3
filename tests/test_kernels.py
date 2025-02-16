@@ -6,31 +6,10 @@ from scipy import signal, stats
 from sigpyproc.core import kernels
 
 
-@pytest.fixture(scope="module", autouse=True)
-def random_normal_1d() -> np.ndarray:
-    rng = np.random.default_rng(42)
-    return rng.normal(loc=5, scale=2, size=1000).astype(np.float32)
-
-
-@pytest.fixture(scope="module", autouse=True)
-def random_normal_2d() -> np.ndarray:
-    rng = np.random.default_rng(42)
-    return rng.normal(loc=5, scale=2, size=(10, 1000)).astype(np.float32)
-
-
-@pytest.fixture(scope="module", autouse=True)
-def random_normal_1d_complex() -> np.ndarray:
-    rng = np.random.default_rng(42)
-    re = rng.normal(loc=5, scale=2, size=1000).astype(np.float32)
-    im = rng.normal(loc=5, scale=2, size=1000).astype(np.float32)
-    return re + 1j * im
-
-
-class TestPackUnpack:
+class TestKernelsPackUnpack:
     @pytest.mark.parametrize("nbits", [1, 2, 4])
     @pytest.mark.parametrize("bitorder", ["big", "little"])
-    @pytest.mark.parametrize("parallel", [False, True])
-    def test_unpack1_8(self, nbits: int, bitorder: str, parallel: bool) -> None:
+    def test_unpack(self, nbits: int, bitorder: str) -> None:
         input_arr = np.array([7, 23], dtype=np.uint8)
         if nbits == 1 and bitorder == "big":
             expected = np.array(
@@ -52,10 +31,9 @@ class TestPackUnpack:
             expected = np.array([7, 0, 7, 1], dtype=np.uint8)
         unpacked = np.empty_like(expected)
         bitorder_str = "big" if bitorder[0] == "b" else "little"
-        parallel_str = "" if parallel else "_serial"
         unpack_func = getattr(
             kernels,
-            f"unpack{nbits:d}_8_{bitorder_str}{parallel_str}",
+            f"unpack{nbits:d}_8_{bitorder_str}",
         )
         unpack_func(input_arr, unpacked)
         np.testing.assert_array_equal(unpacked, expected, strict=True)
@@ -64,13 +42,11 @@ class TestPackUnpack:
 
     @pytest.mark.parametrize("nbits", [1, 2, 4])
     @pytest.mark.parametrize("bitorder", ["big", "little"])
-    @pytest.mark.parametrize("parallel", [False, True])
-    def test_pack(self, nbits: int, bitorder: str, parallel: bool) -> None:
+    def test_pack(self, nbits: int, bitorder: str) -> None:
         rng = np.random.default_rng()
         arr = rng.integers(255, size=2**10, dtype=np.uint8)
-        parallel_str = "" if parallel else "_serial"
-        unpack_func = getattr(kernels, f"unpack{nbits:d}_8_{bitorder}{parallel_str}")
-        pack_func = getattr(kernels, f"pack{nbits:d}_8_{bitorder}{parallel_str}")
+        unpack_func = getattr(kernels, f"unpack{nbits:d}_8_{bitorder}")
+        pack_func = getattr(kernels, f"pack{nbits:d}_8_{bitorder}")
         unpacked = np.zeros(arr.size * 8 // nbits, dtype=np.uint8)
         unpack_func(arr, unpacked)
         packed = np.empty_like(arr)
@@ -79,6 +55,18 @@ class TestPackUnpack:
         unpack_func.py_func(arr, unpacked)
         pack_func.py_func(unpacked, packed)
         np.testing.assert_array_equal(packed, arr, strict=True)
+
+    @pytest.mark.parametrize("bitorder", ["big", "little"])
+    def test_pack1_8_vect(self, bitorder: str) -> None:
+        rng = np.random.default_rng()
+        arr = rng.integers((1 << 1), size=2**10, dtype=np.uint8)
+        expected = np.packbits(arr, bitorder=bitorder)  # type: ignore[arg-type]
+        packed = np.empty_like(expected)
+        big_endian = bitorder == "big"
+        kernels.pack1_8_vect(arr, packed, big_endian=big_endian)
+        np.testing.assert_array_equal(packed, expected, strict=True)
+        kernels.pack1_8_vect.py_func(arr, packed, big_endian=big_endian)
+        np.testing.assert_array_equal(packed, expected, strict=True)
 
 
 class TestMoments:
@@ -242,47 +230,54 @@ class TestMoments:
 
 class TestKernels:
     @pytest.mark.parametrize("factor", [1, 2, 4, 7, 10])
-    def test_downsample_1d(self, factor: int) -> None:
-        rng = np.random.default_rng()
-        arr = rng.normal(loc=5, scale=2, size=1000).astype(np.float32)
-        nsamps_new = len(arr) // factor
-        expected = np.mean(
-            arr[: nsamps_new * factor].reshape(nsamps_new, factor),
-            axis=1,
-        )
-        np.testing.assert_array_almost_equal(
-            kernels.downsample_1d(arr, factor),
-            expected,
-            decimal=5,
-        )
-        kernels.downsample_1d.py_func(arr, factor)
+    def test_downsample_1d_mean(
+        self,
+        random_normal_1d: np.ndarray,
+        factor: int,
+    ) -> None:
+        nsamps_new = (random_normal_1d.size // factor) * factor
+        expected = np.mean(random_normal_1d[:nsamps_new].reshape(-1, factor), axis=1)
+        result = kernels.downsample_1d_mean(random_normal_1d, factor)
+        np.testing.assert_array_almost_equal(result, expected, decimal=5)
+        result = kernels.downsample_1d_mean.py_func(random_normal_1d, factor)
+        np.testing.assert_array_almost_equal(result, expected, decimal=5)
 
     @pytest.mark.parametrize(
-        ("tfactor", "ffactor"),
-        [(1, 1), (2, 2), (4, 4), (7, 7), (10, 10)],
+        ("factor1", "factor2"),
+        [(1, 1), (1, 3), (2, 6), (7, 7), (10, 23)],
     )
-    def test_downsample_2d(self, tfactor: int, ffactor: int) -> None:
-        rng = np.random.default_rng()
-        nchans = 56
-        nsamps = 1000
-        arr = rng.normal(loc=5, scale=2, size=(nsamps, nchans)).astype(np.float32)
-        nsamps_new = nsamps // tfactor
-        nchans_new = nchans // ffactor
+    def test_downsample_2d_mean_flat(
+        self,
+        random_normal_2d: np.ndarray,
+        factor1: int,
+        factor2: int,
+    ) -> None:
+        dim1, dim2 = random_normal_2d.shape
+        new_dim1 = dim1 // factor1
+        new_dim2 = dim2 // factor2
+        new_shape = (new_dim1, factor1, new_dim2, factor2)
         expected = np.mean(
-            arr[: nsamps_new * tfactor, : nchans_new * ffactor].reshape(
-                nsamps_new,
-                tfactor,
-                nchans_new,
-                ffactor,
+            random_normal_2d[: new_dim1 * factor1, : new_dim2 * factor2].reshape(
+                new_shape,
             ),
             axis=(1, 3),
-        ).flatten()
-        np.testing.assert_array_almost_equal(
-            kernels.downsample_2d(arr.ravel(), tfactor, ffactor, nchans, nsamps),
-            expected,
-            decimal=5,
         )
-        kernels.downsample_2d.py_func(arr, tfactor, ffactor, nchans, nsamps)
+        result = kernels.downsample_2d_mean_flat(
+            random_normal_2d.ravel(),
+            factor1,
+            factor2,
+            dim1,
+            dim2,
+        )
+        np.testing.assert_array_almost_equal(result, expected.ravel(), decimal=5)
+        result = kernels.downsample_2d_mean_flat.py_func(
+            random_normal_2d.ravel(),
+            factor1,
+            factor2,
+            dim1,
+            dim2,
+        )
+        np.testing.assert_array_almost_equal(result, expected.ravel(), decimal=5)
 
     def test_extract_tim(self, random_normal_2d: np.ndarray) -> None:
         out = np.zeros(random_normal_2d.shape[1], dtype=np.float32)
@@ -359,22 +354,28 @@ class TestKernels:
             1.0,
             decimal=5,
         )
-        kernels.normalize_template.py_func(temp)
+        temp_norm = kernels.normalize_template.py_func(temp)
+        temp_zeros = np.zeros(10, dtype=np.float32)
+        temp_norm_zeros = kernels.normalize_template.py_func(temp_zeros)
+        np.testing.assert_array_equal(temp_zeros, temp_norm_zeros)
 
-    def test_circular_pad_pow2(self, random_normal_1d: np.ndarray) -> None:
-        padded = kernels.circular_pad_pow2(random_normal_1d)
-        np.testing.assert_equal(padded.size, 1024)
-        np.testing.assert_array_equal(padded[:1000], random_normal_1d)
-        np.testing.assert_array_equal(padded[1000:], random_normal_1d[:24])
-        kernels.circular_pad_pow2.py_func(random_normal_1d)
+    def test_circular_pad_goodsize(self, random_normal_1d: np.ndarray) -> None:
+        bad_size = 937
+        good_size = kernels.nb_fft_good_size(bad_size, real=True)
+        arr = random_normal_1d[:bad_size]
+        padded = kernels.circular_pad_goodsize(arr)
+        np.testing.assert_equal(padded.size, good_size)
+        np.testing.assert_array_equal(padded[: arr.size], arr)
+        np.testing.assert_array_equal(padded[arr.size :], arr[: good_size - arr.size])
+        kernels.circular_pad_goodsize.py_func(random_normal_1d)
 
-    def test_convolve_fft(self, random_normal_1d: np.ndarray) -> None:
+    def test_convolve_templates(self, random_normal_1d: np.ndarray) -> None:
         samp_temps = typed.List([np.array([0.5, 1.0, 0.5]), np.array([1.0, -1.0])])
         ref_bins = typed.List([1, 0])
-        result = kernels.convolve_fft(random_normal_1d, samp_temps, ref_bins)
+        result = kernels.convolve_templates(random_normal_1d, samp_temps, ref_bins)
         assert isinstance(result, np.ndarray)
         assert result.shape == (len(samp_temps), len(random_normal_1d))
-        kernels.convolve_fft.py_func(random_normal_1d, samp_temps, ref_bins)
+        kernels.convolve_templates.py_func(random_normal_1d, samp_temps, ref_bins)
 
 
 class TestFourierKernels:
@@ -405,3 +406,146 @@ class TestFourierKernels:
             decimal=5,
         )
         kernels.fs_running_median.py_func(arr, 10, 20, 500)
+
+    def test_rfft(self, random_normal_1d: np.ndarray) -> None:
+        expected = np.fft.rfft(random_normal_1d)
+        result = kernels.nb_rfft.py_func(random_normal_1d)
+        np.testing.assert_array_almost_equal(result, expected, decimal=3)
+        inv_result = kernels.nb_irfft.py_func(result)
+        np.testing.assert_array_almost_equal(inv_result, random_normal_1d, decimal=5)
+
+    def test_fft(self, random_normal_1d_complex: np.ndarray) -> None:
+        expected = np.fft.fft(random_normal_1d_complex)
+        result = kernels.nb_fft.py_func(random_normal_1d_complex)
+        np.testing.assert_array_almost_equal(result, expected, decimal=3)
+        inv_result = kernels.nb_ifft.py_func(result)
+        np.testing.assert_array_almost_equal(
+            inv_result,
+            random_normal_1d_complex,
+            decimal=5,
+        )
+
+    def test_fftconvolve(self, random_normal_1d: np.ndarray) -> None:
+        kernel = np.ones(10, dtype=np.float32)
+        expected = np.convolve(random_normal_1d, kernel, mode="full")
+        result = kernels.fftconvolve.py_func(random_normal_1d, kernel)
+        np.testing.assert_array_almost_equal(result, expected, decimal=3)
+        kernel_empty = np.zeros(0, dtype=np.float32)
+        result = kernels.fftconvolve.py_func(random_normal_1d, kernel_empty)
+        np.testing.assert_array_almost_equal(result, kernel_empty, decimal=5)
+
+    def test_fftconvolve_fail(self, random_normal_2d: np.ndarray) -> None:
+        kernel = np.ones(10, dtype=np.float32)
+        with pytest.raises(ValueError):
+            kernels.fftconvolve(random_normal_2d, kernel)
+        with pytest.raises(ValueError):
+            kernels.fftconvolve.py_func(random_normal_2d, kernel)
+        kernel = np.ones(0, dtype=np.float32)
+        with pytest.raises(ValueError):
+            kernels.fftconvolve(random_normal_2d, kernel)
+        with pytest.raises(ValueError):
+            kernels.fftconvolve.py_func(random_normal_2d, kernel)
+
+    def test_simulate_ism(self, random_normal_1d: np.ndarray) -> None:
+        nchans = 512
+        signal = random_normal_1d
+        nsamps = len(signal)
+        spectrum = np.ones(nchans, dtype=np.float32)
+        dm_smear = np.ones(nchans, dtype=np.float32)
+        tau_nus = np.ones(nchans, dtype=np.float32)
+        simulate = kernels.simulate_ism.py_func(
+            signal,
+            spectrum,
+            dm_smear,
+            tau_nus,
+            1,
+        )
+        assert simulate.shape[0] == nchans
+        assert simulate.shape[1] >= nsamps
+        assert isinstance(simulate, np.ndarray)
+
+
+class TestRollingKernels:
+    def test_nb_roll(self) -> None:
+        arr = np.zeros((10, 10), dtype=np.float32)
+        shift = 10
+        rolled = kernels.nb_roll.py_func(arr, shift, axis=0)
+        np.testing.assert_array_equal(rolled, np.roll(arr, shift, axis=0))
+        rolled = kernels.nb_roll.py_func(arr, shift, axis=1)
+        np.testing.assert_array_equal(rolled, np.roll(arr, shift, axis=1))
+        rolled = kernels.nb_roll.py_func(arr, shift)
+        np.testing.assert_array_equal(rolled, np.roll(arr, shift))
+
+    def test_roll_block(self) -> None:
+        arr = np.zeros((10, 10), dtype=np.float32)
+        arr[:, 5] = 1.0
+        shifts = np.arange(arr.shape[0])
+        rolled = kernels.roll_block.py_func(arr, shifts)
+        unrolled = kernels.roll_block.py_func(rolled, -shifts)
+        np.testing.assert_array_equal(unrolled, arr)
+        with pytest.raises(ValueError):
+            kernels.roll_block.py_func(shifts, 1)
+        with pytest.raises(ValueError):
+            kernels.roll_block.py_func(arr, shifts[:-1])
+
+    def test_dmt_block(self) -> None:
+        arr = np.zeros((10, 10), dtype=np.float32)
+        arr[:, 5] = 1.0
+        dm_delays = np.expand_dims(np.arange(arr.shape[0]), 0)
+        dmt = kernels.dmt_block.py_func(arr, dm_delays)
+        assert dmt.shape == (len(dm_delays), arr.shape[1])
+        expected = np.ones(arr.shape[1], dtype=np.float32)
+        np.testing.assert_array_equal(dmt[0], expected)
+        with pytest.raises(ValueError):
+            kernels.dmt_block.py_func(arr[0], dm_delays)
+        with pytest.raises(ValueError):
+            kernels.dmt_block.py_func(arr, dm_delays[:, :-1])
+
+    def test_roll_block_valid_positive_shifts(self) -> None:
+        arr = np.zeros((10, 19), dtype=np.float32)
+        arr[:, 9] = 1.0
+        shifts = np.arange(arr.shape[0])
+        rolled = kernels.roll_block_valid.py_func(arr, shifts)
+        valid_samples = arr.shape[1] - np.abs(shifts).max()
+        assert rolled.shape == (arr.shape[0], valid_samples)
+        expected = np.ones(valid_samples)
+        np.testing.assert_array_equal(rolled.sum(axis=0), expected)
+
+    def test_roll_block_valid_negative_shifts(self) -> None:
+        arr = np.zeros((10, 19), dtype=np.float32)
+        arr[:, 9] = 1.0
+        shifts = -np.arange(arr.shape[0])
+        rolled = kernels.roll_block_valid.py_func(arr, shifts)
+        valid_samples = arr.shape[1] - np.abs(shifts).max()
+        assert rolled.shape == (arr.shape[0], valid_samples)
+        expected = np.ones(valid_samples)
+        np.testing.assert_array_equal(rolled.sum(axis=0), expected)
+
+    def test_roll_block_valid_fail(self) -> None:
+        arr = np.zeros((10, 19), dtype=np.float32)
+        arr[:, 9] = 1.0
+        shifts = np.arange(arr.shape[0])
+        with pytest.raises(ValueError):
+            kernels.roll_block_valid.py_func(arr[0], shifts)
+        with pytest.raises(ValueError):
+            kernels.roll_block_valid.py_func(arr, np.arange(arr.shape[1] + 5))
+        with pytest.raises(ValueError):
+            kernels.roll_block_valid.py_func(arr, np.arange(arr.shape[0]) * 5)
+
+    def test_dmt_block_valid(self) -> None:
+        arr = np.zeros((10, 19), dtype=np.float32)
+        arr[:, 9] = 1.0
+        dm_delays = np.expand_dims(np.arange(arr.shape[0]), 0)
+        dmt = kernels.dmt_block_valid.py_func(arr, dm_delays)
+        assert dmt.shape == (len(dm_delays), arr.shape[1] - dm_delays.max())
+        expected = np.ones(arr.shape[1] - dm_delays.max())
+        np.testing.assert_array_equal(dmt[0], expected)
+        with pytest.raises(ValueError):
+            kernels.dmt_block_valid.py_func(arr[0], dm_delays)
+        with pytest.raises(ValueError):
+            kernels.dmt_block_valid.py_func(arr, dm_delays[:, :-1])
+        with pytest.raises(ValueError):
+            kernels.dmt_block_valid.py_func(
+                arr,
+                np.expand_dims(np.arange(arr.shape[0]) * 5, 0),
+            )

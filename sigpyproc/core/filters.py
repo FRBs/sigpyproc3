@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import attrs
 import numpy as np
@@ -10,16 +10,16 @@ from numba import typed
 
 from sigpyproc.core import kernels
 from sigpyproc.core.stats import (
-    LocMethodType,
-    ScaleMethodType,
     ZScoreResult,
     estimate_zscore,
 )
 
+if TYPE_CHECKING:
+    from sigpyproc.core.custom_types import LocMethods, ScaleMethods
+
 
 class MatchedFilter:
-    """
-    Matched filter class for pulse detection in 1D time series data.
+    """Matched filter class for pulse detection in 1D time series data.
 
     This class implements a matched filter algorithm to detect pulses of varying
     durations in 1D time series data. It uses a set of pulse templates with
@@ -40,6 +40,20 @@ class MatchedFilter:
         Maximum number of bins for template width, by default 32.
     spacing_factor : float, optional
         Factor for spacing between template widths, by default 1.5.
+
+    Attributes
+    ----------
+    data
+    zscores
+    temp_kind
+    temp_widths
+    temp_bank
+    convs
+    peak_bin
+    best_temp
+    snr
+    best_model
+    on_pulse
 
     Raises
     ------
@@ -78,14 +92,13 @@ class MatchedFilter:
         https://en.wikipedia.org/wiki/Matched_filter
     .. [2] Wikipedia, "Circular convolution",
         https://en.wikipedia.org/wiki/Circular_convolution
-
     """
 
     def __init__(
         self,
         data: np.ndarray,
-        loc_method: LocMethodType | Literal["norm"] = "median",
-        scale_method: ScaleMethodType | Literal["norm"] = "iqr",
+        loc_method: LocMethods | Literal["norm"] = "median",
+        scale_method: ScaleMethods | Literal["norm"] = "iqr",
         temp_kind: Literal["boxcar", "gaussian", "lorentzian"] = "boxcar",
         nbins_max: int = 32,
         spacing_factor: float = 1.5,
@@ -105,52 +118,112 @@ class MatchedFilter:
 
     @property
     def data(self) -> np.ndarray:
-        """:obj:`~numpy.ndarray`: Input data array for matched filtering."""
+        """Input data array for matched filtering.
+
+        Returns
+        -------
+        ndarray
+            Input data array.
+        """
         return self._data
 
     @property
     def zscores(self) -> ZScoreResult:
-        """:class:`~sigpyproc.core.stats.ZScoreResult`: Z-score of the input data."""
+        """Computed Z-scores of the input data.
+
+        Returns
+        -------
+        ~sigpyproc.core.stats.ZScoreResult
+            Z-score of the input data.
+        """
         return self._zscores
 
     @property
     def temp_kind(self) -> str:
-        """:obj:`str`: Type of the pulse template."""
+        """Type of the pulse template.
+
+        Returns
+        -------
+        str
+            Template type.
+        """
         return self._temp_kind
 
     @property
     def temp_widths(self) -> np.ndarray:
-        """:obj:`~numpy.ndarray`: Template widths used for matched filtering."""
+        """Template widths used for matched filtering.
+
+        Returns
+        -------
+        ndarray
+            Template widths.
+        """
         return self._temp_widths
 
     @property
     def temp_bank(self) -> list[Template]:
-        """:obj:`list[Template]`: List of pulse templates used for matched filtering."""
+        """List of pulse templates used for matched filtering.
+
+        Returns
+        -------
+        list[Template]
+            List of pulse templates.
+        """
         return self._temp_bank
 
     @property
     def convs(self) -> np.ndarray:
-        """:obj:`~numpy.ndarray`: Convolution results for all templates."""
+        """Convolution results for all templates.
+
+        Returns
+        -------
+        ndarray
+            Convolution output.
+        """
         return self._convs
 
     @property
     def peak_bin(self) -> int:
-        """:obj:`int`: Best match template peak bin."""
+        """Best match template peak bin.
+
+        Returns
+        -------
+        int
+            Peak bin.
+        """
         return int(self._peak_bin)
 
     @property
     def best_temp(self) -> Template:
-        """:class:`~sigpyproc.core.filters.Template`: Best match template."""
+        """Best match template.
+
+        Returns
+        -------
+        Template
+            Best match template.
+        """
         return self._best_temp
 
     @property
     def snr(self) -> float:
-        """:obj:`float`: Signal-to-noise ratio based on best match template."""
+        """Signal-to-noise ratio based on best match template.
+
+        Returns
+        -------
+        float
+            Signal-to-noise ratio.
+        """
         return self._best_snr
 
     @property
     def best_model(self) -> np.ndarray:
-        """:obj:`~numpy.ndarray`: Best match template fit."""
+        """Best match template fit scaled by SNR and data Z-scores.
+
+        Returns
+        -------
+        ndarray
+            Best match template fit.
+        """
         return (
             self.best_temp.get_model(self.peak_bin, self.data.size)
             * self.snr
@@ -160,7 +233,13 @@ class MatchedFilter:
 
     @property
     def on_pulse(self) -> tuple[int, int]:
-        """:obj:`tuple[int, int]`: Best match template pulse region."""
+        """Best match template pulse region.
+
+        Returns
+        -------
+        tuple[int, int]
+            Start and end bin of the on pulse region.
+        """
         return self.best_temp.get_on_pulse(self.peak_bin, self.data.size)
 
     def plot(
@@ -168,15 +247,14 @@ class MatchedFilter:
         figsize: tuple[float, float] = (12, 6),
         dpi: int = 100,
     ) -> plt.Figure:
-        """
-        Plot the pulse template.
+        """Plot the pulse template.
 
         Parameters
         ----------
         figsize : tuple[float, float], optional
-            Figure size in inches, by default (12, 6)
+            Figure size in inches, by default (12, 6).
         dpi : int, optional
-            Dots per inch, by default 100
+            Dots per inch, by default 100.
 
         Returns
         -------
@@ -188,7 +266,9 @@ class MatchedFilter:
             f"Best width: {self.best_temp.width:.2f}, "
             f"SNR: {self.snr:.2f})"
         )
-        stats_box = f"loc: {self.zscores.loc:.2f}, scale: {self.zscores.scale:.2f}"
+        stats_box = (
+            f"loc: {self.zscores.loc[0]:.2f}, scale: {self.zscores.scale[0]:.2f}"
+        )
         fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
         ax.plot(self.data, label="Data", lw=2)
         ax.plot(self.best_model, label="Best Model", lw=2)
@@ -237,7 +317,11 @@ class MatchedFilter:
     def _compute(self) -> None:
         temp_kernels = typed.List([temp.data for temp in self.temp_bank])
         ref_bins = typed.List([temp.ref_bin for temp in self.temp_bank])
-        self._convs = kernels.convolve_fft(self.zscores.data, temp_kernels, ref_bins)
+        self._convs = kernels.convolve_templates(
+            self.zscores.data,
+            temp_kernels,
+            ref_bins,
+        )
         self._itemp, self._peak_bin = np.unravel_index(
             self._convs.argmax(),
             self._convs.shape,
@@ -250,15 +334,14 @@ class MatchedFilter:
         size_max: int,
         spacing_factor: float = 1.5,
     ) -> np.ndarray:
-        """
-        Get box width spacing for matched filtering.
+        """Get box width spacing for matched filtering.
 
         Parameters
         ----------
         size_max : int
             Maximum number of bins for box template width.
         spacing_factor : float, optional
-            Spacing factor for width, by default 1.5
+            Spacing factor for width, by default 1.5.
 
         Returns
         -------
@@ -276,8 +359,7 @@ class MatchedFilter:
 
 @attrs.define(auto_attribs=True, slots=True, frozen=True)
 class Template:
-    """
-    1D pulse template class for matched filtering.
+    """1D pulse template class for matched filtering.
 
     This class represents various pulse shapes as templates for matched filtering
     and provides methods to generate and visualize them.
@@ -289,11 +371,25 @@ class Template:
     width : float
         Width of the pulse template in bins.
     ref_bin : int, optional
-        Reference bin for the pulse template, by default 0
+        Reference bin for the pulse template, by default 0.
     ref : {"start", "peak"}, optional
-        Reference type for the pulse template, by default "start"
+        Reference type for the pulse template, by default "start".
     kind : str, optional
-        Type of the pulse template, by default "custom"
+        Type of the pulse template, by default "custom".
+
+    Attributes
+    ----------
+    data
+    width
+    ref_bin
+    ref
+    kind
+
+    Raises
+    ------
+    ValueError
+        If the input data array is empty or not 1D.
+        If the reference bin is out of bounds.
     """
 
     data: np.ndarray
@@ -323,40 +419,38 @@ class Template:
             raise ValueError(msg)
 
     def get_model(self, peak_bin: int, nbins: int) -> np.ndarray:
-        """
-        Get profile model for the pulse template.
+        """Get profile model for the pulse template.
 
         Parameters
         ----------
         peak_bin : int
-            Peak bin in the profile
+            Peak bin in the profile.
         nbins : int
-            Profile size
+            Profile size.
 
         Returns
         -------
         ndarray
-            Profile model for the pulse template
+            Profile model for the pulse template.
         """
         padded = np.pad(self.data, (0, nbins - self.data.size))
         padded_norm = kernels.normalize_template(padded)
         return np.roll(padded_norm, peak_bin - self.ref_bin)
 
     def get_on_pulse(self, peak_bin: int, nbins: int) -> tuple[int, int]:
-        """
-        Get on pulse region in the profile model for the pulse template.
+        """Get on pulse region in the profile model for the pulse template.
 
         Parameters
         ----------
         peak_bin : int
-            Peak bin in the model
+            Peak bin in the model.
         nbins : int
-            Profile size
+            Profile size.
 
         Returns
         -------
         tuple[int, int]
-            Start and end bin of the on pulse region
+            Start and end bin of the on pulse region.
         """
         if self.ref == "start":
             pulse_left = peak_bin
@@ -373,15 +467,14 @@ class Template:
         figsize: tuple[float, float] = (10, 5),
         dpi: int = 100,
     ) -> plt.Figure:
-        """
-        Plot the pulse template.
+        """Plot the pulse template.
 
         Parameters
         ----------
         figsize : tuple[float, float], optional
-            Figure size in inches, by default (10, 5)
+            Figure size in inches, by default (10, 5).
         dpi : int, optional
-            Dots per inch, by default 100
+            Dots per inch, by default 100.
 
         Returns
         -------
@@ -403,8 +496,7 @@ class Template:
 
     @classmethod
     def gen_boxcar(cls, width: int) -> Template:
-        """
-        Generate a boxcar pulse template.
+        """Generate a boxcar pulse template.
 
         Parameters
         ----------
@@ -425,8 +517,7 @@ class Template:
 
     @classmethod
     def gen_gaussian(cls, width: float, extent: float = 3.5) -> Template:
-        """
-        Generate a Gaussian pulse template.
+        """Generate a Gaussian pulse template.
 
         Parameters
         ----------
@@ -452,8 +543,7 @@ class Template:
 
     @classmethod
     def gen_lorentzian(cls, width: float, extent: float = 3.5) -> Template:
-        """
-        Generate a Lorentzian pulse template.
+        """Generate a Lorentzian pulse template.
 
         Parameters
         ----------
@@ -470,11 +560,11 @@ class Template:
         if width <= 0:
             msg = f"Width {width} must be greater than 0."
             raise ValueError(msg)
-        stddev = gaussian_fwhm_to_sigma * width
-        size = int(np.ceil(extent * stddev))
+        gamma = width / 2
+        size = int(np.ceil(extent * gamma))
         x = np.arange(-size, size + 1)
         ref_bin = len(x) // 2
-        arr = 1 / (1 + (x / stddev) ** 2)
+        arr = gamma**2 / (x**2 + gamma**2)
         return cls(arr, width, ref_bin=ref_bin, ref="peak", kind="lorentzian")
 
     def __str__(self) -> str:

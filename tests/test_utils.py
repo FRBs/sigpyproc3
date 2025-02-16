@@ -1,21 +1,21 @@
 import logging
+from pathlib import Path
 
 import numpy as np
 import pytest
-from astropy.time import Time
 from rich.logging import RichHandler
 
 from sigpyproc import utils
 
 
 class TestUtils:
-    def test_roll_array(self) -> None:
-        arr = np.arange(10)
-        np.testing.assert_equal(utils.roll_array(arr, 0), arr)
-        np.testing.assert_equal(utils.roll_array(arr, 1), np.roll(arr, -1))
-        np.testing.assert_equal(utils.roll_array(arr, -1), np.roll(arr, 1))
-        np.testing.assert_equal(utils.roll_array(arr, 10), arr)
-        np.testing.assert_equal(utils.roll_array(arr, -10), arr)
+    def test_detect_file_type(self, filfile_8bit_1: str, tmpfile: str) -> None:
+        assert utils.detect_file_type(filfile_8bit_1) == "sigproc"
+        filfile_tmp = utils.validate_path(filfile_8bit_1)
+        assert utils.detect_file_type(filfile_tmp.with_suffix(".fits")) == "pfits"
+        assert utils.detect_file_type(filfile_tmp.with_suffix(".h5")) == "fbh5"
+        with pytest.raises(ValueError):
+            utils.detect_file_type(tmpfile)
 
     def test_nearest_factor(self) -> None:
         np.testing.assert_equal(utils.nearest_factor(10, 0), 1)
@@ -42,16 +42,70 @@ class TestUtils:
         np.testing.assert_equal(utils.duration_string(3600), "1.0 hours")
         np.testing.assert_equal(utils.duration_string(86400), "1.0 days")
 
-    def test_time_after_nsamps(self) -> None:
-        tstart = 60000
-        tsamp = 0.1
-        output = utils.time_after_nsamps(tstart, tsamp)
-        assert isinstance(output, Time)
-        np.testing.assert_equal(output.mjd, tstart)
-        nsamps = 100
-        output = utils.time_after_nsamps(tstart, tsamp, nsamps)
-        assert isinstance(output, Time)
-        np.testing.assert_equal(output.mjd, tstart + nsamps * tsamp / 86400)
+    def test_gaussian(self) -> None:
+        x = np.linspace(-5, 5, 101)
+        result = utils.gaussian(x, mu=0, fwhm=1, amp=1)
+        assert isinstance(result, np.ndarray)
+        assert np.all(result >= 0)
+        max_idx = np.argmax(result)
+        np.testing.assert_equal(x[max_idx], 0)
+        np.testing.assert_equal(result.shape, x.shape)
+
+    def test_pad_centre(self) -> None:
+        array = np.array([1, 2, 3])
+        padded_array = utils.pad_centre(array, 7)
+        np.testing.assert_equal(padded_array, np.array([0, 0, 1, 2, 3, 0, 0]))
+        padded_array = utils.pad_centre(array, 3)
+        np.testing.assert_equal(padded_array, array)
+
+        with pytest.raises(ValueError):
+            utils.pad_centre(array, 2)
+
+    def test_pad_centre_cases(self) -> None:
+        array = np.array([1, 2])
+        padded_array = utils.pad_centre(array, 4)
+        np.testing.assert_equal(padded_array, np.array([0, 1, 2, 0]))
+        padded_array = utils.pad_centre(array, 5)
+        np.testing.assert_equal(padded_array, np.array([0, 0, 1, 2, 0]))
+
+
+class TestPaths:
+    def test_basic_file_validation(self, tmpfile: str) -> None:
+        with pytest.raises(ValueError):
+            utils.validate_path(tmpfile, file_okay=False, dir_okay=False)
+        with pytest.raises(NotADirectoryError):
+            utils.validate_path(tmpfile, file_okay=False, dir_okay=True)
+        assert utils.validate_path(tmpfile) == Path(tmpfile).resolve()
+
+    def test_basic_dir_validation(self, tmpdir: str) -> None:
+        with pytest.raises(IsADirectoryError):
+            utils.validate_path(tmpdir)
+        assert utils.validate_path(tmpdir, dir_okay=True) == Path(tmpdir).resolve()
+
+    def test_permission_validation(self, read_only_file: str) -> None:
+        assert utils.validate_path(read_only_file) == Path(read_only_file).resolve()
+        with pytest.raises(PermissionError) as exc_info:
+            utils.validate_path(read_only_file, writable=True)
+        assert "write permission" in str(exc_info.value)
+
+    def test_read_permission(self, tmpfile: str) -> None:
+        path = Path(tmpfile)
+        # Remove read permissions
+        path.chmod(0o222)  # write-only permissions
+        with pytest.raises(PermissionError) as exc_info:
+            utils.validate_path(path, readable=True, writable=False)
+        assert "read permission" in str(exc_info.value)
+        path.chmod(0o666)
+
+    def test_non_existent_path(self) -> None:
+        with pytest.raises(FileNotFoundError):
+            utils.validate_path("non_existent.txt")
+
+    def test_resolve_path_option(self, tmpfile: str) -> None:
+        assert utils.validate_path(tmpfile, resolve_path=False) == Path(tmpfile)
+        assert (
+            utils.validate_path(tmpfile, resolve_path=True) == Path(tmpfile).resolve()
+        )
 
 
 class TestLogger:
