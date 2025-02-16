@@ -52,7 +52,7 @@ class FilReader(Filterbank):
         *,
         check_contiguity: bool = True,
     ) -> None:
-        if isinstance(filenames, (str, Path)):
+        if isinstance(filenames, str | Path):
             filenames = [filenames]
         self._filenames = filenames
         self._header = Header.from_sigproc(

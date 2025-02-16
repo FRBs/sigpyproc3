@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable, Literal
+from typing import TYPE_CHECKING, Literal
 
 import attrs
 import bottleneck as bn
@@ -11,6 +11,8 @@ from sigpyproc.core import kernels
 from sigpyproc.utils import apply_along_axes
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from numpy.typing import ArrayLike, NDArray
 
     from sigpyproc.core.custom_types import FilterMethods, LocMethods, ScaleMethods

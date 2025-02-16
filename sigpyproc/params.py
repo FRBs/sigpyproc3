@@ -7,7 +7,7 @@ from astropy import constants, units
 from bidict import bidict
 
 if TYPE_CHECKING:
-    from typing import Callable
+    from collections.abc import Callable
 
 DM_CONSTANT_LK = 4.148808e3  # L&K Handbook of Pulsar Astronomy
 DM_CONSTANT_MT = 1 / 0.000241  # TEMPO2 Manchester & Taylor (1972)
@@ -226,7 +226,7 @@ psrfits_to_sigpyproc = {
 }
 
 sigpyproc_to_psrfits = dict(
-    zip(psrfits_to_sigpyproc.values(), psrfits_to_sigpyproc.keys()),
+    zip(psrfits_to_sigpyproc.values(), psrfits_to_sigpyproc.keys(), strict=False),
 )
 
 sigproc_to_tempo = {0: "g", 1: "3", 3: "f", 4: "7", 6: "1", 8: "g", 5: "8"}

@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 import attrs
 import numpy as np
@@ -13,6 +13,7 @@ from rich.logging import RichHandler
 
 if TYPE_CHECKING:
     import inspect
+    from collections.abc import Callable
 
 
 def detect_file_type(filename: str | Path) -> str:

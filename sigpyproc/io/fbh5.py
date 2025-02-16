@@ -39,7 +39,7 @@ def parse_header(filename: str | Path) -> dict:
         raise OSError(msg)
     with h5py.File(filename, "r") as h5file:
         class_atr = h5file.attrs["CLASS"]
-        if not isinstance(class_atr, (str, bytes)) or class_atr.lower() not in [
+        if not isinstance(class_atr, str | bytes) or class_atr.lower() not in [
             "filterbank",
             b"filterbank",
         ]:

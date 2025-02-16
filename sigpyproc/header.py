@@ -364,7 +364,7 @@ class Header:
                 msg = f"reference frequency {ref_freq} not defined"
                 raise ValueError(msg)
             fch_ref = float(getattr(self, f"f{ref_freq}"))
-        elif isinstance(ref_freq, (int, float)):
+        elif isinstance(ref_freq, int | float):
             fch_ref = float(ref_freq)
         else:
             msg = "ref_freq must be a string or a number"

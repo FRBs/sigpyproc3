@@ -208,7 +208,7 @@ def parse_header_multi(
         observational metadata
 
     """
-    if isinstance(filenames, (str, Path)):
+    if isinstance(filenames, str | Path):
         filenames = [filenames]
 
     header = parse_header(filenames[0])

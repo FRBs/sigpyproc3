@@ -12,7 +12,7 @@ from sigpyproc.header import Header
 from sigpyproc.viz.styles import PlotTable
 
 if TYPE_CHECKING:
-    from typing import Callable
+    from collections.abc import Callable
 
     from sigpyproc.core.custom_types import MaskMethods
 
@@ -267,7 +267,7 @@ class RFIMask:
         with h5py.File(filename, "w") as fp:
             fp.attrs["threshold"] = self.threshold
             for key, value in attrs.asdict(self.header).items():
-                if isinstance(value, (np.integer, np.floating, int, float, str)):
+                if isinstance(value, np.integer | np.floating | int | float | str):
                     fp.attrs[key] = value
             for key, value in attrs.asdict(self).items():
                 if isinstance(value, np.ndarray):

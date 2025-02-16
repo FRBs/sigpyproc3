@@ -158,7 +158,7 @@ class Furby:
             block_group = f.create_group("block")
             block_dict = self.block.header.to_dict()
             for key, value in block_dict.items():
-                if not isinstance(value, (list, np.ndarray)):
+                if not isinstance(value, list | np.ndarray):
                     block_group.attrs[key] = value if value is not None else "None"
             block_group.create_dataset("data", data=self.block.data)
 

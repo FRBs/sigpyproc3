@@ -5,13 +5,13 @@ description = "Python FRB/pulsar data toolbox"
 readme = "README.md"
 authors = [{ name = "Ewan Barr", email = "ewan.d.barr@gmail.com" }]
 maintainers = [{ name = "Pravir Kumar", email = "pravirka@gmail.com" }]
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 classifiers = [
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Operating System :: MacOS :: MacOS X",
     "Operating System :: Microsoft :: Windows",
     "Operating System :: POSIX :: Linux",
@@ -21,7 +21,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Astronomy",
 ]
 dependencies = [
-    "numpy",
+    "numpy>=2.0",
     "numba",
     "astropy",
     "matplotlib",
@@ -84,7 +84,7 @@ exclude = ["sigpyproc/apps/spp_digifil.py"]
 
 line-length = 88
 indent-width = 4
-target-version = "py39"
+target-version = "py310"
 
 [tool.ruff.format]
 quote-style = "double"

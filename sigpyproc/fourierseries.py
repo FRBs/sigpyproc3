@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 import numpy as np
 from numpy import typing as npt
@@ -12,6 +12,7 @@ from sigpyproc.header import Header
 from sigpyproc.utils import validate_path
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
 

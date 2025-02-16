@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 import rich_click as click
 from rich import print as rprint
@@ -11,6 +11,7 @@ from sigpyproc.io import sigproc
 from sigpyproc.utils import detect_file_type
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
 file_readers: dict[str, Callable] = {
