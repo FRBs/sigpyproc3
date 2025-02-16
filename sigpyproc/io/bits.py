@@ -118,7 +118,7 @@ def pack(
     return packed
 
 
-@attrs.define(auto_attribs=True, frozen=True, slots=True)
+@attrs.frozen(auto_attribs=True)
 class BitsInfo:
     """Class to handle bits info.
 

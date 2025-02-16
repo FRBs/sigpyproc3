@@ -3,19 +3,51 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, ClassVar
 
 import attrs
-import matplotlib as mpl
+import seaborn as sns
 
 if TYPE_CHECKING:
     from matplotlib import pyplot as plt
 
 
-def set_mpl_style(**rc_kwargs: int) -> None:
+def set_seaborn(font_scale: float = 1, **rc_kwargs) -> None:  # noqa: ANN003
+    """Set seaborn style with custom rc parameters."""
     rc = {
         # Fontsizes
         "font.size": 16,
+        "xtick.labelsize": 16,
+        "ytick.labelsize": 16,
+        "legend.fontsize": 16,
+        "legend.title_fontsize": 16,
+        "axes.titlesize": 16,
+        "axes.labelsize": 16,
+        "xtick.direction": "in",
+        "xtick.minor.visible": True,
+        "xtick.top": False,
+        "ytick.direction": "in",
+        "ytick.minor.visible": True,
+        "ytick.right": False,
+        # Set line widths
+        "axes.axisbelow": "line",
+        "axes.linewidth": 1,
+        "lines.linewidth": 1.5,
+        "lines.markersize": 3,
+        "savefig.bbox": "tight",
+        "savefig.pad_inches": 0.05,
+        "font.serif": ["Times", "Times New Roman", "DejaVu Serif"],
+        "font.family": "serif",
+        "mathtext.fontset": "dejavuserif",
+        # Use LaTeX for math formatting
+        "text.usetex": False,  # Set to True if available
+        "text.latex.preamble": r"\usepackage{amsmath, amssymb}",
     }
     rc.update(rc_kwargs)
-    mpl.rcParams.update(rc)
+    sns.set_theme(
+        context="paper",
+        style="ticks",
+        palette="colorblind",
+        font_scale=font_scale,
+        rc=rc,
+    )
 
 
 @attrs.frozen(auto_attribs=True)

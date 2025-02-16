@@ -45,7 +45,7 @@ class PulseParams:
         by default -4.4 (Kolmogorov-like spectrum).
     tau0 : float, optional
         Decay timescale of the scattering kernel at central frequency,
-        by default 1.0.
+        by default 1e-3 seconds.
     spec_kind : SpecKindType, optional
         Kind of the desired spectral structure, by default 'flat'.
     spec_idx : float, optional
@@ -70,7 +70,7 @@ class PulseParams:
     dmsmear: bool = attrs.field(default=True)
     disp_ind: float = attrs.field(default=-2.0)
     scatt_idx: float = attrs.field(default=-4.4)
-    tau0: float = attrs.field(default=1.0)
+    tau0: float = attrs.field(default=1e-3)
     spec_kind: SpecSimulMethods = attrs.field(default="flat")
     spec_idx: float = attrs.field(default=-2.0)
     os_fact: int = attrs.field(default=10, validator=attrs.validators.ge(1))
@@ -111,7 +111,7 @@ class PulseStats:
     width_eff: float
 
 
-@attrs.define(auto_attribs=True, slots=True)
+@attrs.frozen(auto_attribs=True)
 class Furby:
     """Container object to handle the simulated FRB signal.
 
@@ -321,7 +321,8 @@ class FurbyGenerator:
             nsamps_disp_os,
             self.params.os_fact,
         )
-        frb_block = FilterbankBlock(data_disp * stats.norm, self.hdr)
+        block_hdr = self.hdr_os.new_header({"nsamples": nsamps_disp_os})
+        frb_block = FilterbankBlock(data_disp * stats.norm, block_hdr)
         return Furby(frb_block, self.params, stats)
 
     def _gen_pulse(self) -> np.ndarray:

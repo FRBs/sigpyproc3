@@ -85,7 +85,7 @@ def main(
     scale_fac: float,
     apply_FITS_scale_and_offset: bool,
 ) -> None:
-    """Convert to sigproc output digifil style."""
+    """Convert to Sigproc filterbank format in digifil style."""
     msg = "This function is not implemented yet."
     raise NotImplementedError(msg)
 
