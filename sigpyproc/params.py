@@ -7,7 +7,7 @@ from astropy import constants, units
 from bidict import bidict
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    import numpy.typing as npt
 
 DM_CONSTANT_LK = 4.148808e3  # L&K Handbook of Pulsar Astronomy
 DM_CONSTANT_MT = 1 / 0.000241  # TEMPO2 Manchester & Taylor (1972)
@@ -19,20 +19,20 @@ DM_CONSTANT_SI = (
 
 
 def compute_dmdelays(
-    freqs: np.ndarray,
-    dm: float | np.ndarray,
+    freqs: npt.ArrayLike,
+    dm: float | npt.ArrayLike,
     tsamp: float,
     ref_freq: float,
     *,
     in_samples: bool = True,
-) -> np.ndarray:
-    """Compute ISM disperison delays for given DM value(s).
+) -> npt.NDArray[np.int32 | np.float32]:
+    """Compute ISM dispersion delays for given DM value(s).
 
     Parameters
     ----------
-    freqs : ndarray
+    freqs : ArrayLike
         Frequencies of each channel.
-    dm : float | ndarray
+    dm : float | ArrayLike
         Dispersion measure(s) to calculate delays for.
     tsamp : float
         Sampling time of the data.
@@ -43,12 +43,13 @@ def compute_dmdelays(
 
     Returns
     -------
-    ndarray
+    NDArray
         Dispersion delays at middle of each channel with respect to reference frequency.
 
         If dm is a scalar, returns a 1D array of delays. If dm is an array,
         returns a 2D array with shape ``(len(dm), len(freqs))``.
     """
+    freqs = np.atleast_1d(freqs).astype(np.float32)
     dm = np.atleast_1d(dm)[:, np.newaxis].astype(np.float32)
     delays = dm * DM_CONSTANT_LK * ((freqs**-2) - (ref_freq**-2))
     if in_samples:
@@ -57,19 +58,19 @@ def compute_dmdelays(
 
 
 def compute_dmsmearing(
-    freqs: np.ndarray,
-    dm: float | np.ndarray,
+    freqs: npt.ArrayLike,
+    dm: float | npt.ArrayLike,
     tsamp: float,
     *,
     in_samples: bool = True,
-) -> np.ndarray:
+) -> npt.NDArray[np.int32 | np.float32]:
     """Compute ISM smearing due to finite bandwidth for given DM value(s).
 
     Parameters
     ----------
-    freqs : ndarray
+    freqs : ArrayLike
         Frequencies of each channel.
-    dm : float | ndarray
+    dm : float | ArrayLike
         Dispersion measure(s) to calculate smearing for.
     tsamp : float
         Sampling time of the data.
@@ -78,14 +79,15 @@ def compute_dmsmearing(
 
     Returns
     -------
-    ndarray
+    NDArray
         DM smearing in the frequency channels due to finite bandwidth.
 
         If dm is a scalar, returns a 1D array of smearing. If dm is an array,
         returns a 2D array with shape ``(len(dm), len(freqs))``.
     """
+    freqs = np.atleast_1d(freqs).astype(np.float32)
     dm = np.atleast_1d(dm)[:, np.newaxis].astype(np.float32)
-    foff = np.abs(freqs[1] - freqs[0])
+    foff = float(np.abs(freqs[1] - freqs[0]))
     smearing = 2 * DM_CONSTANT_LK * foff * dm / freqs**3
     if in_samples:
         smearing = (smearing / tsamp).round().astype(np.int32)
@@ -193,7 +195,7 @@ struct_to_numpy = {"I": "uint", "d": "float", "str": "S256"}
 telescope_lats_longs = {"Effelsberg": (50.52485, 6.883593)}
 
 # useful for creating inf files
-presto_inf: dict[str, tuple[str, Callable, str]] = {
+presto_inf: dict[str, tuple[str, type, str]] = {
     "Data file name without suffix": ("basename", str, "s"),
     "Telescope used": ("telescope", str, "s"),
     "Instrument used": ("backend", str, "s"),

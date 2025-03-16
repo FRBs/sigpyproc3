@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import struct
 from pathlib import Path
-from typing import BinaryIO
+from typing import TYPE_CHECKING, BinaryIO
 
 import attrs
 import numpy as np
@@ -11,6 +11,9 @@ from astropy.coordinates import SkyCoord
 from bidict import bidict
 
 from sigpyproc.utils import validate_path
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 header_keys = {
     "signed": "b",
@@ -195,7 +198,7 @@ def edit_header(filename: str | Path, key: str, value: float | str) -> None:
 
 
 def parse_header_multi(
-    filenames: str | Path | list[str | Path],
+    filenames: str | Path | Sequence[str | Path],
     *,
     check_contiguity: bool = True,
 ) -> dict:
@@ -203,7 +206,7 @@ def parse_header_multi(
 
     Parameters
     ----------
-    filenames : str | Path | list[str | Path]
+    filenames : str | Path | Sequence[str | Path]
         sigproc filterbank files containing the header
 
     Returns

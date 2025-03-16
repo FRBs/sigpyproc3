@@ -26,7 +26,7 @@ sys.path.insert(0, Path("../").resolve().as_posix())
 
 project = "sigpyproc3"
 author = "Fast Radio Burst Software"
-year = datetime.datetime.now(tz=datetime.timezone.utc).date().year
+year = datetime.datetime.now(tz=datetime.UTC).date().year
 copyright = f"{year}, {author}"  # noqa: A001
 version = meta_version("sigpyproc")
 release = version

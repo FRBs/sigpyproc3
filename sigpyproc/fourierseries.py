@@ -278,7 +278,7 @@ class FourierSeries:
         FourierSeries
             Whitened fourier series.
         """
-        end_freq_bin = int(round(end_freq / self.binwidth))
+        end_freq_bin = round(end_freq / self.binwidth)
         out_ar = kernels.fs_running_median(
             self.data,
             start_width,

@@ -11,8 +11,7 @@ from sigpyproc.io.bits import BitsInfo, pack, unpack
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-
-    from typing_extensions import Self
+    from typing import Self
 
     from sigpyproc.io.sigproc import StreamInfo
 

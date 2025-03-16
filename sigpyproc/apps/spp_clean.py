@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import rich_click as click
 
 from sigpyproc.readers import FilReader
+
+if TYPE_CHECKING:
+    from sigpyproc.core.custom_types import MaskMethods
 
 
 @click.command(
@@ -46,7 +51,7 @@ from sigpyproc.readers import FilReader
 )
 def main(
     filfile: str,
-    method: str,
+    method: MaskMethods,
     threshold: float,
     outfile: str | None,
     maskfile: str | None,

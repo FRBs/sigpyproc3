@@ -177,7 +177,7 @@ class TimeSeries:
         if window < 0:
             msg = "Window size must be greater than 0"
             raise ValueError(msg)
-        window_bins = int(round(window / self.header.tsamp))
+        window_bins = round(window / self.header.tsamp)
         if fast:
             tim_filter = stats.running_filter_fast(
                 self.data,

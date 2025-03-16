@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from typing import ClassVar
+from typing import Any, ClassVar
 
 import attrs
 import numpy as np
+import numpy.typing as npt
 
 from sigpyproc.core import kernels
 
@@ -11,28 +12,28 @@ nbits_to_dtype = {1: "<u1", 2: "<u1", 4: "<u1", 8: "<u1", 16: "<u2", 32: "<f4"}
 
 
 def unpack(
-    array: np.ndarray,
+    array: npt.NDArray[np.uint8],
     nbits: int,
-    unpacked: np.ndarray | None = None,
+    unpacked: npt.NDArray[np.uint8] | None = None,
     *,
     bitorder: str = "big",
-) -> np.ndarray:
+) -> npt.NDArray[np.uint8]:
     """Unpack 1, 2 and 4-bit data packed as 8-bit numpy array.
 
     Parameters
     ----------
-    array : numpy.ndarray
+    array : NDArray[np.uint8]
         Array to unpack.
     nbits : int
         Number of bits of the packed data.
-    unpacked : numpy.ndarray, optional
+    unpacked : NDArray[np.uint8], optional
         Array to unpack into.
     bitorder : str, optional
         Bit order of the packed data.
 
     Returns
     -------
-    numpy.ndarray
+    NDArray[np.uint8]
         Unpacked array.
 
     Raises
@@ -65,28 +66,28 @@ def unpack(
 
 
 def pack(
-    array: np.ndarray,
+    array: npt.NDArray[np.uint8],
     nbits: int,
-    packed: np.ndarray | None = None,
+    packed: npt.NDArray[np.uint8] | None = None,
     *,
     bitorder: str = "big",
-) -> np.ndarray:
+) -> npt.NDArray[np.uint8]:
     """Pack 1, 2 and 4-bit data into 8-bit numpy array.
 
     Parameters
     ----------
-    array : numpy.ndarray
+    array : NDArray[np.uint8]
         Array to pack.
     nbits : int
         Number of bits of the unpacked data.
-    packed : numpy.ndarray, optional
+    packed : NDArray[np.uint8], optional
         Array to pack into.
     bitorder : str, optional
         Bit order in which to pack the data.
 
     Returns
     -------
-    numpy.ndarray
+    NDArray[np.uint8]
         Packed array.
 
     Raises
@@ -174,7 +175,7 @@ class BitsInfo:
         return self.default_sigma[self.nbits]
 
     @property
-    def dtype(self) -> np.dtype:
+    def dtype(self) -> np.dtype[Any]:
         """Type of the data.
 
         Returns
@@ -272,7 +273,7 @@ class BitsInfo:
         """
         return self.digi_mean / self.digi_sigma
 
-    def to_dict(self) -> dict[str, int | float | np.dtype]:
+    def to_dict(self) -> dict[str, int | float | np.dtype[Any]]:
         """Get a dict of all property attributes.
 
         Returns
@@ -289,7 +290,7 @@ class BitsInfo:
         attributes.update(prop)
         return attributes
 
-    def quantize(self, arr_norm: np.ndarray) -> np.ndarray:
+    def quantize(self, arr_norm: npt.NDArray[np.float32]) -> npt.NDArray[np.uint8]:
         """Quantize normalized data to given nbit-dependent mean and sigma.
 
         Parameters

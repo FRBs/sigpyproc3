@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 from numpy import typing as npt
 
 from sigpyproc import params
 from sigpyproc.core.filters import MatchedFilter
 from sigpyproc.header import Header
+
+if TYPE_CHECKING:
+    from sigpyproc.core.custom_types import MatchFilterMethods
 
 
 class Profile:
@@ -38,7 +43,7 @@ class Profile:
 
     def compute_mf(
         self,
-        temp_kind: str = "boxcar",
+        temp_kind: MatchFilterMethods = "boxcar",
         nbins_max: int = 32,
         spacing_factor: float = 1.5,
     ) -> MatchedFilter:

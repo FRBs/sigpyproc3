@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+from typing import Self
+
 import attrs
 import numpy as np
 from astropy import units
 from astropy.coordinates import Angle, EarthLocation, SkyCoord
 from astropy.io import fits
 from astropy.time import Time, TimeDelta
-from typing_extensions import Self
 
 from sigpyproc.io.bits import BitsInfo, unpack
 from sigpyproc.utils import FrequencyChannels

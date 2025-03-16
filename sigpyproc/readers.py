@@ -17,7 +17,7 @@ from sigpyproc.io.pfits import PFITSFile, PrimaryHdr, SubintHdr
 from sigpyproc.utils import get_callerfunc, get_logger
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator
+    from collections.abc import Callable, Iterator, Sequence
 
     from sigpyproc.core.custom_types import LocMethods
     from sigpyproc.io.bits import BitsInfo
@@ -30,7 +30,7 @@ class FilReader(Filterbank):
 
     Parameters
     ----------
-    filenames : str | Path | list[str | Path]
+    filenames : str | Path | Sequence[str | Path]
         Filterbank file name(s).
     check_contiguity : bool, optional
         Check if the input files are contiguous, by default True.
@@ -48,7 +48,7 @@ class FilReader(Filterbank):
 
     def __init__(
         self,
-        filenames: str | Path | list[str | Path],
+        filenames: str | Path | Sequence[str | Path],
         *,
         check_contiguity: bool = True,
     ) -> None:
@@ -193,10 +193,10 @@ class FilReader(Filterbank):
             # be nsamps * nchans
             # Is there a way to guarantee that the behaviour is correct here?
             unpack_buffer = allocate_buffer(allocator, gulp * self.header.nchans)
-            data = np.frombuffer(unpack_buffer, dtype=self.bitsinfo.dtype)  # type: ignore[call-overload]
+            data = np.frombuffer(unpack_buffer, dtype=self.bitsinfo.dtype)
         else:
             unpack_buffer = None
-            data = np.frombuffer(read_buffer, dtype=self.bitsinfo.dtype)  # type: ignore[call-overload]
+            data = np.frombuffer(read_buffer, dtype=self.bitsinfo.dtype)
 
         self._file.seek(start * self.samp_stride)
         nreads, lastread = divmod(nsamps, (gulp - skipback))
