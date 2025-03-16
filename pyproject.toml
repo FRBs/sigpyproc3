@@ -31,7 +31,10 @@ dependencies = [
     "click",
     "rich",
     "rich-click",
-    "rocket-fft",
+    #"rocket-fft",
+    # The following line is a workaround for Py 3.13 compatibility
+    # until the issue is resolved in rocket-fft
+    "rocket-fft @ git+https://github.com/styfenschaer/rocket-fft.git",
     "bidict",
     "typing_extensions",
 ]
