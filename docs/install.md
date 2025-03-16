@@ -3,7 +3,7 @@
 # Installation
 
 :::{note}
-`sigpyproc` requires Python 3.8 and later.
+`sigpyproc` requires Python 3.11 and later.
 :::
 
 ## Using pip

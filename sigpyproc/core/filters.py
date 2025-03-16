@@ -15,7 +15,7 @@ from sigpyproc.core.stats import (
 )
 
 if TYPE_CHECKING:
-    from sigpyproc.core.custom_types import LocMethods, ScaleMethods
+    from sigpyproc.core.custom_types import LocMethods, MatchFilterMethods, ScaleMethods
 
 
 class MatchedFilter:
@@ -99,7 +99,7 @@ class MatchedFilter:
         data: np.ndarray,
         loc_method: LocMethods | Literal["norm"] = "median",
         scale_method: ScaleMethods | Literal["norm"] = "iqr",
-        temp_kind: Literal["boxcar", "gaussian", "lorentzian"] = "boxcar",
+        temp_kind: MatchFilterMethods = "boxcar",
         nbins_max: int = 32,
         spacing_factor: float = 1.5,
     ) -> None:

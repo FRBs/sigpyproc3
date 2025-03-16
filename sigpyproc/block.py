@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Self
 
 import numpy as np
 from numpy import typing as npt
-from typing_extensions import Self
 
 from sigpyproc.core import kernels, stats
 from sigpyproc.header import Header

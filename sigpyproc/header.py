@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import attrs
 import numpy as np
@@ -14,6 +14,8 @@ from sigpyproc.io import fbh5, pfits, sigproc
 from sigpyproc.io.bits import BitsInfo
 from sigpyproc.io.fileio import FileWriter
 
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 @attrs.frozen(auto_attribs=True, kw_only=True)
 class Header:
@@ -687,7 +689,7 @@ class Header:
     @classmethod
     def from_sigproc(
         cls,
-        filenames: str | Path | list[str | Path],
+        filenames: str | Path | Sequence[str | Path],
         *,
         check_contiguity: bool = True,
     ) -> Header:
@@ -695,7 +697,7 @@ class Header:
 
         Parameters
         ----------
-        filenames : str | Path | list[str | Path]
+        filenames : str | Path | Sequence[str | Path]
             Sigproc filterbank files containing the header.
         check_contiguity : bool, optional
             Check if the files are contiguous, by default True.

@@ -24,3 +24,4 @@ SpecSimulMethods = Literal[
     "gaussian_blobs",
     "random",
 ]
+MatchFilterMethods = Literal["boxcar", "gaussian", "lorentzian"]

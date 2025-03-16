@@ -81,13 +81,13 @@ class TestFilReader:
             corrupted_file.cwrite(data[: fil.header.nsamples * fil.header.nchans - 100])
         corrupted_file.close()
         corruted_fil = FilReader(tmpfile)
-        with pytest.raises(ValueError):  # noqa: PT012
+        with pytest.raises(ValueError):
             for _, _, _ in corruted_fil.read_plan(gulp=512):
                 pass
 
     def test_nsamps_eq_skipback(self, filfile_8bit_1: str) -> None:
         fil = FilReader(filfile_8bit_1)
-        with pytest.raises(ValueError):  # noqa: PT012
+        with pytest.raises(ValueError):
             for _, _, _ in fil.read_plan(gulp=512, nsamps=1024, skipback=1024):
                 pass
 
@@ -132,7 +132,7 @@ class TestPFITSReader:
         fits = PFITSReader(fitsfile_4bit)
         for _, _, data in fits.read_plan(gulp=512, nsamps=1024):
             assert isinstance(data, np.ndarray)
-        with pytest.raises(ValueError): # noqa: PT012
+        with pytest.raises(ValueError):
             for _, _, _ in fits.read_plan(gulp=512, skipback=1024):
                 pass
 
@@ -158,7 +158,7 @@ class TestPulseExtractor:
         assert isinstance(block, FilterbankBlock)
         np.testing.assert_equal(block.header.nchans, 416)
         with pytest.raises(ValueError):
-            pulse.get_data(pad_mode="unknown")
+            pulse.get_data(pad_mode="unknown")  # type: ignore[arg-type]
 
     def test_filterbank_dm(self, filfile_4bit: str) -> None:
         pulse = PulseExtractor(filfile_4bit, 1000, 50, 10)

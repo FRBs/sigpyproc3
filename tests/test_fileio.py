@@ -24,7 +24,7 @@ class TestBufferAllocator:
     def test_allocate_buffer_custom(self) -> None:
         def custom_allocator(nbytes: int) -> Buffer:
             buffer = np.zeros(nbytes, dtype="ubyte")
-            return memoryview(cast(Buffer, buffer))
+            return memoryview(cast("Buffer", buffer))
 
         nbytes = 100
         buffer = fileio.allocate_buffer(custom_allocator, nbytes)
@@ -124,7 +124,7 @@ class TestFileReader:
     ) -> Generator[None, Any, None]:
         self.files = [filfile_8bit_1, filfile_8bit_2]
         self.mode = "r"
-        hdr = sigproc.parse_header_multi(self.files)
+        hdr = sigproc.parse_header_multi([Path(f) for f in self.files])
         self.sinfo: sigproc.StreamInfo = hdr["stream_info"]
         self.file_reader = fileio.FileReader(self.sinfo, self.mode, hdr["nbits"])
         yield
