@@ -412,7 +412,7 @@ class FurbyGenerator:
 class SpectralStructure:
     """Class to simulate various spectral structures for the radio bursts.
 
-    This class generates spectral patterns with customisable characteristics,
+    Generates spectral patterns with customisable characteristics,
     including frequency-dependent effects and various structural types.
 
     Parameters
@@ -430,21 +430,24 @@ class SpectralStructure:
     Notes
     -----
     Supported spectral structures are:
-    - flat: Equal gain in each channel, no evolution with frequency
+    - flat: Equal gain, no evolution with frequency (unless spec_index != 0).
     - power_law: Gains follow a power-law with the given spectral index.
-    - smooth_envelope: Gains evolve smoothly as a Gaussian envelope.
-    - gaussian: Gains follow a Gaussian profile.
-    - polynomial_peaks: Gains are determined by a polynomial with random peaks.
-    - scintillation: Gains follow a sinusoidal (scintillating) profile.
-    - gaussian_blobs: Gains follow a patchy profile with Gaussian blobs.
-    - random: Randomly select one of the above structures.
+    - smooth_envelope: Smooth Gaussian-like envelope.
+    - gaussian: Single Gaussian profile.
+    - polynomial_peaks: Polynomial with random peaks, degree 2-5.
+    - scintillation: Sinusoidal (scintillating) profile.
+    - gaussian_blobs: Patchy profile with Gaussian blobs.
+    - random: Randomly selects one of the above.
+
+    The power-law weight (freqs / freqs[0]) ** spec_index is applied to all spectra.
+    Set spec_index=0 for no power-law weighting.
     """
 
     def __init__(
         self,
         freqs: np.ndarray,
         kind: SpecSimulMethods = "scintillation",
-        spec_index: float = -2,
+        spec_index: float = -2.0,
         seed: int | None = None,
     ) -> None:
         self.freqs = np.asarray(freqs, dtype=np.float32)
@@ -487,8 +490,8 @@ class SpectralStructure:
         Then the spectrum is shifted to have a mean of 1 to conserve the total signal
         after averaging along the frequency axis.
         """
-        spec = self._spec_generators[self.kind]()
-        return self._normalize_and_shift(spec * self.power_law_wt)
+        spec = self._spec_generators[self.kind]() * self.power_law_wt
+        return self._normalize_and_shift(spec)
 
     def plot(
         self,
@@ -524,26 +527,30 @@ class SpectralStructure:
 
     def _spec_power_law(self) -> np.ndarray:
         """Generate a power-law spectrum."""
-        return self.power_law_wt
+        return np.ones_like(self.freqs)
 
     def _spec_smooth_envelope(self) -> np.ndarray:
         """Generate a smooth envelope spectrum."""
-        center = self.rng.uniform(0, self.nchans)
-        roots = [center - self.nchans // 2, center + self.nchans // 2]
-        spec = -polynomial.polyvalfromroots(np.arange(self.nchans), roots)
+        center = self.rng.uniform(self.freqs.min(), self.freqs.max())
+        width = self.rng.uniform(np.ptp(self.freqs) / 4, np.ptp(self.freqs) / 2)
+        roots = [center - width, center + width]
+        spec = -polynomial.polyvalfromroots(self.freqs, roots)
         return spec.astype(np.float32)
 
     def _spec_gaussian(self) -> np.ndarray:
         """Generate a Gaussian spectrum."""
-        center = self.rng.normal(self.freqs.mean(), np.ptp(self.freqs) / 4)
+        center = self.rng.uniform(self.freqs.mean(), self.freqs.max())
         width = self.rng.uniform(np.ptp(self.freqs) / 10, np.ptp(self.freqs) / 2)
         return utils.gaussian(self.freqs, center, width)
 
     def _spec_poly(self) -> np.ndarray:
         """Generate a polynomial spectrum with random peaks."""
-        npeaks = self.rng.geometric(p=1 / 3) + 1
-        roots = self.rng.uniform(self.freqs.min(), self.freqs.max(), size=2 * npeaks)
-        spec = -polynomial.polyvalfromroots(self.freqs, np.sort(roots))
+        degree = self.rng.integers(2, 6)  # Low degree to prevent overflow
+        coeffs = self.rng.normal(size=degree + 1)
+        bandwidth = self.freqs.max() - self.freqs.min()
+        freqs_norm = (self.freqs - self.freqs.min()) / (bandwidth) * 2 - 1  # [-1,1]
+        poly = np.poly1d(coeffs)
+        spec = poly(freqs_norm)
         return spec.astype(np.float32)
 
     def _spec_scint(self) -> np.ndarray:

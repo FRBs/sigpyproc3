@@ -466,27 +466,81 @@ class TestFourierKernels:
 
 
 class TestRollingKernels:
-    def test_nb_roll(self) -> None:
-        arr = np.zeros((10, 10), dtype=np.float32)
-        shift = 10
-        rolled = kernels.nb_roll.py_func(arr, shift, axis=0)
-        np.testing.assert_array_equal(rolled, np.roll(arr, shift, axis=0))
-        rolled = kernels.nb_roll.py_func(arr, shift, axis=1)
-        np.testing.assert_array_equal(rolled, np.roll(arr, shift, axis=1))
-        rolled = kernels.nb_roll.py_func(arr, shift)
-        np.testing.assert_array_equal(rolled, np.roll(arr, shift))
+    @pytest.mark.parametrize(("shift", "axis"), [(2, 0), (-3, 1), (15, None), (0, 1)])
+    def test_nb_roll(self, shift: int, axis: int) -> None:
+        arr = np.arange(10 * 10).reshape(10, 10).astype(np.float32)
+        rolled = kernels.nb_roll.py_func(arr, shift, axis=axis)
+        np.testing.assert_array_equal(rolled, np.roll(arr, shift, axis=axis))
 
-    def test_roll_block(self) -> None:
-        arr = np.zeros((10, 10), dtype=np.float32)
-        arr[:, 5] = 1.0
-        shifts = np.arange(arr.shape[0])
+    @pytest.mark.parametrize(
+        "shifts",
+        [
+            np.arange(5),
+            -np.arange(5),
+            np.array([2, -1, 0, 3, -2]),
+            np.array([6, -7, 8, -9, 10]),
+        ],
+    )
+    def test_roll_block(self, shifts: np.ndarray) -> None:
+        arr = np.arange(5 * 5).reshape(5, 5).astype(np.float32)
         rolled = kernels.roll_block.py_func(arr, shifts)
+        for i, s in enumerate(shifts):
+            expected = np.roll(arr[i], s)
+            np.testing.assert_array_equal(rolled[i], expected)
         unrolled = kernels.roll_block.py_func(rolled, -shifts)
         np.testing.assert_array_equal(unrolled, arr)
+
+    def test_roll_block_edge_cases(self) -> None:
+        arr = np.arange(5 * 5).reshape(5, 5).astype(np.float32)
+        # Zero shifts
+        shifts = np.zeros(5, dtype=int)
+        rolled = kernels.roll_block.py_func(arr, shifts)
+        np.testing.assert_array_equal(rolled, arr)
+
         with pytest.raises(ValueError):
-            kernels.roll_block.py_func(shifts, 1)
+            kernels.roll_block.py_func(arr[0], shifts[:1])
         with pytest.raises(ValueError):
             kernels.roll_block.py_func(arr, shifts[:-1])
+
+    @pytest.mark.parametrize(
+        "shifts",
+        [
+            np.arange(5),
+            -np.arange(5),
+            np.array([2, -1, 0, 3, -2]),
+        ],
+    )
+    def test_roll_block_valid(self, shifts: np.ndarray) -> None:
+        arr = np.arange(50).reshape(5, 10).astype(np.float32)
+        max_pos_shift = max(0, np.max(shifts))
+        min_neg_shift = min(0, np.min(shifts))
+        valid_samples = arr.shape[1] + min_neg_shift - max_pos_shift
+        rolled_wrapped = kernels.roll_block.py_func(arr, shifts)
+        expected = rolled_wrapped[:, max_pos_shift : arr.shape[1] + min_neg_shift]
+        rolled = kernels.roll_block_valid.py_func(arr, shifts)
+        assert rolled.shape == (arr.shape[0], valid_samples)
+        np.testing.assert_array_equal(rolled, expected)
+
+    def test_roll_block_valid_edge_cases(self) -> None:
+        arr = np.arange(50).reshape(5, 10).astype(np.float32)
+        shifts = np.array([-9, -5, -4, -2, -1])
+        rolled = kernels.roll_block_valid.py_func(arr, shifts)
+        assert rolled.shape == (arr.shape[0], 1)
+
+        shifts = np.zeros(5, dtype=int)
+        rolled = kernels.roll_block_valid.py_func(arr, shifts)
+        assert rolled.shape == (arr.shape[0], arr.shape[1])
+        np.testing.assert_array_equal(rolled, arr)
+
+    def test_roll_block_valid_fail(self) -> None:
+        arr = np.zeros((10, 19), dtype=np.float32)
+        shifts = np.arange(arr.shape[0])
+        with pytest.raises(ValueError):
+            kernels.roll_block_valid.py_func(arr[0], shifts)
+        with pytest.raises(ValueError):
+            kernels.roll_block_valid.py_func(arr, np.arange(arr.shape[1] + 5))
+        with pytest.raises(ValueError):
+            kernels.roll_block_valid.py_func(arr, np.arange(arr.shape[0]) * 5)
 
     def test_dmt_block(self) -> None:
         arr = np.zeros((10, 10), dtype=np.float32)
@@ -500,37 +554,6 @@ class TestRollingKernels:
             kernels.dmt_block.py_func(arr[0], dm_delays)
         with pytest.raises(ValueError):
             kernels.dmt_block.py_func(arr, dm_delays[:, :-1])
-
-    def test_roll_block_valid_positive_shifts(self) -> None:
-        arr = np.zeros((10, 19), dtype=np.float32)
-        arr[:, 9] = 1.0
-        shifts = np.arange(arr.shape[0])
-        rolled = kernels.roll_block_valid.py_func(arr, shifts)
-        valid_samples = arr.shape[1] - np.abs(shifts).max()
-        assert rolled.shape == (arr.shape[0], valid_samples)
-        expected = np.ones(valid_samples)
-        np.testing.assert_array_equal(rolled.sum(axis=0), expected)
-
-    def test_roll_block_valid_negative_shifts(self) -> None:
-        arr = np.zeros((10, 19), dtype=np.float32)
-        arr[:, 9] = 1.0
-        shifts = -np.arange(arr.shape[0])
-        rolled = kernels.roll_block_valid.py_func(arr, shifts)
-        valid_samples = arr.shape[1] - np.abs(shifts).max()
-        assert rolled.shape == (arr.shape[0], valid_samples)
-        expected = np.ones(valid_samples)
-        np.testing.assert_array_equal(rolled.sum(axis=0), expected)
-
-    def test_roll_block_valid_fail(self) -> None:
-        arr = np.zeros((10, 19), dtype=np.float32)
-        arr[:, 9] = 1.0
-        shifts = np.arange(arr.shape[0])
-        with pytest.raises(ValueError):
-            kernels.roll_block_valid.py_func(arr[0], shifts)
-        with pytest.raises(ValueError):
-            kernels.roll_block_valid.py_func(arr, np.arange(arr.shape[1] + 5))
-        with pytest.raises(ValueError):
-            kernels.roll_block_valid.py_func(arr, np.arange(arr.shape[0]) * 5)
 
     def test_dmt_block_valid(self) -> None:
         arr = np.zeros((10, 19), dtype=np.float32)

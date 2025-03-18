@@ -963,17 +963,18 @@ def nb_roll(
 ) -> np.ndarray:
     """Roll array elements along a given axis.
 
-    Implemented in ``rocket-fft``. This function is a njit-compiled wrapper
-    around `numpy.roll`.
+    This is a Numba-compiled wrapper around `numpy.roll`, implemented via `rocket-fft`
+    to support the `axis` argument.
 
     Parameters
     ----------
     arr : ndarray
         Input array.
     shift : int | tuple[int, ...]
-        Number of bins to shift.
+        Number of positions to shift. Positive shifts right/down, negative left/up.
+        If a tuple, must match the length of `axis`.
     axis : int | tuple[int, ...] | None, optional
-        Axis or axes along which to roll, by default None.
+        Axis or axes to roll along. If None, flattens array and rolls all elements.
 
     Returns
     -------
@@ -985,19 +986,28 @@ def nb_roll(
 
 @njit(cache=True, fastmath=True)
 def roll_block(arr: np.ndarray, shifts: np.ndarray) -> np.ndarray:
-    """Roll the 2D array along the second axis by the specified shifts.
+    """Roll each row of a 2D array along columns by per-row shifts.
+
+    Applies a circular shift to each row independently, wrapping elements around
+    the column axis. Positive shifts move elements right, negative shifts move left.
 
     Parameters
     ----------
     arr : np.ndarray
-        Input 2D array.
+        Input 2D array of shape (nrows, ncols).
     shifts : np.ndarray
-        Array of shifts for each row.
+        1D array of integer shifts, length equal to nrows. Can be positive or negative.
 
     Returns
     -------
     np.ndarray
-        Rolled 2D array.
+        Rolled 2D array with the same shape as `arr`.
+
+    Raises
+    ------
+    ValueError
+        If `arr` is not 2D or `shifts` length does not match number of rows.
+
     """
     if arr.ndim != 2:
         msg = "Input array must be 2D."
@@ -1005,12 +1015,68 @@ def roll_block(arr: np.ndarray, shifts: np.ndarray) -> np.ndarray:
     if len(shifts) != arr.shape[0]:
         msg = "Number of shifts must be equal to the number of rows."
         raise ValueError(msg)
-    res = np.empty_like(arr)
     nrows, ncols = arr.shape
+    res = np.empty_like(arr)
     for irow in range(nrows):
         shift = shifts[irow] % ncols
-        res[irow, shift:] = arr[irow, : ncols - shift]
-        res[irow, :shift] = arr[irow, ncols - shift :]
+        if shift == 0:
+            res[irow] = arr[irow]
+        else:
+            res[irow, shift:] = arr[irow, : ncols - shift]
+            res[irow, :shift] = arr[irow, ncols - shift :]
+    return res
+
+
+@njit(cache=True, fastmath=True)
+def roll_block_valid(arr: np.ndarray, shifts: np.ndarray) -> np.ndarray:
+    """Roll each row of a 2D array by per-row shifts, keeping only valid columns.
+
+    Similar to `roll_block` but only keeps the valid region where no wrapping occurs.
+    Positive shifts move elements right, negative shifts move elements left.
+
+    Parameters
+    ----------
+    arr : np.ndarray
+        Input 2D array of shape (nrows, ncols).
+    shifts : np.ndarray
+        1D array of integer shifts, length equal to nrows. Can be positive or negative.
+
+    Returns
+    -------
+    np.ndarray
+        Rolled 2D array with shape (nrows, ncols - shift_range).
+
+    Raises
+    ------
+    ValueError
+        If `arr` is not 2D or `shifts` length doesn't match number of rows.
+        If the shift range exceeds the number of columns.
+
+    """
+    if arr.ndim != 2:
+        msg = "Input array must be 2D."
+        raise ValueError(msg)
+    if len(shifts) != arr.shape[0]:
+        msg = "Number of shifts must be equal to the number of rows."
+        raise ValueError(msg)
+    nrows, ncols = arr.shape
+    max_pos_shift = max(0, np.max(shifts))
+    min_neg_shift = min(0, np.min(shifts))
+
+    # Calculate the valid region size
+    start_col = max_pos_shift
+    end_col = ncols + min_neg_shift
+    valid_cols = end_col - start_col
+    if valid_cols <= 0:
+        msg = (
+            f"Not enough samples. Required at least {max_pos_shift - min_neg_shift} "
+            f"samples, given {ncols}."
+        )
+        raise ValueError(msg)
+    res = np.empty((nrows, valid_cols), dtype=arr.dtype)
+    for irow in range(nrows):
+        shift = shifts[irow]
+        res[irow, :] = arr[irow, start_col - shift : end_col - shift]
     return res
 
 
@@ -1031,45 +1097,6 @@ def dmt_block(arr: np.ndarray, dm_delays: np.ndarray) -> np.ndarray:
 
 
 @njit(cache=True, fastmath=True)
-def roll_block_valid(arr: np.ndarray, shifts: np.ndarray) -> np.ndarray:
-    """Roll the 2D array along the second axis amd keep valid region.
-
-    Parameters
-    ----------
-    arr : np.ndarray
-        Input 2D array.
-    shifts : np.ndarray
-        Array of shifts for each row.
-
-    Returns
-    -------
-    np.ndarray
-        Rolled 2D array (excluding invalid samples, not circular rolled).
-    """
-    if arr.ndim != 2:
-        msg = "Input array must be 2D."
-        raise ValueError(msg)
-    if len(shifts) != arr.shape[0]:
-        msg = "Number of shifts must be equal to the number of rows."
-        raise ValueError(msg)
-    nrows, ncols = arr.shape
-    valid_samps = ncols - np.abs(shifts).max()
-    if valid_samps < 0:
-        msg = "Insufficient time samples to dedisperse."
-        raise ValueError(msg)
-    res = np.empty((nrows, valid_samps), dtype=arr.dtype)
-    if np.any(shifts > 0):
-        for irow in range(nrows):
-            res[irow] = arr[irow, shifts[irow] : valid_samps + shifts[irow]]
-    else:
-        for irow in range(nrows):
-            end = ncols + shifts[irow]
-            start = end - valid_samps
-            res[irow] = arr[irow, start:end]
-    return res
-
-
-@njit(cache=True, fastmath=True)
 def dmt_block_valid(arr: np.ndarray, dm_delays: np.ndarray) -> np.ndarray:
     if arr.ndim != 2 or dm_delays.ndim != 2:
         msg = "Input array and delays must be 2D."
@@ -1079,11 +1106,16 @@ def dmt_block_valid(arr: np.ndarray, dm_delays: np.ndarray) -> np.ndarray:
         raise ValueError(msg)
     _, nsamps = arr.shape
     ndms, _ = dm_delays.shape
-    valid_samps = nsamps - dm_delays.max()
-    if valid_samps < 0:
-        msg = "Insufficient time samples to dedisperse."
+    max_pos_shift = max(0, np.max(dm_delays))
+    min_neg_shift = min(0, np.min(dm_delays))
+    valid_samples = nsamps + min_neg_shift - max_pos_shift
+    if valid_samples <= 0:
+        msg = (
+            f"Not enough samples. Required at least {max_pos_shift - min_neg_shift} "
+            f"samples, given {nsamps}."
+        )
         raise ValueError(msg)
-    res = np.empty((ndms, valid_samps), dtype=arr.dtype)
+    res = np.empty((ndms, valid_samples), dtype=arr.dtype)
     for idm in range(ndms):
         res[idm] = np.sum(roll_block_valid(arr, dm_delays[idm]), axis=0)
     return res

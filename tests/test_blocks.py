@@ -70,7 +70,7 @@ class TestFilterbankBlock:
         np.testing.assert_allclose(block_norm.data.mean(), 0, atol=0.01)
         np.testing.assert_allclose(block_norm.data.std(), 1, atol=0.01)
         with pytest.raises(ValueError):
-            block.normalise(loc_method="invalid") # type: ignore[arg-type]
+            block.normalise(loc_method="invalid")  # type: ignore[arg-type]
 
     def test_pad_samples(self, filfile_8bit_1: str) -> None:
         nsamps_final = 2048
@@ -81,7 +81,7 @@ class TestFilterbankBlock:
         np.testing.assert_equal(block_pad.data.shape[1], 2048)
         np.testing.assert_equal(block_pad.header.nsamples, 2048)
         with pytest.raises(ValueError):
-            block.pad_samples(nsamps_final, offset, pad_mode="invalid") # type: ignore[arg-type]
+            block.pad_samples(nsamps_final, offset, pad_mode="invalid")  # type: ignore[arg-type]
 
     def test_get_tim(self, filfile_8bit_1: str) -> None:
         fil = FilReader(filfile_8bit_1)
@@ -100,19 +100,27 @@ class TestFilterbankBlock:
     def test_dedisperse(self, filfile_8bit_1: str) -> None:
         dm = 50
         fil = FilReader(filfile_8bit_1)
-        block = fil.read_block(100, 1024)
+        data = np.zeros((fil.header.nchans, fil.header.nsamples), dtype=np.float32)
+        block = FilterbankBlock(data, fil.header)
+        block.data[:, block.nsamples // 2] = 1.0
         block_dedisp = block.dedisperse(dm)
-        np.testing.assert_equal(block.data.shape, block_dedisp.data.shape)
+        np.testing.assert_equal(block_dedisp.data.shape, block.data.shape)
         np.testing.assert_equal(block_dedisp.dm, dm)
         np.testing.assert_array_equal(
-            block.data.mean(axis=1),
             block_dedisp.data.mean(axis=1),
+            block.data.mean(axis=1),
         )
+        # check the direction of the dedispersion
+        assert block_dedisp.data[:, block.nsamples // 2 + 1 :].sum() == 0
+        block_dedisp = block.dedisperse(-dm)
+        assert block_dedisp.data[:, : block.nsamples // 2].sum() == 0
 
     def test_dedisperse_valid_samples(self, filfile_8bit_1: str) -> None:
         dm = 50
         fil = FilReader(filfile_8bit_1)
-        block = fil.read_block(100, 1024)
+        data = np.zeros((fil.header.nchans, fil.header.nsamples), dtype=np.float32)
+        block = FilterbankBlock(data, fil.header)
+        block.data[:, block.nsamples // 2] = 1.0
         block_dedisp = block.dedisperse(dm, only_valid_samples=True)
         np.testing.assert_equal(block_dedisp.dm, dm)
         np.testing.assert_equal(block_dedisp.data.shape[0], block.data.shape[0])
@@ -120,6 +128,8 @@ class TestFilterbankBlock:
             block_dedisp.nsamples,
             block.nsamples - block.header.get_dmdelays(dm).max(),
         )
+        # check the direction of the dedispersion
+        assert block_dedisp.data[:, block.nsamples // 2 + 1 :].sum() == 0
 
     def test_dedisperse_valid_samples_fail(self, filfile_8bit_1: str) -> None:
         dm = 10000

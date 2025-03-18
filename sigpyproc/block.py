@@ -289,17 +289,9 @@ class FilterbankBlock(BaseBlock):
         """
         delays = self.header.get_dmdelays(dm, ref_freq=ref_freq)
         if only_valid_samples:
-            max_delay = delays.max()
-            valid_samps = self.data.shape[1] - max_delay
-            if valid_samps < 0:
-                msg = (
-                    f"Insufficient time samples to dedisperse to {dm} (requires at "
-                    f"least {max_delay} samples, given {self.data.shape[1]})."
-                )
-                raise ValueError(msg)
-            new_ar = kernels.roll_block_valid(self.data, delays)
+            new_ar = kernels.roll_block_valid(self.data, -delays)
         else:
-            new_ar = kernels.roll_block(self.data, delays)
+            new_ar = kernels.roll_block(self.data, -delays)
         return FilterbankBlock(
             new_ar,
             self.header.new_header({"nsamples": new_ar.shape[1]}),
@@ -337,15 +329,6 @@ class FilterbankBlock(BaseBlock):
         dm_arr = dm + np.linspace(-dm, dm, dmsteps)
         dm_delays = self.header.get_dmdelays(dm_arr, ref_freq=ref_freq)
         if only_valid_samples:
-            max_delay = dm_delays.max()
-            valid_samps = self.data.shape[1] - dm_delays.max()
-            if valid_samps < 0:
-                msg = (
-                    f"Insufficient time samples to dedisperse to {dm_arr.max()} "
-                    f"(requires at least {max_delay} samples, given "
-                    f"{self.data.shape[1]})."
-                )
-                raise ValueError(msg)
             new_ar = kernels.dmt_block_valid(self.data, dm_delays)
         else:
             new_ar = kernels.dmt_block(self.data, dm_delays)
