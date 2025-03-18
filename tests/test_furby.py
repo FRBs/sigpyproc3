@@ -63,6 +63,13 @@ class TestFurbyGenerator:
 
 
 class TestSpectralStructure:
+    def test_init(self, freqs: np.ndarray) -> None:
+        spec_struct = furby.SpectralStructure(freqs, kind="gaussian", spec_index=-1.5)
+        assert spec_struct.kind == "gaussian"
+        assert spec_struct.spec_index == -1.5
+        assert spec_struct.nchans == len(freqs)
+        assert np.isclose(spec_struct.foff, -1.0)
+
     @pytest.mark.parametrize(
         "kind",
         [
@@ -78,11 +85,10 @@ class TestSpectralStructure:
     )
     def test_generate_and_normalize(self, freqs: np.ndarray, kind: str) -> None:
         spec_struct = furby.SpectralStructure(freqs, kind=kind, spec_index=0.0)
-        assert spec_struct.kind == kind
-        assert spec_struct.nchans == freqs.shape[0]
-        assert spec_struct.foff == -1.0
         spec = spec_struct.generate()
         assert spec.shape[0] == freqs.shape[0]
+        assert np.all(np.isfinite(spec))
+        assert np.all(spec >= 0)
         np.testing.assert_allclose(spec.mean(), 1.0, atol=1e-6)
 
     @pytest.mark.parametrize("kind", ["flat", "scintillation"])
@@ -90,5 +96,11 @@ class TestSpectralStructure:
         spec_struct = furby.SpectralStructure(freqs, kind=kind)
         fig = spec_struct.plot()
         assert isinstance(fig, plt.Figure)
-        assert len(fig.axes) > 0
+        assert len(fig.axes) == 1
+        assert fig.axes[0].get_xlabel() == "Frequency (MHz)"
+        assert fig.axes[0].get_ylabel() == "Amplitude"
         plt.close(fig)
+
+    def test_invalid_kind(self, freqs: np.ndarray) -> None:
+        with pytest.raises(KeyError):
+            furby.SpectralStructure(freqs, kind="invalid").generate()
