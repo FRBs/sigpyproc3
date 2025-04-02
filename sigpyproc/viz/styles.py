@@ -9,17 +9,36 @@ if TYPE_CHECKING:
     from matplotlib import pyplot as plt
 
 
-def set_seaborn(font_scale: float = 1, **rc_kwargs) -> None:  # noqa: ANN003
-    """Set seaborn style with custom rc parameters."""
+def set_seaborn(
+    font_scale: float = 1,
+    font_size: int | str = 14,
+    palette: str = "colorblind",
+    *,
+    use_latex: bool = False,
+    **rc_kwargs,  # noqa: ANN003
+) -> None:
+    """Set seaborn style with custom rc parameters.
+
+    Parameters
+    ----------
+    font_scale : float, optional
+        Seaborn theme font scale, by default 1.
+    font_size : int | str, optional
+        Matplotlib font size, by default 14.
+    palette : str, optional
+        Seaborn palette name, by default "colorblind".
+    use_latex : bool, optional
+        Use LaTeX for text rendering, by default False
+    """
     rc = {
         # Fontsizes
-        "font.size": 16,
-        "xtick.labelsize": 16,
-        "ytick.labelsize": 16,
-        "legend.fontsize": 16,
-        "legend.title_fontsize": 16,
-        "axes.titlesize": 16,
-        "axes.labelsize": 16,
+        "font.size": font_size,
+        "xtick.labelsize": font_size,
+        "ytick.labelsize": font_size,
+        "legend.fontsize": font_size,
+        "legend.title_fontsize": font_size,
+        "axes.titlesize": font_size,
+        "axes.labelsize": font_size,
         "xtick.direction": "in",
         "xtick.minor.visible": True,
         "xtick.top": False,
@@ -31,20 +50,23 @@ def set_seaborn(font_scale: float = 1, **rc_kwargs) -> None:  # noqa: ANN003
         "axes.linewidth": 1,
         "lines.linewidth": 1.5,
         "lines.markersize": 3,
+        # Figure output
         "savefig.bbox": "tight",
         "savefig.pad_inches": 0.05,
-        "font.serif": ["Times", "Times New Roman", "DejaVu Serif"],
+        "savefig.dpi": 300,
+        # Font settings
         "font.family": "serif",
+        "font.serif": ["Times", "Times New Roman", "DejaVu Serif"],
         "mathtext.fontset": "dejavuserif",
-        # Use LaTeX for math formatting
-        "text.usetex": False,  # Set to True if available
+        # LaTeX settings
+        "text.usetex": use_latex,
         "text.latex.preamble": r"\usepackage{amsmath, amssymb}",
     }
     rc.update(rc_kwargs)
     sns.set_theme(
         context="paper",
         style="ticks",
-        palette="colorblind",
+        palette=palette,
         font_scale=font_scale,
         rc=rc,
     )
