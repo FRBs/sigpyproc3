@@ -309,29 +309,39 @@ class FurbyGenerator:
         """
         data_dedisp_os = self._gen_pulse()
         delays_os = self.hdr_os.get_dmdelays(self.params.dm, ref_freq="center")
-        nsamps_disp_os = max(
-            2 * (data_dedisp_os.shape[1] + np.abs(delays_os).max()),
-            (self.nsamps_out or 1) * self.params.os_fact,
-        )
+        # Need padding on both sides for dispersion kernel
+        nsamps_disp_os = 2 * (data_dedisp_os.shape[1] + np.abs(delays_os).max())
+        # Ensure minimum output length if specified
+        min_nsamps_disp_os = (self.nsamps_out or 0) * self.params.os_fact
+        nsamps_disp_os = max(nsamps_disp_os, min_nsamps_disp_os)
+        # Ensure nsamps_disp_os is multiple of os_fact for downsampling
+        nsamps_disp_os = utils.next_multiple(nsamps_disp_os, self.params.os_fact)
+
+        # Calculate stats on the padded, oversampled, dedispersed time series
         ts_os = utils.pad_centre(data_dedisp_os.sum(axis=0), nsamps_disp_os)
         stats = self._compute_stats(ts_os)
+
+        # Apply dispersion and downsample
         data_disp = kernels.disperse_block(
             data_dedisp_os,
             delays_os,
             nsamps_disp_os,
             self.params.os_fact,
         )
-        block_hdr = self.hdr_os.new_header({"nsamples": nsamps_disp_os})
+        # Correct number of samples after downsampling
+        nsamps_final = data_disp.shape[1]
+        block_hdr = self.hdr_os.new_header({"nsamples": nsamps_final})
+        # Apply normalization factor calculated in stats
         frb_block = FilterbankBlock(data_disp * stats.norm, block_hdr)
         return Furby(frb_block, self.params, stats)
 
     def _gen_pulse(self) -> np.ndarray:
         """Generate a simple FRB profile with freq-time axis."""
         width_samps = max(1, int(self.params.width / self.tsamp_os))
-        nsamps_pure = 2 * max(self.params.os_fact, 5 * width_samps // 2) + 1
+        nsamps_pure = 2 * max(self.params.os_fact, int(2.5 * width_samps)) + 1
         if self.params.shape == "gaussian":
             x = np.arange(nsamps_pure, dtype=np.float32)
-            signal = utils.gaussian(x, int(nsamps_pure / 2), width_samps)
+            signal = utils.gaussian(x, nsamps_pure // 2, width_samps)
         elif self.params.shape == "boxcar":
             x = np.ones(width_samps, dtype=np.float32)
             signal = utils.pad_centre(x, nsamps_pure)
@@ -340,10 +350,12 @@ class FurbyGenerator:
             raise ValueError(msg)
         spec_struct = SpectralStructure(self.hdr.chan_freqs, kind=self.params.spec_kind)
         spec = spec_struct.generate()
+
+        # Calculate smearing and scattering timescales in oversampled units
         dm_smear = self.hdr_os.get_dmsmearing(self.params.dm)
         tau_nus = (
             int(self.params.tau0 / self.tsamp_os)
-            * (self.hdr.chan_freqs / self.hdr.fcenter) ** self.params.scatt_idx
+            * (self.hdr_os.chan_freqs / self.hdr_os.fcenter) ** self.params.scatt_idx
         )
         return kernels.simulate_ism(
             signal,

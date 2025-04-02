@@ -250,21 +250,28 @@ class Filterbank(ABC):
 
     def collapse(
         self,
+        method: str = "sum",
         gulp: int = 16384,
         start: int = 0,
         nsamps: int | None = None,
+        *,
+        parallel: bool = False,
         **plan_kwargs: Unpack[PlanKwargs],
     ) -> TimeSeries:
         """Sum across all frequencies for each time sample.
 
         Parameters
         ----------
+        method : {"mean", "sum"}, optional
+            Method to collapse the data, by default "mean".
         gulp : int, optional
             Number of samples in each read, by default 16384.
         start : int, optional
             Start sample, by default 0.
         nsamps : int, optional
             Number of samples to read, by default all.
+        parallel : bool, optional
+            If True, use parallel processing, by default False.
         **plan_kwargs : dict
             Additional Keyword arguments for :func:`read_plan`.
 
@@ -275,19 +282,31 @@ class Filterbank(ABC):
         """
         tim_len = (self.header.nsamples - start) if nsamps is None else nsamps
         tim_ar = np.zeros(tim_len, dtype=np.float32)
+        kernel_func = kernels.extract_tim_par if parallel else kernels.extract_tim
         for nsamps_r, ii, data in self.read_plan(
             gulp=gulp,
             start=start,
             nsamps=nsamps,
             **plan_kwargs,
         ):
-            kernels.extract_tim(data, tim_ar, self.header.nchans, nsamps_r, ii * gulp)
+            kernel_func(
+                data,
+                tim_ar,
+                self.header.nchans,
+                nsamps_r,
+                ii * nsamps_r,
+            )
+        if method == "mean":
+            tim_ar /= self.header.nchans
         return TimeSeries(tim_ar, self.header.new_header({"nchans": 1, "dm": 0}))
 
     def bandpass(
         self,
+        method: str = "sum",
         gulp: int = 16384,
         start: int = 0,
+        *,
+        parallel: bool = False,
         nsamps: int | None = None,
         **plan_kwargs: Unpack[PlanKwargs],
     ) -> TimeSeries:
@@ -297,12 +316,16 @@ class Filterbank(ABC):
 
         Parameters
         ----------
+        method : {"mean", "sum"}, optional
+            Method to collapse the data, by default "mean".
         gulp : int, optional
             Number of samples in each read, by default 16384.
         start : int, optional
             Start sample, by default 0.
         nsamps : int, optional
             Number of samples to read, by default all.
+        parallel : bool, optional
+            If True, use parallel processing, by default False.
         **plan_kwargs : dict
             Keyword arguments for :func:`read_plan`.
 
@@ -312,6 +335,7 @@ class Filterbank(ABC):
             Bandpass of the data.
         """
         bpass_ar = np.zeros(self.header.nchans, dtype=np.float32)
+        kernel_func = kernels.extract_bpass_par if parallel else kernels.extract_bpass
         num_samples = 0
         for nsamps_r, _, data in self.read_plan(
             gulp=gulp,
@@ -319,9 +343,10 @@ class Filterbank(ABC):
             nsamps=nsamps,
             **plan_kwargs,
         ):
-            kernels.extract_bpass(data, bpass_ar, self.header.nchans, nsamps_r)
+            kernel_func(data, bpass_ar, self.header.nchans, nsamps_r)
             num_samples += nsamps_r
-        bpass_ar /= num_samples
+        if method == "mean":
+            bpass_ar /= num_samples
         return TimeSeries(
             bpass_ar,
             self.header.new_header({"nchans": 1, "nsamples": len(bpass_ar)}),
@@ -330,9 +355,12 @@ class Filterbank(ABC):
     def dedisperse(
         self,
         dm: float,
+        ref_freq: str | float = "fch1",
         gulp: int = 16384,
         start: int = 0,
         nsamps: int | None = None,
+        *,
+        parallel: bool = False,
         **plan_kwargs: Unpack[PlanKwargs],
     ) -> TimeSeries:
         """Dedisperse and collapse to a time series.
@@ -341,12 +369,16 @@ class Filterbank(ABC):
         ----------
         dm : float
             Dispersion measure to dedisperse to.
+        ref_freq : str | float, optional
+            Reference frequency to use for dedispersion, by default "fch1".
         gulp : int, optional
             Number of samples in each read, by default 16384.
         start : int, optional
             Start sample, by default 0.
         nsamps : int, optional
             Number of samples to read, by default all.
+        parallel : bool, optional
+            If True, use parallel processing, by default False.
         **plan_kwargs : dict
             Additional keyword arguments for :func:`read_plan`.
 
@@ -360,11 +392,12 @@ class Filterbank(ABC):
         If gulp < maximum dispersion delay, gulp is taken to be twice the
         maximum dispersion delay.
         """
-        chan_delays = self.header.get_dmdelays(dm)
-        max_delay = int(chan_delays.max())
+        chan_delays = self.header.get_dmdelays(dm, ref_freq)
+        max_delay = int(np.max(np.abs(chan_delays)))
         gulp = max(2 * max_delay, gulp)
         tim_len = self.header.nsamples - max_delay
         tim_ar = np.zeros(tim_len, dtype=np.float32)
+        kernel_func = kernels.dedisperse_par if parallel else kernels.dedisperse
         for nsamps_r, ii, data in self.read_plan(
             gulp=gulp,
             start=start,
@@ -372,11 +405,10 @@ class Filterbank(ABC):
             skipback=max_delay,
             **plan_kwargs,
         ):
-            kernels.dedisperse(
+            kernel_func(
                 data,
                 tim_ar,
                 chan_delays,
-                max_delay,
                 self.header.nchans,
                 nsamps_r,
                 ii * (gulp - max_delay),
@@ -439,6 +471,8 @@ class Filterbank(ABC):
         gulp: int = 16384,
         start: int = 0,
         nsamps: int | None = None,
+        *,
+        parallel: bool = False,
         **plan_kwargs: Unpack[PlanKwargs],
     ) -> str:
         """Invert frequency axis and write to a new file.
@@ -453,6 +487,8 @@ class Filterbank(ABC):
             Start sample, by default 0.
         nsamps : int, optional
             Number of samples to read, by default all.
+        parallel : bool, optional
+            If True, use parallel processing, by default False.
         **plan_kwargs : dict
             Additional keyword arguments for :func:`read_plan`.
 
@@ -474,13 +510,14 @@ class Filterbank(ABC):
             updates=updates,
             nbits=self.header.nbits,
         )
+        kernel_func = kernels.invert_freq_par if parallel else kernels.invert_freq
         for nsamps_r, _, data in self.read_plan(
             gulp=gulp,
             start=start,
             nsamps=nsamps,
             **plan_kwargs,
         ):
-            out_ar = kernels.invert_freq(data, self.header.nchans, nsamps_r)
+            out_ar = kernel_func(data, self.header.nchans, nsamps_r)
             out_file.cwrite(out_ar)
         out_file.close()
         return outfile_name
@@ -493,6 +530,8 @@ class Filterbank(ABC):
         gulp: int = 16384,
         start: int = 0,
         nsamps: int | None = None,
+        *,
+        parallel: bool = False,
         **plan_kwargs: Unpack[PlanKwargs],
     ) -> str:
         """Apply a channel mask and write to a new file.
@@ -511,6 +550,8 @@ class Filterbank(ABC):
             Start sample, by default 0.
         nsamps : int, optional
             Number of samples to read, by default all.
+        parallel : bool, optional
+            If True, use parallel processing, by default False.
         **plan_kwargs : dict
             Additional keyword arguments for :func:`read_plan`.
 
@@ -522,16 +563,17 @@ class Filterbank(ABC):
         if outfile_name is None:
             outfile_name = f"{self.header.basename}_masked.fil"
 
-        mask = np.array(chan_mask).astype("bool")
+        chan_mask = np.array(chan_mask).astype("bool")
         mask_value = np.float32(mask_value).astype(self.header.dtype)
         out_file = self.header.prep_outfile(outfile_name)
+        kernel_func = kernels.mask_channels_par if parallel else kernels.mask_channels
         for nsamps_r, _ii, data in self.read_plan(
             gulp=gulp,
             start=start,
             nsamps=nsamps,
             **plan_kwargs,
         ):
-            kernels.mask_channels(data, mask, mask_value, self.header.nchans, nsamps_r)
+            kernel_func(data, chan_mask, mask_value, self.header.nchans, nsamps_r)
             out_file.cwrite(data)
         return outfile_name
 
@@ -640,11 +682,11 @@ class Filterbank(ABC):
             If ``start`` or ``nsamps`` are out of bounds.
         """
         if start < 0 or start + nsamps > self.header.nsamples:
-            msg = f"Selected samples out of range: {start:d} to {start+nsamps:d}"
+            msg = f"Selected samples out of range: {start:d} to {start + nsamps:d}"
             raise ValueError(msg)
         if outfile_name is None:
             outfile_name = (
-                f"{self.header.basename}_samps_{start:d}_{start+nsamps:d}.fil"
+                f"{self.header.basename}_samps_{start:d}_{start + nsamps:d}.fil"
             )
         out_file = self.header.prep_outfile(
             outfile_name,
@@ -803,7 +845,7 @@ class Filterbank(ABC):
             msg = f"chanpersub must be > 1 and <= nchans. Got {chanpersub}"
             raise ValueError(msg)
         if chanstart + nchans > self.header.nchans or chanstart < 0:
-            msg = f"Selected channels out of range: {chanstart} to {chanstart+nchans}"
+            msg = f"Selected channels out of range: {chanstart} to {chanstart + nchans}"
             raise ValueError(msg)
         if nchans % chanpersub != 0:
             msg = f"Number of channels must be divisible by sub-band size. Got {nchans}"
@@ -917,6 +959,8 @@ class Filterbank(ABC):
         gulp: int = 16384,
         start: int = 0,
         nsamps: int | None = None,
+        *,
+        parallel: bool = False,
         **plan_kwargs: Unpack[PlanKwargs],
     ) -> str:
         """Remove zero-DM and write to a new file.
@@ -933,6 +977,8 @@ class Filterbank(ABC):
             Start sample, by default 0.
         nsamps : int, optional
             Number of samples to read, by default all.
+        parallel : bool, optional
+            If True, use parallel processing, by default False.
         **plan_kwargs : dict
             Keyword arguments for :func:`read_plan`.
 
@@ -955,23 +1001,19 @@ class Filterbank(ABC):
             outfile_name = f"{self.header.basename}_noZeroDM.fil"
 
         bpass = self.bandpass(**plan_kwargs).data
-        chanwts = bpass / bpass.sum()
-        out_ar = np.empty(
-            self.header.nsamples * self.header.nchans,
-            dtype=self.header.dtype,
-        )
+        out_ar = np.empty(gulp * self.header.nchans, dtype=self.header.dtype)
         out_file = self.header.prep_outfile(outfile_name, nbits=self.header.nbits)
+        kernel_func = kernels.remove_zerodm_par if parallel else kernels.remove_zerodm
         for nsamps_r, _, data in self.read_plan(
             gulp=gulp,
             start=start,
             nsamps=nsamps,
             **plan_kwargs,
         ):
-            kernels.remove_zerodm(
+            kernel_func(
                 data,
                 out_ar,
                 bpass,
-                chanwts,
                 self.header.nchans,
                 nsamps_r,
             )
@@ -983,6 +1025,7 @@ class Filterbank(ABC):
         self,
         dm: float,
         nsub: int,
+        ref_freq: str | float = "fch1",
         outfile_name: str | None = None,
         gulp: int = 16384,
         start: int = 0,
@@ -997,6 +1040,8 @@ class Filterbank(ABC):
         ----------
         dm : float
             The DM of the subbands.
+        ref_freq : str | float, optional
+            Reference frequency to use for dedispersion, by default "fch1".
         nsub : int
             The number of subbands to produce.
         outfile_name : str, optional
@@ -1016,11 +1061,11 @@ class Filterbank(ABC):
             Name of output file.
         """
         subfactor = self.header.nchans // nsub
-        chan_delays = self.header.get_dmdelays(dm)
-        max_delay = int(chan_delays.max())
+        chan_delays = self.header.get_dmdelays(dm, ref_freq)
+        max_delay = int(np.max(np.abs(chan_delays)))
         gulp = max(2 * max_delay, gulp)
         # must be memset to zero in c code
-        out_ar = np.empty((gulp - max_delay) * nsub, dtype="float32")
+        out_ar = np.empty((gulp - max_delay) * nsub, dtype=np.float32)
         new_foff = self.header.foff * self.header.nchans // nsub
         new_fch1 = self.header.ftop - new_foff / 2
         chan_to_sub = np.arange(self.header.nchans, dtype="int32") // subfactor
@@ -1119,7 +1164,7 @@ class Filterbank(ABC):
                 "Number of phase bins is greater than period/sampling time",
             )
         if (self.header.nsamples * self.header.nchans) // (nbands * nints * nbins) < 10:
-            msg = f"nbands x nints x nbins is too large: {nbands*nints*nbins}"
+            msg = f"nbands x nints x nbins is too large: {nbands * nints * nbins}"
             raise ValueError(msg)
         nbands = min(nbands, self.header.nchans)
         chan_delays = self.header.get_dmdelays(dm)

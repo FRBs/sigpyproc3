@@ -95,6 +95,32 @@ def next2_to_n(x: int) -> int:
     return 1 << (x - 1).bit_length()
 
 
+def next_multiple(x: int, y: int) -> int:
+    """Return the smallest multiple of `y` that is greater than or equal to `x`.
+
+    Parameters
+    ----------
+    x : int
+        The number to adjust.
+    y : int
+        The factor to which `x` should be a multiple.
+
+    Returns
+    -------
+    int
+        The smallest multiple of `y` that is greater than or equal to `x`.
+
+    Raises
+    ------
+    ValueError
+        If `y` is not positive.
+    """
+    if y <= 0:
+        msg = "`y` must be positive."
+        raise ValueError(msg)
+    return ((x + y - 1) // y) * y
+
+
 def get_logger(
     name: str,
     *,
