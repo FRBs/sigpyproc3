@@ -59,6 +59,8 @@ telescope_ids = bidict(
         "CHIME": 20,
         "MWA": 30,
         "MeerKAT": 64,
+        "NC": 40,
+        "NGNC": 41,
     },
 )
 """Telescope IDs recognised by the sigproc package."""
@@ -82,6 +84,8 @@ machine_ids = bidict(
         "MWA-VCS": 30,
         "MWAX-VCS": 31,
         "MWAX-RTB": 32,
+        "ADU": 40,
+        "iTPM": 41,
     },
 )
 """Machine IDs recognised by the sigproc package."""
