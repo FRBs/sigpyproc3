@@ -38,6 +38,7 @@ header_keys = {
     "machine_id": "I",
     "barycentric": "I",
     "pulsarcentric": "I",
+    "nsamples": "I",
 }
 """Header keys recognised by the sigproc package."""
 
