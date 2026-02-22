@@ -69,7 +69,7 @@ class TestTimeSeries:
         with pytest.raises(ValueError):
             tim.downsample(factor=0)
         with pytest.raises(ValueError):
-            tim.downsample(factor=1.5) # type: ignore[arg-type]
+            tim.downsample(factor=1.5)  # type: ignore[arg-type]
 
     def test_pad(self, tim_data: np.ndarray, tim_header: dict) -> None:
         npad = 100
@@ -113,7 +113,6 @@ class TestTimeSeries:
         outpath = Path(outfile)
         assert outpath.is_file()
         outpath.unlink()
-
 
     def test_from_dat(
         self,
