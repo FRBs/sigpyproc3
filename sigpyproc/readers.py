@@ -42,7 +42,7 @@ class FilReader(Filterbank):
     Notes
     -----
     To be considered as a Sigproc format filterbank file the header must only contain
-    keywords found in the :py:obj:`~sigpyproc.io.sigproc.header_keys` dictionary.
+    keywords found in the :py:obj:`~sigpyproc.io.sigproc.SIGPROC_SCHEMA` dictionary.
     """
 
     def __init__(

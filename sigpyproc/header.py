@@ -485,7 +485,7 @@ class Header:
         """
         header = self.to_dict()
         sig_header = {
-            key: value for key, value in header.items() if key in sigproc.header_keys
+            key: value for key, value in header.items() if key in sigproc.SIGPROC_SCHEMA
         }
         hdr_update = {
             "data_type": params.data_types.inverse[sig_header["data_type"]],
@@ -709,7 +709,7 @@ class Header:
         Header
             Observational metadata.
         """
-        header = sigproc.parse_header_multi(
+        header, sinfo = sigproc.parse_header_multi(
             filenames,
             check_contiguity=check_contiguity,
         )
@@ -737,7 +737,7 @@ class Header:
         header_check = {
             key: value for key, value in header.items() if key in attrs.fields_dict(cls)
         }
-        return cls(**header_check)
+        return cls(**header_check, stream_info=sinfo)
 
     @classmethod
     def from_pfits(cls, filename: str) -> Header:
