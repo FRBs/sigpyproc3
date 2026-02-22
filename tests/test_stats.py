@@ -1,5 +1,3 @@
-# mypy: disable_error_code="arg-type"
-
 from __future__ import annotations
 
 import numpy as np
@@ -100,7 +98,7 @@ class TestEstimateScale:
         axis: int | tuple[int, ...] | None,
     ) -> None:
         result = stats.estimate_scale(random_normal_1d, method=method, axis=axis)
-        assert isinstance(result, np.floating)
+        assert isinstance(result, np.float64)
         np.testing.assert_almost_equal(result, random_normal_1d.std(), decimal=0)
         result = stats.estimate_scale(
             random_normal_1d,

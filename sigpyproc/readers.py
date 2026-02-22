@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 import attrs
 import numpy as np
 from rich.progress import track
-from typing_extensions import Buffer
 
 from sigpyproc.base import Filterbank
 from sigpyproc.block import FilterbankBlock
@@ -17,7 +16,7 @@ from sigpyproc.io.pfits import PFITSFile, PrimaryHdr, SubintHdr
 from sigpyproc.utils import get_callerfunc, get_logger
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator, Sequence
+    from collections.abc import Buffer, Callable, Iterator, Sequence
 
     from sigpyproc.core.custom_types import LocMethods
     from sigpyproc.io.bits import BitsInfo

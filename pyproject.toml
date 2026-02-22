@@ -1,28 +1,37 @@
+[build-system]
+requires = ["uv_build>=0.10.4,<0.11.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "sigpyproc"
+module-root = ""
+
 [project]
 name = "sigpyproc"
 version = "2.0.0"
 description = "Python FRB/pulsar data toolbox"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Ewan Barr", email = "ewan.d.barr@gmail.com" }]
 maintainers = [{ name = "Pravir Kumar", email = "pravirka@gmail.com" }]
 requires-python = ">=3.11"
 classifiers = [
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Operating System :: MacOS :: MacOS X",
     "Operating System :: Microsoft :: Windows",
     "Operating System :: POSIX :: Linux",
-    "License :: OSI Approved :: MIT License",
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Astronomy",
 ]
 dependencies = [
     "numpy>=2.0",
-    "numba",
-    "astropy",
+    "numba>=0.61",
+    "astropy>=6.0",
     "matplotlib",
     "seaborn",
     "h5py",
@@ -31,12 +40,8 @@ dependencies = [
     "click",
     "rich",
     "rich-click",
-    #"rocket-fft",
-    # The following line is a workaround for Py 3.13 compatibility
-    # until the issue is resolved in rocket-fft
-    "rocket-fft @ git+https://github.com/styfenschaer/rocket-fft.git",
+    "rocket-fft",
     "bidict",
-    "typing_extensions",
 ]
 
 [project.urls]
@@ -44,14 +49,13 @@ Repository = "https://github.com/FRBs/sigpyproc3"
 
 [project.optional-dependencies]
 tests = [
-    "pytest",
+    "pytest>=9.0",
     "pytest-cov",
     "pytest-randomly",
     "pytest-sugar",
     "pytest-benchmark",
     "pytest-mock",
-    "mypy",
-    "scipy",
+    "scipy>=1.13",
 ]
 docs = [
     "sphinx",
@@ -63,16 +67,13 @@ docs = [
     "myst-nb",
     "jupyter_sphinx",
 ]
-develop = ["ruff"]
+develop = ["ruff", "ty"]
 
 [project.scripts]
 spp_header = "sigpyproc.apps.spp_header:main"
 spp_extract = "sigpyproc.apps.spp_extract:main"
 spp_clean = "sigpyproc.apps.spp_clean:main"
 
-[build-system]
-requires = ["setuptools", "wheel"]
-build-backend = "setuptools.build_meta"
 
 [tool.ruff]
 include = [
@@ -86,7 +87,7 @@ exclude = ["sigpyproc/apps/spp_digifil.py"]
 
 line-length = 88
 indent-width = 4
-target-version = "py311"
+target-version = "py312"
 
 [tool.ruff.format]
 quote-style = "double"
@@ -94,20 +95,40 @@ indent-style = "space"
 
 [tool.ruff.lint]
 select = ["ALL"]
-ignore = ["D1", "D301", "PLR2004", "G004"]
+ignore = ["COM812", "D1", "D301", "PLR2004", "G004"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S101", "FBT", "PLR2004", "PT011", "SLF001"]
+"docs/**" = ["INP001"]
 
 [tool.ruff.lint.pylint]
 max-args = 15
 
+[tool.ruff.lint.isort]
+known-first-party = ["sigpyproc"]
+
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"
 
-[tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["S101", "FBT", "PLR2004", "PT011", "SLF001"]
+[tool.ty.environment]
+python-version = "3.12"
 
-[tool.pytest.ini_options]
-minversion = "8.0"
-testpaths = "tests"
+[tool.ty.src]
+exclude = ["sigpyproc/apps/spp_digifil.py"]
+
+[tool.ty.rules]
+not-iterable = "ignore" # For Numba prange
+
+[[tool.ty.overrides]]
+include = ["tests/test_stats.py"]
+
+[tool.ty.overrides.rules]
+invalid-argument-type = "ignore"
+
+[tool.pytest]
+minversion = "9.0"
+addopts = ["-ra", "-q"]
+testpaths = ["tests"]
 
 [tool.coverage.paths]
 source = ["./sigpyproc/"]
@@ -126,10 +147,6 @@ exclude_lines = [
     'if __name__ == "__main__":',
     'if outfile_name is None:',
 ]
-
-[tool.mypy]
-ignore_missing_imports = true
-plugins = ["numpy.typing.mypy_plugin"]
 
 [tool.numpydoc_validation]
 checks = ["all", "GL01", "GL08", "EX01", "SA01", "ES01", "SS02", "SA04"]

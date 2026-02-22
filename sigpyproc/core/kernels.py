@@ -1,14 +1,21 @@
+# ruff: noqa: ARG001
+
 from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 import numpy as np
 import rocket_fft
 from numba import njit, prange, types
 
+if TYPE_CHECKING:
+    from numpy.typing import NDArray
+
 CONST_C_VAL = 299792458.0  # Speed of light in m/s (astropy.constants.c.value)
 
 
 @njit("void(u1[::1], u1[::1])", cache=True, fastmath=True, locals={"pos": types.i8})
-def unpack1_8_big(array: np.ndarray, unpacked: np.ndarray) -> None:
+def unpack1_8_big(array: NDArray[np.uint8], unpacked: NDArray[np.uint8]) -> None:
     for ii in range(array.size):
         pos = ii * 8
         for jj in range(8):
@@ -16,7 +23,7 @@ def unpack1_8_big(array: np.ndarray, unpacked: np.ndarray) -> None:
 
 
 @njit("void(u1[::1], u1[::1])", cache=True, fastmath=True, locals={"pos": types.i8})
-def unpack1_8_little(array: np.ndarray, unpacked: np.ndarray) -> None:
+def unpack1_8_little(array: NDArray[np.uint8], unpacked: NDArray[np.uint8]) -> None:
     for ii in range(array.size):
         pos = ii * 8
         for jj in range(8):
@@ -24,7 +31,7 @@ def unpack1_8_little(array: np.ndarray, unpacked: np.ndarray) -> None:
 
 
 @njit("void(u1[::1], u1[::1])", cache=True, fastmath=True, locals={"pos": types.i8})
-def unpack2_8_big(array: np.ndarray, unpacked: np.ndarray) -> None:
+def unpack2_8_big(array: NDArray[np.uint8], unpacked: NDArray[np.uint8]) -> None:
     for ii in range(array.size):
         pos = ii * 4
         unpacked[pos + 3] = (array[ii] & 0x03) >> 0
@@ -34,7 +41,7 @@ def unpack2_8_big(array: np.ndarray, unpacked: np.ndarray) -> None:
 
 
 @njit("void(u1[::1], u1[::1])", cache=True, fastmath=True, locals={"pos": types.i8})
-def unpack2_8_little(array: np.ndarray, unpacked: np.ndarray) -> None:
+def unpack2_8_little(array: NDArray[np.uint8], unpacked: NDArray[np.uint8]) -> None:
     for ii in range(array.size):
         pos = ii * 4
         unpacked[pos + 0] = (array[ii] & 0x03) >> 0
@@ -44,7 +51,7 @@ def unpack2_8_little(array: np.ndarray, unpacked: np.ndarray) -> None:
 
 
 @njit("void(u1[::1], u1[::1])", cache=True, fastmath=True, locals={"pos": types.i8})
-def unpack4_8_big(array: np.ndarray, unpacked: np.ndarray) -> None:
+def unpack4_8_big(array: NDArray[np.uint8], unpacked: NDArray[np.uint8]) -> None:
     for ii in range(array.size):
         pos = ii * 2
         unpacked[pos + 1] = (array[ii] & 0x0F) >> 0
@@ -52,7 +59,7 @@ def unpack4_8_big(array: np.ndarray, unpacked: np.ndarray) -> None:
 
 
 @njit("void(u1[::1], u1[::1])", cache=True, fastmath=True, locals={"pos": types.i8})
-def unpack4_8_little(array: np.ndarray, unpacked: np.ndarray) -> None:
+def unpack4_8_little(array: NDArray[np.uint8], unpacked: NDArray[np.uint8]) -> None:
     for ii in range(array.size):
         pos = ii * 2
         unpacked[pos + 0] = (array[ii] & 0x0F) >> 0
@@ -60,7 +67,7 @@ def unpack4_8_little(array: np.ndarray, unpacked: np.ndarray) -> None:
 
 
 @njit("void(u1[::1], u1[::1])", cache=True, fastmath=True)
-def pack1_8_big(array: np.ndarray, packed: np.ndarray) -> None:
+def pack1_8_big(array: NDArray[np.uint8], packed: NDArray[np.uint8]) -> None:
     for ii in range(packed.size):
         pos = ii * 8
         packed[ii] = (
@@ -76,7 +83,7 @@ def pack1_8_big(array: np.ndarray, packed: np.ndarray) -> None:
 
 
 @njit("void(u1[::1], u1[::1])", cache=True, fastmath=True)
-def pack1_8_little(array: np.ndarray, packed: np.ndarray) -> None:
+def pack1_8_little(array: NDArray[np.uint8], packed: NDArray[np.uint8]) -> None:
     for ii in range(packed.size):
         pos = ii * 8
         packed[ii] = (
@@ -93,8 +100,8 @@ def pack1_8_little(array: np.ndarray, packed: np.ndarray) -> None:
 
 @njit("void(u1[::1], u1[::1], b1)", cache=True, fastmath=True)
 def pack1_8_vect(
-    array: np.ndarray,
-    packed: np.ndarray,
+    array: NDArray[np.uint8],
+    packed: NDArray[np.uint8],
     *,
     big_endian: bool = True,
 ) -> None:
@@ -126,7 +133,7 @@ def pack1_8_vect(
 
 
 @njit("void(u1[::1], u1[::1])", cache=True, fastmath=True, locals={"pos": types.i8})
-def pack2_8_big(array: np.ndarray, packed: np.ndarray) -> None:
+def pack2_8_big(array: NDArray[np.uint8], packed: NDArray[np.uint8]) -> None:
     for ii in range(packed.size):
         pos = ii * 4
         packed[ii] = (
@@ -138,7 +145,7 @@ def pack2_8_big(array: np.ndarray, packed: np.ndarray) -> None:
 
 
 @njit("void(u1[::1], u1[::1])", cache=True, fastmath=True, locals={"pos": types.i8})
-def pack2_8_little(array: np.ndarray, packed: np.ndarray) -> None:
+def pack2_8_little(array: NDArray[np.uint8], packed: NDArray[np.uint8]) -> None:
     for ii in range(packed.size):
         pos = ii * 4
         packed[ii] = (
@@ -150,20 +157,20 @@ def pack2_8_little(array: np.ndarray, packed: np.ndarray) -> None:
 
 
 @njit("void(u1[::1], u1[::1])", cache=True, fastmath=True, locals={"pos": types.i8})
-def pack4_8_big(array: np.ndarray, packed: np.ndarray) -> None:
+def pack4_8_big(array: NDArray[np.uint8], packed: NDArray[np.uint8]) -> None:
     for ii in range(packed.size):
         pos = ii * 2
         packed[ii] = (array[pos + 0] << 4) | array[pos + 1]
 
 
 @njit("void(u1[::1], u1[::1])", cache=True, fastmath=True, locals={"pos": types.i8})
-def pack4_8_little(array: np.ndarray, packed: np.ndarray) -> None:
+def pack4_8_little(array: NDArray[np.uint8], packed: NDArray[np.uint8]) -> None:
     for ii in range(packed.size):
         pos = ii * 2
         packed[ii] = (array[pos + 1] << 4) | array[pos + 0]
 
 
-@njit(cache=True, fastmath=True, locals={"temp": types.f8})
+@njit(cache=True, fastmath=True)
 def downsample_1d_mean(array: np.ndarray, factor: int) -> np.ndarray:
     """Downsample a 1D array by averaging over bins.
 
@@ -186,7 +193,7 @@ def downsample_1d_mean(array: np.ndarray, factor: int) -> np.ndarray:
     nsamps_new = len(array) // factor
     result = np.empty(nsamps_new, dtype=array.dtype)
     for isamp in prange(nsamps_new):
-        temp = 0.0
+        temp = np.float64(0.0)
         start = isamp * factor
         for ifactor in range(factor):
             temp += array[start + ifactor]
@@ -194,7 +201,7 @@ def downsample_1d_mean(array: np.ndarray, factor: int) -> np.ndarray:
     return result
 
 
-@njit(cache=True, fastmath=True, locals={"temp": types.f8})
+@njit(cache=True, fastmath=True)
 def downsample_2d_mean_flat(
     array: np.ndarray,
     factor1: int,
@@ -232,7 +239,7 @@ def downsample_2d_mean_flat(
     result = np.empty(new_dim1 * new_dim2, dtype=array.dtype)
     for i in prange(new_dim1):
         for j in range(new_dim2):
-            temp = 0.0
+            temp = np.float64(0.0)
             pos = dim2 * i * factor1 + j * factor2
             for ifactor in range(factor1):
                 ipos = pos + ifactor * dim2
@@ -242,105 +249,128 @@ def downsample_2d_mean_flat(
     return result
 
 
-# Note: No caching, as the py_func is same.
-downsample_1d_mean_parallel = njit(
-    downsample_1d_mean.py_func,
-    parallel=True,
-    fastmath=True,
-    locals={"temp": types.f8},
-)
-downsample_2d_mean_parallel = njit(
-    downsample_2d_mean_flat.py_func,
-    parallel=True,
-    fastmath=True,
-    locals={"temp": types.f8},
-)
-
-
 @njit(
-    ["void(u1[:], f4[:], i8, i8, i8)", "void(f4[:], f4[:], i8, i8, i8)"],
+    ["void(u1[::1], f4[::1], i8, i8, i8)", "void(f4[::1], f4[::1], i8, i8, i8)"],
     cache=True,
-    parallel=True,
     fastmath=True,
 )
 def extract_tim(
-    inarray: np.ndarray,
-    outarray: np.ndarray,
+    in_arr: np.ndarray,
+    out_arr: np.ndarray,
     nchans: int,
     nsamps: int,
-    index: int,
+    out_start_index: int,
 ) -> None:
+    # \in_arr.reshape(nsamps, nchans).sum(axis=1)
+    in_arr_2d = in_arr.reshape(nsamps, nchans)
     for isamp in prange(nsamps):
-        outarray[index + isamp] = np.sum(inarray[nchans * isamp : nchans * (isamp + 1)])
+        summ = np.float64(0.0)
+        for ichan in range(nchans):
+            summ += in_arr_2d[isamp, ichan]
+        out_arr[out_start_index + isamp] = summ
 
 
 @njit(
-    ["void(u1[:], f4[:], i4, i4)", "void(f4[:], f4[:], i4, i4)"],
+    ["void(u1[::1], f4[::1], i8, i8)", "void(f4[::1], f4[::1], i8, i8)"],
     cache=True,
-    parallel=True,
     fastmath=True,
 )
 def extract_bpass(
-    inarray: np.ndarray,
-    outarray: np.ndarray,
+    in_arr: np.ndarray,
+    out_arr: np.ndarray,
     nchans: int,
     nsamps: int,
 ) -> None:
-    for ichan in prange(nchans):
-        for isamp in range(nsamps):
-            outarray[ichan] += inarray[nchans * isamp + ichan]
+    # \in_arr.reshape(nsamps, nchans).sum(axis=0)
+    in_arr_2d = in_arr.reshape(nsamps, nchans)
+    for isamp in range(nsamps):
+        for ichan in range(nchans):
+            out_arr[ichan] += in_arr_2d[isamp, ichan]
 
 
 @njit(
-    ["void(u1[:], b1[:], u1, i8, i8)", "void(f4[:], b1[:], f4, i8, i8)"],
+    ["void(u1[::1], f4[::1], i8, i8)", "void(f4[::1], f4[::1], i8, i8)"],
     cache=True,
-    parallel=True,
     fastmath=True,
+    parallel=True,
 )
-def mask_channels(
-    array: np.ndarray,
-    mask: np.ndarray,
-    maskvalue: float,
+def extract_bpass_par(
+    in_arr: np.ndarray,
+    out_arr: np.ndarray,
     nchans: int,
     nsamps: int,
 ) -> None:
+    in_arr_2d = in_arr.reshape(nsamps, nchans).T
     for ichan in prange(nchans):
-        if mask[ichan]:
-            for isamp in range(nsamps):
-                array[nchans * isamp + ichan] = maskvalue
+        summ = np.float64(0.0)
+        for isamp in range(nsamps):
+            summ += in_arr_2d[ichan, isamp]
+        out_arr[ichan] += summ
+
+
+@njit(
+    ["void(u1[::1], b1[::1], u1, i8, i8)", "void(f4[::1], b1[::1], f4, i8, i8)"],
+    cache=True,
+    fastmath=True,
+)
+def mask_channels(
+    in_arr: np.ndarray,
+    chan_mask: np.ndarray,
+    mask_value: float,
+    nchans: int,
+    nsamps: int,
+) -> None:
+    in_arr_2d = in_arr.reshape(nsamps, nchans)
+    # Build mask indices first (to avoid if statements in loop)
+    masked_chans = np.empty(nchans, dtype=np.int64)
+    n_masked = 0
+    for ichan in range(nchans):
+        if chan_mask[ichan]:
+            masked_chans[n_masked] = ichan
+            n_masked += 1
+    for isamp in prange(nsamps):
+        for i in range(n_masked):
+            ichan = masked_chans[i]
+            in_arr_2d[isamp, ichan] = mask_value
 
 
 @njit(
     [
-        "void(u1[:], f4[:], i4[:], i8, i8, i8, i8)",
-        "void(f4[:], f4[:], i4[:], i8, i8, i8, i8)",
+        "void(u1[::1], f4[::1], i4[::1], i8, i8, i8)",
+        "void(f4[::1], f4[::1], i4[::1], i8, i8, i8)",
     ],
     cache=True,
-    parallel=True,
     fastmath=True,
 )
 def dedisperse(
-    inarray: np.ndarray,
-    outarray: np.ndarray,
+    in_arr: np.ndarray,
+    out_arr: np.ndarray,
     delays: np.ndarray,
-    maxdelay: int,
     nchans: int,
     nsamps: int,
-    index: int,
+    out_start_index: int,
 ) -> None:
-    for isamp in prange(nsamps - maxdelay):
+    max_delay = int(np.max(np.abs(delays)))
+    in_arr_2d = in_arr.reshape(nsamps, nchans)
+    for isamp in prange(nsamps - max_delay):
+        summ = np.float64(0.0)
         for ichan in range(nchans):
-            outarray[index + isamp] += inarray[nchans * (isamp + delays[ichan]) + ichan]
+            summ += in_arr_2d[isamp + delays[ichan], ichan]
+        out_arr[out_start_index + isamp] = summ
 
 
-@njit(cache=True, parallel=True, fastmath=True)
-def invert_freq(array: np.ndarray, nchans: int, nsamps: int) -> np.ndarray:
-    outarray = np.empty_like(array)
+@njit(
+    ["u1[::1](u1[::1], i8, i8)", "f4[::1](f4[::1], i8, i8)"],
+    cache=True,
+    fastmath=True,
+    parallel=True,
+)
+def invert_freq(in_arr: np.ndarray, nchans: int, nsamps: int) -> np.ndarray:
+    in_arr_2d = in_arr.reshape(nsamps, nchans)
+    out_arr_2d = np.empty((nsamps, nchans), dtype=in_arr.dtype)
     for isamp in prange(nsamps):
-        outarray[nchans * isamp : nchans * (isamp + 1)] = array[
-            nchans * isamp : nchans * (isamp + 1)
-        ][::-1]
-    return outarray
+        out_arr_2d[isamp, :] = in_arr_2d[isamp, ::-1]
+    return out_arr_2d.ravel()
 
 
 @njit(
@@ -431,19 +461,16 @@ def resample_tim(array: np.ndarray, accel: float, tsamp: float) -> np.ndarray:
 
 @njit(
     [
-        "void(u1[:], u1[:], f4[:], f4[:], i8, i8)",
-        "void(f4[:], f4[:], f4[:], f4[:], i8, i8)",
+        "void(u1[::1], u1[::1], f4[::1], i8, i8)",
+        "void(f4[::1], f4[::1], f4[::1], i8, i8)",
     ],
     cache=True,
-    parallel=True,
     fastmath=True,
-    locals={"zerodm": types.f8, "result": types.f8},
 )
 def remove_zerodm(
-    inarray: np.ndarray,
-    outarray: np.ndarray,
+    in_arr: np.ndarray,
+    out_arr: np.ndarray,
     bpass: np.ndarray,
-    chanwts: np.ndarray,
     nchans: int,
     nsamps: int,
 ) -> None:
@@ -451,31 +478,31 @@ def remove_zerodm(
 
     Parameters
     ----------
-    inarray : np.ndarray
+    in_arr : np.ndarray
         Input 2D flattened array to remove zero DM from.
-    outarray : np.ndarray
+    out_arr : np.ndarray
         Output 2D flattened array with zero DM removed.
     bpass : np.ndarray
         Bandpass to be added back to the data.
-    chanwts : np.ndarray
-        Weights for each frequency channel.
     nchans : int
         Number of frequency channels in the 2D data.
     nsamps : int
         Number of samples in the 2D data.
     """
+    in_arr_2d = in_arr.reshape(nsamps, nchans)
+    out_arr_2d = out_arr.reshape(nsamps, nchans)
+    chanwts = bpass / bpass.sum()
     for isamp in prange(nsamps):
-        zerodm = 0
+        zerodm = np.float64(0.0)
         for ichan in range(nchans):
-            zerodm += inarray[nchans * isamp + ichan]
-
+            zerodm += in_arr_2d[isamp, ichan]
         for ichan in range(nchans):
-            pos = nchans * isamp + ichan
-            result = (inarray[pos] - zerodm * chanwts[ichan]) + bpass[ichan]
-            outarray[pos] = result
+            out_arr_2d[isamp, ichan] = (
+                in_arr_2d[isamp, ichan] - zerodm * chanwts[ichan] + bpass[ichan]
+            )
 
 
-@njit("f4[:](c8[:])", cache=True, fastmath=True)
+@njit("f4[::1](c8[::1])", cache=True, fastmath=True)
 def form_mspec(fspec: np.ndarray) -> np.ndarray:
     nfreq = len(fspec)
     mspec = np.zeros(nfreq, dtype=np.float32)
@@ -484,7 +511,7 @@ def form_mspec(fspec: np.ndarray) -> np.ndarray:
     return mspec
 
 
-@njit("f4[:](c8[:])", cache=True, fastmath=True)
+@njit("f4[::1](c8[::1])", cache=True, fastmath=True)
 def form_interp_mspec(fspec: np.ndarray) -> np.ndarray:
     nfreq = len(fspec)
     mspec = np.zeros(nfreq, dtype=np.float32)
@@ -497,6 +524,20 @@ def form_interp_mspec(fspec: np.ndarray) -> np.ndarray:
         mspec[i] = np.sqrt(max(ampsq, ampsq_diff))
         re_prev, im_prev = re, im
     return mspec
+
+
+# Note: No caching, as the py_func is same.
+downsample_1d_mean_par = njit(downsample_1d_mean.py_func, parallel=True, fastmath=True)
+downsample_2d_mean_par = njit(
+    downsample_2d_mean_flat.py_func,
+    parallel=True,
+    fastmath=True,
+)
+extract_tim_par = njit(extract_tim.py_func, parallel=True, fastmath=True)
+mask_channels_par = njit(mask_channels.py_func, parallel=True, fastmath=True)
+invert_freq_par = njit(invert_freq.py_func, parallel=True, fastmath=True)
+dedisperse_par = njit(dedisperse.py_func, parallel=True, fastmath=True)
+remove_zerodm_par = njit(remove_zerodm.py_func, parallel=True, fastmath=True)
 
 
 @njit("c8[:](c8[:], i8, i8, i8)", cache=True, fastmath=True)
@@ -741,10 +782,9 @@ def add_online_moments(a: np.ndarray, b: np.ndarray, c: np.ndarray) -> None:
     c["min"][:] = np.minimum(a["min"], b["min"])
 
 
-@njit(cache=True, fastmath=True)
+@njit("f4[::1](f4[::1])", cache=True, fastmath=True)
 def detrend_1d(arr: np.ndarray) -> np.ndarray:
-    """
-    Detrend a 1D array using a linear fit.
+    """Detrend a 1D array using a linear fit.
 
     Similar to scipiy.signal.detrend. Currently for 1d arrays only.
 
@@ -763,27 +803,56 @@ def detrend_1d(arr: np.ndarray) -> np.ndarray:
     ValueError
         If the input array is empty.
     """
-    m = len(arr)
+    m = arr.shape[0]
     if m == 0:
         msg = "Input array must be non-empty."
         raise ValueError(msg)
     if m == 1:
         return np.zeros(1, dtype=arr.dtype)
+    m_f = np.float32(m)
+    x_sum = m_f * (m_f - 1.0) / 2.0
+    x_sq_sum = m_f * (m_f - 1.0) * (2.0 * m_f - 1.0) / 6.0
 
-    x_sum = m * (m - 1) / 2
-    y_sum = 0.0
-    x_sq_sum = m * (m - 1) * (2 * m - 1) / 6
-    x_y_sum = 0.0
-
+    y_sum = np.float32(0.0)
+    x_y_sum = np.float32(0.0)
     for i in range(m):
         y_sum += arr[i]
         x_y_sum += i * arr[i]
 
-    slope = (m * x_y_sum - x_sum * y_sum) / (m * x_sq_sum - x_sum**2)
-    intercept = (y_sum - slope * x_sum) / m
-    trend = slope * np.arange(m, dtype=arr.dtype) + intercept
+    denominator = m_f * x_sq_sum - x_sum * x_sum
+    if denominator == 0.0:
+        mean_val = y_sum / m_f
+        result = np.empty(m, dtype=np.float32)
+        for i in range(m):
+            result[i] = arr[i] - mean_val
+        return result
 
-    return arr - trend.astype(arr.dtype)
+    slope = (m_f * x_y_sum - x_sum * y_sum) / denominator
+    intercept = (y_sum - slope * x_sum) / m_f
+    result = np.empty(m, dtype=np.float32)
+    for i in range(m):
+        result[i] = arr[i] - (slope * np.float32(i) + intercept)
+    return result
+
+
+@njit("f4[:, ::1](f4[:, ::1])", cache=True, fastmath=True)
+def detrend_2d(arr: np.ndarray) -> np.ndarray:
+    """Detrend a 2D array using a linear fit.
+
+    Parameters
+    ----------
+    arr : np.ndarray
+        Input 2D array.
+
+    Returns
+    -------
+    np.ndarray
+        Detrended array.
+    """
+    result = np.empty_like(arr)
+    for i in range(arr.shape[0]):
+        result[i] = detrend_1d(arr[i])
+    return result
 
 
 @njit(cache=True, fastmath=True)
@@ -851,7 +920,7 @@ def nb_fft_good_size(n: int, real: bool = False) -> int:  # noqa: FBT001, FBT002
     int
         Good size for FFT.
     """
-    return rocket_fft.good_size(n, real=real)
+    return int(rocket_fft.good_size(np.int64(n), real=np.bool_(real)))
 
 
 @njit(cache=True, fastmath=True)

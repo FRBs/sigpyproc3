@@ -15,6 +15,7 @@ def pulse_data() -> np.ndarray:
     noise = rng.normal(0, 0.1, 1000).astype(np.float32)
     return pulse + noise
 
+
 @pytest.fixture(scope="module")
 def edge_pulse_data() -> np.ndarray:
     """Generate data with a pulse at the edge."""

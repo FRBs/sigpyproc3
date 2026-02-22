@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import io
 import os
+from collections.abc import Buffer
 from typing import TYPE_CHECKING
 
 import numpy as np
-from typing_extensions import Buffer
 
 from sigpyproc.io.bits import BitsInfo, pack, unpack
 

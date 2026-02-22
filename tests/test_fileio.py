@@ -1,12 +1,11 @@
 import os
-from collections.abc import Generator
+from collections.abc import Buffer, Generator
 from pathlib import Path
 from typing import Any, cast
 
 import numpy as np
 import pytest
 from pytest_mock import MockerFixture
-from typing_extensions import Buffer
 
 from sigpyproc.io import fileio, sigproc
 

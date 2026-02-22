@@ -7,25 +7,25 @@ from astropy import constants, units
 from bidict import bidict
 
 if TYPE_CHECKING:
-    import numpy.typing as npt
+    from numpy.typing import ArrayLike, NDArray
 
 DM_CONSTANT_LK = 4.148808e3  # L&K Handbook of Pulsar Astronomy
 DM_CONSTANT_MT = 1 / 0.000241  # TEMPO2 Manchester & Taylor (1972)
 DM_CONSTANT_SI = (
-    (constants.e.esu**2 / (2 * np.pi * constants.m_e * constants.c)).to(
+    (constants.e.esu**2 / (2 * np.pi * constants.m_e * constants.c)).to(  # ty: ignore[unresolved-attribute]
         units.s * units.MHz**2 * units.cm**3 / units.pc,
     )
 ).value  # Precise SI constants
 
 
 def compute_dmdelays(
-    freqs: npt.ArrayLike,
-    dm: float | npt.ArrayLike,
+    freqs: ArrayLike,
+    dm: float | ArrayLike,
     tsamp: float,
     ref_freq: float,
     *,
     in_samples: bool = True,
-) -> npt.NDArray[np.int32 | np.float32]:
+) -> NDArray[np.int32 | np.float32]:
     """Compute ISM dispersion delays for given DM value(s).
 
     Parameters
@@ -43,7 +43,7 @@ def compute_dmdelays(
 
     Returns
     -------
-    NDArray
+    NDArray[np.int32 | np.float32]
         Dispersion delays at middle of each channel with respect to reference frequency.
 
         If dm is a scalar, returns a 1D array of delays. If dm is an array,
@@ -58,12 +58,12 @@ def compute_dmdelays(
 
 
 def compute_dmsmearing(
-    freqs: npt.ArrayLike,
-    dm: float | npt.ArrayLike,
+    freqs: ArrayLike,
+    dm: float | ArrayLike,
     tsamp: float,
     *,
     in_samples: bool = True,
-) -> npt.NDArray[np.int32 | np.float32]:
+) -> NDArray[np.int32 | np.float32]:
     """Compute ISM smearing due to finite bandwidth for given DM value(s).
 
     Parameters
@@ -79,7 +79,7 @@ def compute_dmsmearing(
 
     Returns
     -------
-    NDArray
+    NDArray[np.int32 | np.float32]
         DM smearing in the frequency channels due to finite bandwidth.
 
         If dm is a scalar, returns a 1D array of smearing. If dm is an array,

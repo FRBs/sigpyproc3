@@ -177,7 +177,7 @@ class TestFilterbank:
 
     def test_clean_rfi(self, filfile_4bit: str, tmpfile: str) -> None:
         fil = FilReader(filfile_4bit)
-        out_file, rfimask = fil.clean_rfi(outfile_name=tmpfile)
+        out_file, _ = fil.clean_rfi(outfile_name=tmpfile)
         new_fil = FilReader(out_file)
         np.testing.assert_equal(new_fil.header.nchans, fil.header.nchans)
         np.testing.assert_equal(new_fil.header.nsamples, fil.header.nsamples)
@@ -187,7 +187,7 @@ class TestFilterbank:
         def custom_funcn(x: np.ndarray) -> np.ndarray:
             return x
 
-        out_file, rfimask = fil.clean_rfi(
+        out_file, _ = fil.clean_rfi(
             freq_mask=[(1400.0, 1800.0)],
             custom_funcn=custom_funcn,
             outfile_name=tmpfile,
@@ -195,7 +195,7 @@ class TestFilterbank:
 
     def test_clean_rfi_mask(self, filfile_4bit: str, tmpfile: str) -> None:
         fil = FilReader(filfile_4bit)
-        out_file, rfimask = fil.clean_rfi(outfile_name=tmpfile)
+        _, rfimask = fil.clean_rfi(outfile_name=tmpfile)
         assert isinstance(rfimask, rfi.RFIMask)
         mask_file = Path(rfimask.to_file())
         assert mask_file.is_file()

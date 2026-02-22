@@ -314,7 +314,7 @@ class SubintHdr:
     @property
     def poln_state(self) -> str:
         """str: Polarisation state (e.g., Coherence)."""
-        state = pol_type_to_state.get(self.poln_type, None)
+        state = pol_type_to_state.get(self.poln_type)
         if state is None:
             state = npol_to_state[self.npol]
         return state

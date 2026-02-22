@@ -14,6 +14,8 @@ from sigpyproc.viz.styles import PlotTable
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from numpy.typing import NDArray
+
     from sigpyproc.core.custom_types import MaskMethods
 
 
@@ -84,6 +86,21 @@ def iqrm_mask(array: np.ndarray, threshold: float = 3, radius: int = 5) -> np.nd
     return mask
 
 
+def _validate_mask(
+    instance: RFIMask,
+    attribute: attrs.Attribute,
+    value: NDArray[np.bool_],
+) -> None:
+    attr_name = attribute.name
+    exp_shape = (instance.header.nchans,)
+    if value.shape != exp_shape:
+        msg = f"{attr_name} must have shape {exp_shape}, got {value.shape}"
+        raise ValueError(msg)
+    if value.dtype != np.bool_:
+        msg = f"{attr_name} must have dtype bool, got {value.dtype}"
+        raise ValueError(msg)
+
+
 @attrs.define(auto_attribs=True, slots=True)
 class RFIMask:
     """Class to handle RFI masking.
@@ -135,33 +152,41 @@ class RFIMask:
 
     threshold: float
     header: Header
-    chan_mean: np.ndarray
-    chan_var: np.ndarray
-    chan_skew: np.ndarray
-    chan_kurt: np.ndarray
-    chan_maxima: np.ndarray
-    chan_minima: np.ndarray
+    chan_mean: NDArray[np.float64]
+    chan_var: NDArray[np.float64]
+    chan_skew: NDArray[np.float64]
+    chan_kurt: NDArray[np.float64]
+    chan_maxima: NDArray[np.float64]
+    chan_minima: NDArray[np.float64]
 
-    chan_mask: np.ndarray = attrs.field()
-    user_mask: np.ndarray = attrs.field()
-    stats_mask: np.ndarray = attrs.field()
-    custom_mask: np.ndarray = attrs.field()
-
-    @chan_mask.default
-    def _set_chan_mask(self) -> np.ndarray:
-        return np.zeros(self.header.nchans, dtype="bool")
-
-    @user_mask.default
-    def _set_user_mask(self) -> np.ndarray:
-        return np.zeros(self.header.nchans, dtype="bool")
-
-    @stats_mask.default
-    def _set_stats_mask(self) -> np.ndarray:
-        return np.zeros(self.header.nchans, dtype="bool")
-
-    @custom_mask.default
-    def _set_custom_mask(self) -> np.ndarray:
-        return np.zeros(self.header.nchans, dtype="bool")
+    chan_mask: NDArray[np.bool_] = attrs.field(
+        default=attrs.Factory(
+            lambda self: np.zeros(self.header.nchans, dtype=bool),
+            takes_self=True,
+        ),
+        validator=_validate_mask,
+    )
+    user_mask: NDArray[np.bool_] = attrs.field(
+        default=attrs.Factory(
+            lambda self: np.zeros(self.header.nchans, dtype=bool),
+            takes_self=True,
+        ),
+        validator=_validate_mask,
+    )
+    stats_mask: NDArray[np.bool_] = attrs.field(
+        default=attrs.Factory(
+            lambda self: np.zeros(self.header.nchans, dtype=bool),
+            takes_self=True,
+        ),
+        validator=_validate_mask,
+    )
+    custom_mask: NDArray[np.bool_] = attrs.field(
+        default=attrs.Factory(
+            lambda self: np.zeros(self.header.nchans, dtype=bool),
+            takes_self=True,
+        ),
+        validator=_validate_mask,
+    )
 
     @property
     def num_masked(self) -> int:
@@ -172,7 +197,7 @@ class RFIMask:
         int
             Number of masked channels.
         """
-        return np.sum(self.chan_mask)
+        return int(np.sum(self.chan_mask))
 
     @property
     def masked_fraction(self) -> float:
@@ -348,22 +373,25 @@ class RFIMask:
             self.num_masked,
             f"({self.masked_fraction:.2f}%)",
         )
+        stats_mask_count = int(np.sum(self.stats_mask))
+        user_mask_count = int(np.sum(self.user_mask))
+        custom_mask_count = int(np.sum(self.custom_mask))
         table.add_entry(
             "Mask (stats)",
-            np.sum(self.stats_mask),
-            f"({np.sum(self.stats_mask) * 100 / self.header.nchans:.2f}%)",
+            stats_mask_count,
+            f"({stats_mask_count * 100 / self.header.nchans:.2f}%)",
             mask_colors["stats"],
         )
         table.add_entry(
             "Mask (user)",
-            np.sum(self.user_mask),
-            f"({np.sum(self.user_mask) * 100 / self.header.nchans:.2f}%)",
+            user_mask_count,
+            f"({user_mask_count * 100 / self.header.nchans:.2f}%)",
             mask_colors["user"],
         )
         table.add_entry(
             "Mask (custom)",
-            np.sum(self.custom_mask),
-            f"({np.sum(self.custom_mask) * 100 / self.header.nchans:.2f}%)",
+            custom_mask_count,
+            f"({custom_mask_count * 100 / self.header.nchans:.2f}%)",
             mask_colors["cust"],
         )
         table.plot(ax["table"])
@@ -397,4 +425,4 @@ class RFIMask:
             "threshold": fp_attrs["threshold"],
             **fp_stats,
         }
-        return cls(**kws)
+        return cls(**kws)  # ty: ignore[invalid-argument-type]

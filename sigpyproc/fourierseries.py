@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import numpy as np
-from numpy import typing as npt
 
 from sigpyproc import timeseries
 from sigpyproc.core import kernels
@@ -14,6 +13,8 @@ from sigpyproc.utils import validate_path
 if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
+
+    from numpy.typing import ArrayLike, NDArray
 
 
 class PowerSpectrum:
@@ -32,13 +33,13 @@ class PowerSpectrum:
     header
     """
 
-    def __init__(self, data: npt.ArrayLike, header: Header) -> None:
+    def __init__(self, data: ArrayLike, header: Header) -> None:
         self._data = np.asarray(data, dtype=np.float32)
         self._header = header
         self._check_input()
 
     @property
-    def data(self) -> npt.NDArray[np.float32]:
+    def data(self) -> NDArray[np.float32]:
         """Power spectrum data array.
 
         Returns
@@ -173,13 +174,13 @@ class FourierSeries:
     binwidth
     """
 
-    def __init__(self, data: npt.ArrayLike, header: Header) -> None:
+    def __init__(self, data: ArrayLike, header: Header) -> None:
         self._data = np.asarray(data, dtype=np.complex64)
         self._header = header
         self._check_input()
 
     @property
-    def data(self) -> npt.NDArray[np.complex64]:
+    def data(self) -> NDArray[np.complex64]:
         """Fourier series data array.
 
         Returns
@@ -308,7 +309,7 @@ class FourierSeries:
         harm_ar = np.hstack((harms, np.conj(harms[1:][::-1])))
         return Profile(np.abs(kernels.nb_ifft(harm_ar)), tsamp=self.header.tsamp)
 
-    def multiply(self, other: FourierSeries | npt.ArrayLike) -> FourierSeries:
+    def multiply(self, other: FourierSeries | ArrayLike) -> FourierSeries:
         """Multiply two Fourier series together.
 
         Parameters

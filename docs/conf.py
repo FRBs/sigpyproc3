@@ -101,7 +101,7 @@ numpydoc_xref_aliases = {
     "astropy": "astropy",
     "attrs": "attrs",
     "Path": "pathlib.Path",
-    "Buffer": "typing_extensions.Buffer",
+    "Buffer": "collections.abc.Buffer",
     "Iterator": "collections.abc.Iterator",
     "Callable": "collections.abc.Callable",
     "Literal": "typing.Literal",
@@ -135,7 +135,6 @@ intersphinx_mapping = {
     "attrs": ("https://www.attrs.org/en/stable/", None),
     "matplotlib": ("https://matplotlib.org/stable/", None),
     "pyfftw": ("https://pyfftw.readthedocs.io/en/latest/", None),
-    "typing_extensions": ("https://typing-extensions.readthedocs.io/en/stable/", None),
 }
 
 # -- Linkcode configuration --------------------------------------------------

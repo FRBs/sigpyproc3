@@ -4,13 +4,14 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Self
 
 import numpy as np
-from numpy import typing as npt
 
 from sigpyproc.core import kernels, stats
 from sigpyproc.header import Header
 from sigpyproc.timeseries import TimeSeries
 
 if TYPE_CHECKING:
+    from numpy.typing import NDArray
+
     from sigpyproc.core.custom_types import FilterMethods, LocMethods, ScaleMethods
 
 
@@ -37,7 +38,7 @@ class BaseBlock(ABC):
         self._check_input()
 
     @property
-    def data(self) -> npt.NDArray[np.float32]:
+    def data(self) -> NDArray[np.float32]:
         """Block data array.
 
         Returns
@@ -259,7 +260,7 @@ class FilterbankBlock(BaseBlock):
     def dedisperse(
         self,
         dm: float,
-        ref_freq: str = "ch1",
+        ref_freq: str = "fch1",
         *,
         only_valid_samples: bool = False,
     ) -> FilterbankBlock:
@@ -273,7 +274,7 @@ class FilterbankBlock(BaseBlock):
         dm : float
             Dispersion measure to dedisperse to.
         ref_freq : str, optional
-            Reference frequency to dedisperse to, by default "ch1".
+            Reference frequency to dedisperse to, by default "fch1".
         only_valid_samples : bool, optional
             Return a FilterbankBlock for valid time samples, by default False.
 
@@ -302,7 +303,7 @@ class FilterbankBlock(BaseBlock):
         self,
         dm: float,
         dmsteps: int = 512,
-        ref_freq: str | float = "ch1",
+        ref_freq: str | float = "fch1",
         *,
         only_valid_samples: bool = False,
     ) -> DMTBlock:
@@ -317,7 +318,7 @@ class FilterbankBlock(BaseBlock):
         dmsteps : int, optional
             Number of adjacent DMs to dedisperse to, by default 512.
         ref_freq : str | float, optional
-            Reference frequency to dedisperse to, by default "ch1".
+            Reference frequency to dedisperse to, by default "fch1".
         only_valid_samples : bool, optional
             Return a DMTBlock for valid time samples, by default False.
 

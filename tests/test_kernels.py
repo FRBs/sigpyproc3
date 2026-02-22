@@ -339,9 +339,9 @@ class TestKernels:
 
     def test_detrend_1d_fail(self) -> None:
         with pytest.raises(ValueError):
-            kernels.detrend_1d(np.array([]))
+            kernels.detrend_1d(np.array([], dtype=np.float32))
         with pytest.raises(ValueError):
-            kernels.detrend_1d.py_func(np.array([]))
+            kernels.detrend_1d.py_func(np.array([], dtype=np.float32))
 
     def test_normalize_template(self) -> None:
         arr = np.ones(10, dtype=np.float32)
