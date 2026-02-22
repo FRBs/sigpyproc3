@@ -655,9 +655,6 @@ def _compute_nsamples(header: dict[str, int | float | str]) -> int:
     nsamples_from_file = (8 * datalen) // nbits // nchans
 
     if "nsamples" in header:
-        # Header-declared value: treat as an upper-bound hint, not gospel.
-        # A writer may declare more samples than were actually flushed
-        # (crashed mid-write, reserved space, etc.), so we take the min.
         nsamples_declared = int(header["nsamples"])
         if nsamples_declared != nsamples_from_file:
             logger.warning(
