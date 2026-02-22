@@ -73,8 +73,8 @@ class PulseParams:
     tau0: float = attrs.field(default=1e-3)
     spec_kind: SpecSimulMethods = attrs.field(default="flat")
     spec_idx: float = attrs.field(default=-2.0)
-    os_fact: int = attrs.field(default=10, validator=attrs.validators.ge(1))
-    noise: float = attrs.field(default=1, validator=attrs.validators.ge(0))
+    os_fact: int = attrs.field(default=10, validator=attrs.validators.ge(1))  # ty: ignore[no-matching-overload]
+    noise: float = attrs.field(default=1.0, validator=attrs.validators.ge(0.0))
 
 
 @attrs.frozen(auto_attribs=True, kw_only=True)
@@ -308,7 +308,7 @@ class FurbyGenerator:
             Furby object containing the simulated FRB signal.
         """
         data_dedisp_os = self._gen_pulse()
-        delays_os = self.hdr_os.get_dmdelays(self.params.dm, ref_freq="center")
+        delays_os = self.hdr_os.get_dmdelays(self.params.dm, ref_freq="fcenter")
         # Need padding on both sides for dispersion kernel
         nsamps_disp_os = 2 * (data_dedisp_os.shape[1] + np.abs(delays_os).max())
         # Ensure minimum output length if specified

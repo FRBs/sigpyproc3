@@ -325,7 +325,7 @@ def estimate_scale(
     axis: int | tuple[int, ...] | None = None,
     *,
     keepdims: bool = False,
-) -> float | NDArray[np.floating]:
+) -> np.float64 | NDArray[np.float64]:
     """
     Estimate the scale (variability) or standard deviation of an array.
 
@@ -352,7 +352,7 @@ def estimate_scale(
 
     Returns
     -------
-    float | ndarray
+    np.float64 | NDArray[np.float64]
         The estimated scale of the array. If the method is "doublemad", the
         output is an array of the same shape as the input array.
 
@@ -369,8 +369,8 @@ def estimate_scale(
     scale_methods: dict[
         str,
         Callable[
-            [ArrayLike, int | tuple[int, ...] | None],
-            float | NDArray[np.floating],
+            [NDArray[np.float64], int | tuple[int, ...] | None],
+            np.float64 | NDArray[np.float64],
         ],
     ] = {
         "iqr": _scale_iqr,
@@ -382,7 +382,7 @@ def estimate_scale(
         "sn": _scale_sn,
         "gapper": _scale_gapper,
     }
-    data = np.asanyarray(data)
+    data = np.asanyarray(data, dtype=np.float64)
     if len(data) == 0:
         msg = "Cannot estimate scale from an empty array."
         raise ValueError(msg)
@@ -394,14 +394,19 @@ def estimate_scale(
         msg = f"Method {method} is not supported for estimating scale."
         raise ValueError(msg)
     result = scale_func(data, axis)
-
-    if isinstance(result, np.ndarray) and result.size == 1 and not keepdims:
-        result = result.reshape(-1)[0]  # preserves np.floating type
+    # First: handle keepdims (regardless of scalar or ndarray)
     if keepdims and method != "doublemad":
         if axis is None:
-            result = np.expand_dims(result, axis=tuple(range(data.ndim)))
+            axis_tuple = tuple(range(data.ndim))
+        elif isinstance(axis, int):
+            axis_tuple = (axis,)
         else:
-            result = np.expand_dims(result, axis=axis)
+            axis_tuple = axis
+        result = np.expand_dims(result, axis=axis_tuple)
+
+    # Then: collapse to scalar only if not keepdims
+    if isinstance(result, np.ndarray) and result.size == 1 and not keepdims:
+        result = result.flat[0]
     return result
 
 
@@ -468,14 +473,14 @@ def estimate_zscore(
 
 
 def _scale_iqr(
-    data: ArrayLike,
+    data: NDArray[np.float64],
     axis: int | tuple[int, ...] | None = None,
-) -> float | NDArray[np.floating]:
+) -> np.float64 | NDArray[np.float64]:
     """Calculate the normalized Inter-quartile Range (IQR) scale of an array.
 
     Parameters
     ----------
-    data : ArrayLike
+    data : NDArray[np.float64]
         Input array or object that can be converted to an array.
     axis : int | tuple[int, ...] | None, optional
         Axis or axes along which to compute the scale, by default None.
@@ -483,7 +488,7 @@ def _scale_iqr(
 
     Returns
     -------
-    float | ndarray
+    np.float64 | NDArray[np.float64]
         The normalized IQR scale of the array.
     """
     data = np.asanyarray(data, dtype=np.float64)
@@ -493,14 +498,14 @@ def _scale_iqr(
 
 
 def _scale_mad(
-    data: ArrayLike,
+    data: NDArray[np.float64],
     axis: int | tuple[int, ...] | None = None,
-) -> float | NDArray[np.floating]:
+) -> np.float64 | NDArray[np.float64]:
     """Calculate the Median Absolute Deviation (MAD) scale of an array.
 
     Parameters
     ----------
-    data : ArrayLike
+    data : NDArray[np.float64]
         Input array or object that can be converted to an array.
     axis : int | tuple[int, ...] | None, optional
         Axis or axes along which to compute the scale, by default None.
@@ -508,7 +513,7 @@ def _scale_mad(
 
     Returns
     -------
-    float | ndarray
+    np.float64 | NDArray[np.float64]
         The MAD scale of the array.
 
     References
@@ -530,14 +535,14 @@ def _scale_mad(
 
 
 def _scale_doublemad(
-    data: ArrayLike,
+    data: NDArray[np.float64],
     axis: int | tuple[int, ...] | None = None,
-) -> NDArray[np.floating]:
+) -> NDArray[np.float64]:
     """Calculate the Double MAD scale of an array.
 
     Parameters
     ----------
-    data : ArrayLike
+    data : NDArray[np.float64]
         Input array or object that can be converted to an array.
     axis : int | tuple[int, ...] | None, optional
         Axis or axes along which to compute the scale, by default None.
@@ -545,7 +550,7 @@ def _scale_doublemad(
 
     Returns
     -------
-    float | ndarray
+    np.float64 | NDArray[np.float64]
         The Double MAD scale of the array.
 
     References
@@ -582,28 +587,28 @@ def _scale_doublemad(
 
 
 def _scale_diffcov(
-    data: ArrayLike,
+    data: NDArray[np.float64],
     axis: int | tuple[int, ...] | None = None,
-) -> float | NDArray[np.floating]:
+) -> np.float64 | NDArray[np.float64]:
     """Calculate the Difference Covariance scale of an array.
 
     Parameters
     ----------
-    data : ArrayLike
+    data : NDArray[np.float64]
         Input array or object that can be converted to an array.
     axis : int | tuple[int, ...] | None, optional
         Axis or axes along which to compute the scale, by default None.
 
     Returns
     -------
-    float | ndarray
+    np.float64 | NDArray[np.float64]
         The Difference Covariance scale of the array.
     """
     data = np.asanyarray(data, dtype=np.float64)
     return apply_along_axes(_scale_diffcov_1d, data, axis)
 
 
-def _scale_diffcov_1d(data: np.ndarray) -> float:
+def _scale_diffcov_1d(data: NDArray[np.float64]) -> np.float64:
     """Calculate the Difference Covariance scale of a 1D array."""
     diff = np.diff(data)
     cov = np.cov(diff[:-1], diff[1:])
@@ -611,49 +616,49 @@ def _scale_diffcov_1d(data: np.ndarray) -> float:
 
 
 def _scale_biweight(
-    data: ArrayLike,
+    data: NDArray[np.float64],
     axis: int | tuple[int, ...] | None = None,
-) -> NDArray[np.floating]:
+) -> np.float64 | NDArray[np.float64]:
     """Calculate the Biweight Midvariance scale of an array.
 
     Parameters
     ----------
-    data : ArrayLike
+    data : NDArray[np.float64]
         Input array or object that can be converted to an array.
     axis : int | tuple[int, ...] | None, optional
         Axis or axes along which to compute the scale, by default None.
 
     Returns
     -------
-    float | ndarray
+    np.float64 | NDArray[np.float64]
         The Biweight Midvariance scale of the array.
     """
-    return astrostats.biweight_scale(data, axis=axis)
+    return astrostats.biweight_scale(data, axis=axis)  # type: ignore[return-value]
 
 
 def _scale_qn(
-    data: ArrayLike,
+    data: NDArray[np.float64],
     axis: int | tuple[int, ...] | None = None,
-) -> float | NDArray[np.floating]:
+) -> np.float64 | NDArray[np.float64]:
     """Calculate the Normalized Qn scale of an array.
 
     Parameters
     ----------
-    data : ArrayLike
+    data : NDArray[np.float64]
         Input array or object that can be converted to an array.
     axis : int | tuple[int, ...] | None, optional
         Axis or axes along which to compute the scale, by default None.
 
     Returns
     -------
-    float | ndarray
+    np.float64 | NDArray[np.float64]
         The Normalized Qn scale of the array.
     """
     data = np.asanyarray(data, dtype=np.float64)
     return apply_along_axes(_scale_qn_1d, data, axis)
 
 
-def _scale_qn_1d(data: np.ndarray) -> float:
+def _scale_qn_1d(data: NDArray[np.float64]) -> np.float64:
     """Calculate the Normalized Qn scale of an array."""
     norm = 0.4506241100243562  # np.sqrt(2) * stats.norm.ppf(5/8)
     n = len(data)
@@ -664,21 +669,21 @@ def _scale_qn_1d(data: np.ndarray) -> float:
 
 
 def _scale_sn(
-    data: ArrayLike,
+    data: NDArray[np.float64],
     axis: int | tuple[int, ...] | None = None,
-) -> float | NDArray[np.floating]:
+) -> np.float64 | NDArray[np.float64]:
     """Calculate the Normalized Sn scale of an array.
 
     Parameters
     ----------
-    data : ArrayLike
+    data : NDArray[np.float64]
         Input array or object that can be converted to an array.
     axis : int | tuple[int, ...] | None, optional
         Axis or axes along which to compute the scale, by default None.
 
     Returns
     -------
-    float | ndarray
+    np.float64 | NDArray[np.float64]
         The Normalized Sn scale of the array.
     """
     norm = 1.1926
@@ -689,28 +694,28 @@ def _scale_sn(
 
 
 def _scale_gapper(
-    data: ArrayLike,
+    data: NDArray[np.float64],
     axis: int | tuple[int, ...] | None = None,
-) -> float | NDArray[np.floating]:
+) -> np.float64 | NDArray[np.float64]:
     """Calculate the Gapper Estimator scale of an array.
 
     Parameters
     ----------
-    data : ArrayLike
+    data : NDArray[np.float64]
         Input array or object that can be converted to an array.
     axis : int | tuple[int, ...] | None, optional
         Axis or axes along which to compute the scale, by default None.
 
     Returns
     -------
-    float | ndarray
+    np.float64 | NDArray[np.float64]
         The Gapper Estimator scale of the array.
     """
     data = np.asanyarray(data, dtype=np.float64)
     return apply_along_axes(_scale_gapper_1d, data, axis)
 
 
-def _scale_gapper_1d(data: np.ndarray) -> float:
+def _scale_gapper_1d(data: NDArray[np.float64]) -> np.float64:
     """Calculate the Gapper Estimator scale of an 1D array."""
     n = len(data)
     gaps = np.diff(np.sort(data))

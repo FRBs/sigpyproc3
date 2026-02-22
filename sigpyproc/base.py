@@ -14,18 +14,17 @@ from sigpyproc.timeseries import TimeSeries
 from sigpyproc.utils import get_logger
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator
-
-    from typing_extensions import Buffer, TypedDict, Unpack
+    from collections.abc import Buffer, Callable, Iterator
+    from typing import NotRequired, TypedDict, Unpack
 
     from sigpyproc.block import FilterbankBlock
     from sigpyproc.core.custom_types import MaskMethods
     from sigpyproc.header import Header
 
-    class PlanKwargs(TypedDict, total=False):
-        description: str | None
-        quiet: bool
-        allocator: Callable[[int], Buffer] | None
+    class PlanKwargs(TypedDict):
+        description: NotRequired[str | None]
+        quiet: NotRequired[bool]
+        allocator: NotRequired[Callable[[int], Buffer] | None]
 
 
 class Filterbank(ABC):
@@ -1010,14 +1009,15 @@ class Filterbank(ABC):
             nsamps=nsamps,
             **plan_kwargs,
         ):
+            out_ar_view = out_ar[: nsamps_r * self.header.nchans]
             kernel_func(
                 data,
-                out_ar,
+                out_ar_view,
                 bpass,
                 self.header.nchans,
                 nsamps_r,
             )
-            out_file.cwrite(out_ar[: nsamps_r * self.header.nchans])
+            out_file.cwrite(out_ar_view)
         out_file.close()
         return outfile_name
 

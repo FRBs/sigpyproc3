@@ -3,13 +3,14 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import numpy as np
-from numpy import typing as npt
 
 from sigpyproc import params
 from sigpyproc.core.filters import MatchedFilter
 from sigpyproc.header import Header
 
 if TYPE_CHECKING:
+    from numpy.typing import ArrayLike
+
     from sigpyproc.core.custom_types import MatchFilterMethods
 
 
@@ -27,7 +28,7 @@ class Profile:
         1-D Pulse profile
     """
 
-    def __init__(self, data: npt.ArrayLike, tsamp: float) -> None:
+    def __init__(self, data: ArrayLike, tsamp: float) -> None:
         self._data = np.asarray(data, dtype=np.float32)
         self._tsamp = tsamp
 

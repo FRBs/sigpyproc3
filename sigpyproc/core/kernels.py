@@ -1,18 +1,21 @@
+# ruff: noqa: ARG001
+
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
-import numpy.typing as npt
 import rocket_fft
 from numba import njit, prange, types
+
+if TYPE_CHECKING:
+    from numpy.typing import NDArray
 
 CONST_C_VAL = 299792458.0  # Speed of light in m/s (astropy.constants.c.value)
 
 
 @njit("void(u1[::1], u1[::1])", cache=True, fastmath=True, locals={"pos": types.i8})
-def unpack1_8_big(
-    array: npt.NDArray[np.uint8],
-    unpacked: npt.NDArray[np.uint8],
-) -> None:
+def unpack1_8_big(array: NDArray[np.uint8], unpacked: NDArray[np.uint8]) -> None:
     for ii in range(array.size):
         pos = ii * 8
         for jj in range(8):
@@ -20,10 +23,7 @@ def unpack1_8_big(
 
 
 @njit("void(u1[::1], u1[::1])", cache=True, fastmath=True, locals={"pos": types.i8})
-def unpack1_8_little(
-    array: npt.NDArray[np.uint8],
-    unpacked: npt.NDArray[np.uint8],
-) -> None:
+def unpack1_8_little(array: NDArray[np.uint8], unpacked: NDArray[np.uint8]) -> None:
     for ii in range(array.size):
         pos = ii * 8
         for jj in range(8):
@@ -31,10 +31,7 @@ def unpack1_8_little(
 
 
 @njit("void(u1[::1], u1[::1])", cache=True, fastmath=True, locals={"pos": types.i8})
-def unpack2_8_big(
-    array: npt.NDArray[np.uint8],
-    unpacked: npt.NDArray[np.uint8],
-) -> None:
+def unpack2_8_big(array: NDArray[np.uint8], unpacked: NDArray[np.uint8]) -> None:
     for ii in range(array.size):
         pos = ii * 4
         unpacked[pos + 3] = (array[ii] & 0x03) >> 0
@@ -44,10 +41,7 @@ def unpack2_8_big(
 
 
 @njit("void(u1[::1], u1[::1])", cache=True, fastmath=True, locals={"pos": types.i8})
-def unpack2_8_little(
-    array: npt.NDArray[np.uint8],
-    unpacked: npt.NDArray[np.uint8],
-) -> None:
+def unpack2_8_little(array: NDArray[np.uint8], unpacked: NDArray[np.uint8]) -> None:
     for ii in range(array.size):
         pos = ii * 4
         unpacked[pos + 0] = (array[ii] & 0x03) >> 0
@@ -57,10 +51,7 @@ def unpack2_8_little(
 
 
 @njit("void(u1[::1], u1[::1])", cache=True, fastmath=True, locals={"pos": types.i8})
-def unpack4_8_big(
-    array: npt.NDArray[np.uint8],
-    unpacked: npt.NDArray[np.uint8],
-) -> None:
+def unpack4_8_big(array: NDArray[np.uint8], unpacked: NDArray[np.uint8]) -> None:
     for ii in range(array.size):
         pos = ii * 2
         unpacked[pos + 1] = (array[ii] & 0x0F) >> 0
@@ -68,10 +59,7 @@ def unpack4_8_big(
 
 
 @njit("void(u1[::1], u1[::1])", cache=True, fastmath=True, locals={"pos": types.i8})
-def unpack4_8_little(
-    array: npt.NDArray[np.uint8],
-    unpacked: npt.NDArray[np.uint8],
-) -> None:
+def unpack4_8_little(array: NDArray[np.uint8], unpacked: NDArray[np.uint8]) -> None:
     for ii in range(array.size):
         pos = ii * 2
         unpacked[pos + 0] = (array[ii] & 0x0F) >> 0
@@ -79,7 +67,7 @@ def unpack4_8_little(
 
 
 @njit("void(u1[::1], u1[::1])", cache=True, fastmath=True)
-def pack1_8_big(array: npt.NDArray[np.uint8], packed: npt.NDArray[np.uint8]) -> None:
+def pack1_8_big(array: NDArray[np.uint8], packed: NDArray[np.uint8]) -> None:
     for ii in range(packed.size):
         pos = ii * 8
         packed[ii] = (
@@ -95,7 +83,7 @@ def pack1_8_big(array: npt.NDArray[np.uint8], packed: npt.NDArray[np.uint8]) -> 
 
 
 @njit("void(u1[::1], u1[::1])", cache=True, fastmath=True)
-def pack1_8_little(array: npt.NDArray[np.uint8], packed: npt.NDArray[np.uint8]) -> None:
+def pack1_8_little(array: NDArray[np.uint8], packed: NDArray[np.uint8]) -> None:
     for ii in range(packed.size):
         pos = ii * 8
         packed[ii] = (
@@ -112,8 +100,8 @@ def pack1_8_little(array: npt.NDArray[np.uint8], packed: npt.NDArray[np.uint8]) 
 
 @njit("void(u1[::1], u1[::1], b1)", cache=True, fastmath=True)
 def pack1_8_vect(
-    array: npt.NDArray[np.uint8],
-    packed: npt.NDArray[np.uint8],
+    array: NDArray[np.uint8],
+    packed: NDArray[np.uint8],
     *,
     big_endian: bool = True,
 ) -> None:
@@ -145,7 +133,7 @@ def pack1_8_vect(
 
 
 @njit("void(u1[::1], u1[::1])", cache=True, fastmath=True, locals={"pos": types.i8})
-def pack2_8_big(array: npt.NDArray[np.uint8], packed: npt.NDArray[np.uint8]) -> None:
+def pack2_8_big(array: NDArray[np.uint8], packed: NDArray[np.uint8]) -> None:
     for ii in range(packed.size):
         pos = ii * 4
         packed[ii] = (
@@ -157,7 +145,7 @@ def pack2_8_big(array: npt.NDArray[np.uint8], packed: npt.NDArray[np.uint8]) -> 
 
 
 @njit("void(u1[::1], u1[::1])", cache=True, fastmath=True, locals={"pos": types.i8})
-def pack2_8_little(array: npt.NDArray[np.uint8], packed: npt.NDArray[np.uint8]) -> None:
+def pack2_8_little(array: NDArray[np.uint8], packed: NDArray[np.uint8]) -> None:
     for ii in range(packed.size):
         pos = ii * 4
         packed[ii] = (
@@ -169,14 +157,14 @@ def pack2_8_little(array: npt.NDArray[np.uint8], packed: npt.NDArray[np.uint8]) 
 
 
 @njit("void(u1[::1], u1[::1])", cache=True, fastmath=True, locals={"pos": types.i8})
-def pack4_8_big(array: npt.NDArray[np.uint8], packed: npt.NDArray[np.uint8]) -> None:
+def pack4_8_big(array: NDArray[np.uint8], packed: NDArray[np.uint8]) -> None:
     for ii in range(packed.size):
         pos = ii * 2
         packed[ii] = (array[pos + 0] << 4) | array[pos + 1]
 
 
 @njit("void(u1[::1], u1[::1])", cache=True, fastmath=True, locals={"pos": types.i8})
-def pack4_8_little(array: npt.NDArray[np.uint8], packed: npt.NDArray[np.uint8]) -> None:
+def pack4_8_little(array: NDArray[np.uint8], packed: NDArray[np.uint8]) -> None:
     for ii in range(packed.size):
         pos = ii * 2
         packed[ii] = (array[pos + 1] << 4) | array[pos + 0]
@@ -348,8 +336,8 @@ def mask_channels(
 
 @njit(
     [
-        "void(u1[::1], f4[::1], i8[::1], i8, i8, i8)",
-        "void(f4[::1], f4[::1], i8[::1], i8, i8, i8)",
+        "void(u1[::1], f4[::1], i4[::1], i8, i8, i8)",
+        "void(f4[::1], f4[::1], i4[::1], i8, i8, i8)",
     ],
     cache=True,
     fastmath=True,
@@ -815,27 +803,35 @@ def detrend_1d(arr: np.ndarray) -> np.ndarray:
     ValueError
         If the input array is empty.
     """
-    m = len(arr)
+    m = arr.shape[0]
     if m == 0:
         msg = "Input array must be non-empty."
         raise ValueError(msg)
     if m == 1:
         return np.zeros(1, dtype=arr.dtype)
-    x_sum = m * (m - 1) / 2
-    y_sum = 0.0
-    x_sq_sum = m * (m - 1) * (2 * m - 1) / 6
-    x_y_sum = 0.0
-    denominator = m * x_sq_sum - x_sum**2
-    if denominator == 0:
-        return arr - np.mean(arr, dtype=np.float32)
+    m_f = np.float32(m)
+    x_sum = m_f * (m_f - 1.0) / 2.0
+    x_sq_sum = m_f * (m_f - 1.0) * (2.0 * m_f - 1.0) / 6.0
+
+    y_sum = np.float32(0.0)
+    x_y_sum = np.float32(0.0)
     for i in range(m):
         y_sum += arr[i]
         x_y_sum += i * arr[i]
-    slope = (m * x_y_sum - x_sum * y_sum) / denominator
-    intercept = (y_sum - slope * x_sum) / m
+
+    denominator = m_f * x_sq_sum - x_sum * x_sum
+    if denominator == 0.0:
+        mean_val = y_sum / m_f
+        result = np.empty(m, dtype=np.float32)
+        for i in range(m):
+            result[i] = arr[i] - mean_val
+        return result
+
+    slope = (m_f * x_y_sum - x_sum * y_sum) / denominator
+    intercept = (y_sum - slope * x_sum) / m_f
     result = np.empty(m, dtype=np.float32)
     for i in range(m):
-        result[i] = arr[i] - (slope * i + intercept)
+        result[i] = arr[i] - (slope * np.float32(i) + intercept)
     return result
 
 
@@ -924,7 +920,7 @@ def nb_fft_good_size(n: int, real: bool = False) -> int:  # noqa: FBT001, FBT002
     int
         Good size for FFT.
     """
-    return rocket_fft.good_size(n, real=real)
+    return int(rocket_fft.good_size(np.int64(n), real=np.bool_(real)))
 
 
 @njit(cache=True, fastmath=True)

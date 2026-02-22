@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from numpy import typing as npt
+from numpy.typing import NDArray
 
 from sigpyproc.core.filters import MatchedFilter
 from sigpyproc.foldedcube import FoldedData, FoldSlice, Profile
@@ -9,19 +9,19 @@ from sigpyproc.readers import FilReader
 
 
 @pytest.fixture
-def sample_data() -> npt.NDArray[np.float32]:
+def sample_data() -> NDArray[np.float32]:
     rng = np.random.default_rng(42)
     return rng.normal(size=128).astype(np.float32)
 
 
 @pytest.fixture
-def sample_foldslice_data() -> npt.NDArray[np.float32]:
+def sample_foldslice_data() -> NDArray[np.float32]:
     rng = np.random.default_rng(42)
     return rng.normal(size=(64, 128)).astype(np.float32)
 
 
 @pytest.fixture
-def sample_foldeddata_data() -> npt.NDArray[np.float32]:
+def sample_foldeddata_data() -> NDArray[np.float32]:
     rng = np.random.default_rng(42)
     return rng.normal(size=(32, 64, 128)).astype(np.float32)
 
@@ -32,7 +32,7 @@ def sample_header(filfile_8bit_1: str) -> Header:
 
 
 class TestProfile:
-    def test_init(self, sample_data: npt.NDArray[np.float32]) -> None:
+    def test_init(self, sample_data: NDArray[np.float32]) -> None:
         profile = Profile(sample_data, tsamp=0.001)
         assert isinstance(profile, Profile)
         assert isinstance(profile.data, np.ndarray)
@@ -44,7 +44,7 @@ class TestProfile:
 
 
 class TestFoldSlice:
-    def test_init(self, sample_foldslice_data: npt.NDArray[np.float32]) -> None:
+    def test_init(self, sample_foldslice_data: NDArray[np.float32]) -> None:
         foldslice = FoldSlice(sample_foldslice_data, tsamp=0.001)
         assert isinstance(foldslice, FoldSlice)
         assert isinstance(foldslice.data, np.ndarray)
@@ -52,13 +52,13 @@ class TestFoldSlice:
         assert foldslice.data.shape == (64, 128)
         assert foldslice.tsamp == 0.001
 
-    def test_normalize(self, sample_foldslice_data: npt.NDArray[np.float32]) -> None:
+    def test_normalize(self, sample_foldslice_data: NDArray[np.float32]) -> None:
         foldslice = FoldSlice(sample_foldslice_data, tsamp=0.001)
         normalized = foldslice.normalize()
         assert isinstance(normalized, FoldSlice)
         assert np.allclose(np.mean(normalized.data, axis=1), 1.0)
 
-    def test_get_profile(self, sample_foldslice_data: npt.NDArray[np.float32]) -> None:
+    def test_get_profile(self, sample_foldslice_data: NDArray[np.float32]) -> None:
         foldslice = FoldSlice(sample_foldslice_data, tsamp=0.001)
         profile = foldslice.get_profile()
         assert isinstance(profile, Profile)
@@ -69,7 +69,7 @@ class TestFoldSlice:
 class TestFoldedData:
     def test_init_fails(
         self,
-        sample_data: npt.NDArray[np.float32],
+        sample_data: NDArray[np.float32],
         filfile_4bit: str,
     ) -> None:
         hdr = Header.from_sigproc(filfile_4bit)

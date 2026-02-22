@@ -17,6 +17,7 @@ from sigpyproc.io.fileio import FileWriter
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+
 @attrs.frozen(auto_attribs=True, kw_only=True)
 class Header:
     """Container object to handle observation metadata.
@@ -338,7 +339,7 @@ class Header:
     def get_dmdelays(
         self,
         dm: float | np.ndarray,
-        ref_freq: str | float = "ch1",
+        ref_freq: str | float = "fch1",
         *,
         in_samples: bool = True,
     ) -> np.ndarray:
@@ -349,7 +350,8 @@ class Header:
         dm : float | np.ndarray
             Dispersion measure(s) to calculate delays for.
         ref_freq : str | float, optional
-            Reference frequency to calculate delays from, by default "ch1".
+            Reference frequency to calculate delays from, by default "fch1".
+            Accepted inputs are "fmax", "fmin", "fcenter", "fch1" or a number in MHz.
         in_samples : bool, optional
             Flag to return delays as numbers of samples, by default True.
 
@@ -362,10 +364,10 @@ class Header:
             returns a 2D array with shape ``(len(dm), len(freqs))``.
         """
         if isinstance(ref_freq, str):
-            if ref_freq not in {"max", "min", "center", "ch1"}:
+            if ref_freq not in {"fmax", "fmin", "fcenter", "fch1"}:
                 msg = f"reference frequency {ref_freq} not defined"
                 raise ValueError(msg)
-            fch_ref = float(getattr(self, f"f{ref_freq}"))
+            fch_ref = float(getattr(self, f"{ref_freq}"))
         elif isinstance(ref_freq, int | float):
             fch_ref = float(ref_freq)
         else:

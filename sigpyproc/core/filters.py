@@ -396,7 +396,10 @@ class Template:
     width: float
     ref_bin: int = attrs.field(
         default=0,
-        validator=[attrs.validators.instance_of(int), attrs.validators.ge(0)],
+        validator=[
+            attrs.validators.instance_of(int | np.integer),
+            attrs.validators.ge(0),
+        ],
     )
     ref: str = attrs.field(
         default="start",

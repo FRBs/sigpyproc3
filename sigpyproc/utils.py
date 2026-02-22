@@ -1,3 +1,5 @@
+# ruff: noqa: ARG001
+
 from __future__ import annotations
 
 import logging
@@ -14,6 +16,8 @@ from rich.logging import RichHandler
 if TYPE_CHECKING:
     import inspect
     from collections.abc import Callable
+
+    from numpy.typing import NDArray
 
 
 def detect_file_type(filename: str | Path) -> str:
@@ -287,10 +291,10 @@ def validate_path(
 
 
 def apply_along_axes(
-    func: Callable[[np.ndarray], float],
-    data: np.ndarray,
+    func: Callable[[NDArray[np.float64]], np.float64],
+    data: NDArray[np.float64],
     axis: int | tuple[int, ...] | None = None,
-) -> float | np.ndarray:
+) -> np.float64 | NDArray[np.float64]:
     """Apply a 1D function along one or more axes."""
     if axis is None:
         return func(data.ravel())
@@ -366,6 +370,24 @@ def pad_centre(array: np.ndarray, target_length: int) -> np.ndarray:
     )
 
 
+def _validate_freqs(
+    instance: FrequencyChannels,
+    attribute: attrs.Attribute,
+    value: NDArray[np.float64],
+) -> None:
+    attr_name = attribute.name
+    if len(value) == 0:
+        msg = f"{attr_name} must not be empty."
+        raise ValueError(msg)
+    if value.ndim != 1:
+        msg = f"{attr_name} must be 1D, but got {value.ndim}D."
+        raise ValueError(msg)
+    diff = np.diff(value)
+    if not np.all(np.isclose(diff, diff[0])):
+        msg = f"{attr_name} must have a constant difference between elements."
+        raise ValueError(msg)
+
+
 @attrs.define(auto_attribs=True, slots=True, frozen=True)
 class FrequencyChannels:
     """A class to handle frequency channels.
@@ -391,22 +413,14 @@ class FrequencyChannels:
     bandwidth
     """
 
-    freqs: np.ndarray = attrs.field(converter=np.asarray)
+    freqs: NDArray[np.float64] = attrs.field(
+        converter=lambda x: np.asarray(x, dtype=np.float64),
+        validator=_validate_freqs,
+    )
     array: units.Quantity = attrs.field(init=False, repr=False)
 
     def __attrs_post_init__(self) -> None:
         object.__setattr__(self, "array", units.Quantity(self.freqs, units.MHz))
-
-    @freqs.validator
-    def _check_freqs(self, attribute: attrs.Attribute, value: np.ndarray) -> None:
-        attr_name = attribute.name
-        if len(value) == 0:
-            msg = f"{attr_name} must not be empty."
-            raise ValueError(msg)
-        diff = np.diff(value)
-        if not np.all(np.isclose(diff, diff[0])):
-            msg = f"{attr_name} must have a constant difference between elements."
-            raise ValueError(msg)
 
     @property
     def nchans(self) -> int:

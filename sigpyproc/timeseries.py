@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import numpy as np
-from numpy import typing as npt
 
 from sigpyproc import fourierseries
 from sigpyproc.core import kernels, stats
@@ -14,6 +13,8 @@ from sigpyproc.utils import validate_path
 if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
+
+    from numpy.typing import ArrayLike, NDArray
 
     from sigpyproc.core.custom_types import FilterMethods, LocMethods, ScaleMethods
 
@@ -35,13 +36,13 @@ class TimeSeries:
     nsamples
     """
 
-    def __init__(self, data: npt.ArrayLike, header: Header) -> None:
+    def __init__(self, data: ArrayLike, header: Header) -> None:
         self._data = np.asarray(data, dtype=np.float32)
         self._header = header
         self._check_input()
 
     @property
-    def data(self) -> npt.NDArray[np.float32]:
+    def data(self) -> NDArray[np.float32]:
         """Time series data array.
 
         Returns
