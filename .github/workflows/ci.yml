@@ -21,7 +21,7 @@ jobs:
       - name: Ruff lint
         uses: astral-sh/ruff-action@v3
         with:
-          args: "check"
+          args: "check sigpyproc tests"
 
       - name: Ruff format check
         uses: astral-sh/ruff-action@v3
