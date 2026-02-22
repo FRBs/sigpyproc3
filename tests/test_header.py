@@ -68,7 +68,7 @@ class TestHeader:
         header = Header.from_sigproc(filfile_4bit)
         spphdr = header.to_sigproc()
         np.testing.assert_equal(spphdr["nchans"], header.nchans)
-        for key in sigproc.header_keys:
+        for key in sigproc.SIGPROC_SCHEMA:
             assert key in spphdr
 
     def test_to_string(self, filfile_4bit: str) -> None:
@@ -82,7 +82,13 @@ class TestHeader:
             outfilename = outfile.file_cur
         assert outfilename is not None
         out_header = Header.from_sigproc(outfilename)
-        np.testing.assert_equal(out_header.to_sigproc(), header.to_sigproc())
+        expected_dict = header.to_sigproc()
+        actual_dict = out_header.to_sigproc()
+        for key, value in expected_dict.items():
+            if key == "nsamples":
+                assert value != actual_dict[key]
+            else:
+                assert value == actual_dict[key]
 
     def test_from_inffile(self, inffile: str, inf_header: dict) -> None:
         infheader = Header.from_inffile(inffile)

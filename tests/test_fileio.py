@@ -123,8 +123,8 @@ class TestFileReader:
     ) -> Generator[None, Any, None]:
         self.files = [filfile_8bit_1, filfile_8bit_2]
         self.mode = "r"
-        hdr = sigproc.parse_header_multi([Path(f) for f in self.files])
-        self.sinfo: sigproc.StreamInfo = hdr["stream_info"]
+        hdr, sinfo = sigproc.parse_header_multi([Path(f) for f in self.files])
+        self.sinfo = sinfo
         self.file_reader = fileio.FileReader(self.sinfo, self.mode, hdr["nbits"])
         yield
         self.file_reader.close()
@@ -227,8 +227,8 @@ class TestFileReaderUnpack:
     ) -> Generator[None, Any, None]:
         self.files = [filfile_2bit]
         self.mode = "r"
-        hdr = sigproc.parse_header_multi(self.files)
-        self.sinfo: sigproc.StreamInfo = hdr["stream_info"]
+        hdr, sinfo = sigproc.parse_header_multi(self.files)
+        self.sinfo = sinfo
         self.file_reader = fileio.FileReader(self.sinfo, self.mode, hdr["nbits"])
         yield
         self.file_reader.close()
