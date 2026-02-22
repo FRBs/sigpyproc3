@@ -99,6 +99,7 @@ ignore = ["D1", "D301", "PLR2004", "G004"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["S101", "FBT", "PLR2004", "PT011", "SLF001"]
+"docs/**" = ["INP001"]
 
 [tool.ruff.lint.pylint]
 max-args = 15
@@ -119,9 +120,7 @@ exclude = ["sigpyproc/apps/spp_digifil.py"]
 not-iterable = "ignore" # For Numba prange
 
 [[tool.ty.overrides]]
-include = [
-    "tests/test_stats.py",
-]
+include = ["tests/test_stats.py"]
 
 [tool.ty.overrides.rules]
 invalid-argument-type = "ignore"
