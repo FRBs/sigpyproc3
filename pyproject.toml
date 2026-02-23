@@ -2,10 +2,6 @@
 requires = ["uv_build>=0.10.4,<0.11.0"]
 build-backend = "uv_build"
 
-[tool.uv.build-backend]
-module-name = "sigpyproc"
-module-root = ""
-
 [project]
 name = "sigpyproc"
 version = "2.0.0"
@@ -13,8 +9,10 @@ description = "Python FRB/pulsar data toolbox"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
-authors = [{ name = "Ewan Barr", email = "ewan.d.barr@gmail.com" }]
-maintainers = [{ name = "Pravir Kumar", email = "pravirka@gmail.com" }]
+authors = [
+    { name = "Pravir Kumar", email = "pravirka@gmail.com" },
+    { name = "Ewan Barr", email = "ewan.d.barr@gmail.com" },
+]
 requires-python = ">=3.11"
 classifiers = [
     "Programming Language :: Python :: 3 :: Only",
@@ -76,15 +74,8 @@ spp_clean = "sigpyproc.apps.spp_clean:main"
 
 
 [tool.ruff]
-include = [
-    "pyproject.toml",
-    "sigpyproc/**/*.py",
-    "tests/**/*.py",
-    "docs/**/*.py",
-]
-
-exclude = ["sigpyproc/apps/spp_digifil.py"]
-
+include = ["pyproject.toml", "src/**/*.py", "tests/**/*.py", "docs/**/*.py"]
+exclude = ["src/sigpyproc/apps/spp_digifil.py"]
 line-length = 88
 indent-width = 4
 target-version = "py312"
@@ -104,9 +95,6 @@ ignore = ["COM812", "D1", "D301", "PLR2004", "G004"]
 [tool.ruff.lint.pylint]
 max-args = 15
 
-[tool.ruff.lint.isort]
-known-first-party = ["sigpyproc"]
-
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"
 
@@ -114,7 +102,8 @@ convention = "numpy"
 python-version = "3.12"
 
 [tool.ty.src]
-exclude = ["sigpyproc/apps/spp_digifil.py"]
+include = ["src"]
+exclude = ["tests", "src/sigpyproc/apps/spp_digifil.py"]
 
 [tool.ty.rules]
 not-iterable = "ignore" # For Numba prange
@@ -131,7 +120,7 @@ addopts = ["-ra", "-q"]
 testpaths = ["tests"]
 
 [tool.coverage.paths]
-source = ["./sigpyproc/"]
+source = ["src/"]
 
 [tool.coverage.run]
 omit = ["tests/*", "docs/*", "*__init__.py", "*_types.py"]
