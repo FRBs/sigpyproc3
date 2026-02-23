@@ -44,7 +44,7 @@ jobs:
         run: uv sync --extra develop
 
       - name: Run ty
-        run: uv run ty check sigpyproc/
+        run: uv run ty check
 
   test:
     name: Tests & Coverage
@@ -69,7 +69,7 @@ jobs:
         run: uv sync --extra tests
 
       - name: Run pytest
-        run: uv run pytest --cov=sigpyproc --cov-report=xml -v
+        run: uv run pytest --cov=src --cov-report=xml -v
 
       - name: Upload coverage to Codecov
         # only upload once — ubuntu + latest python avoids duplicate reports
