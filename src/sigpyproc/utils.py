@@ -100,27 +100,27 @@ def next2_to_n(x: int) -> int:
 
 
 def next_multiple(x: int, y: int) -> int:
-    """Return the smallest multiple of `y` that is greater than or equal to `x`.
+    """Return the smallest multiple of ``y`` that is greater than or equal to ``x``.
 
     Parameters
     ----------
     x : int
         The number to adjust.
     y : int
-        The factor to which `x` should be a multiple.
+        The factor to which ``x`` should be a multiple.
 
     Returns
     -------
     int
-        The smallest multiple of `y` that is greater than or equal to `x`.
+        The smallest multiple of ``y`` that is greater than or equal to ``x``.
 
     Raises
     ------
     ValueError
-        If `y` is not positive.
+        If ``y`` is not positive.
     """
     if y <= 0:
-        msg = "`y` must be positive."
+        msg = f"y={y} must be positive."
         raise ValueError(msg)
     return ((x + y - 1) // y) * y
 
@@ -181,7 +181,7 @@ def get_callerfunc(stack: list[inspect.FrameInfo]) -> str:
     Parameters
     ----------
     stack : list[inspect.FrameInfo]
-        Stack trace from `inspect.stack()`.
+        Stack trace from :py:func:`~inspect.stack`.
 
     Returns
     -------

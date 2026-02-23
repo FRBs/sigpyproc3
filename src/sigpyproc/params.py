@@ -43,7 +43,7 @@ def compute_dmdelays(
 
     Returns
     -------
-    NDArray[np.int32 | np.float32]
+    NDArray[int32 | float32]
         Dispersion delays at middle of each channel with respect to reference frequency.
 
         If dm is a scalar, returns a 1D array of delays. If dm is an array,
@@ -79,7 +79,7 @@ def compute_dmsmearing(
 
     Returns
     -------
-    NDArray[np.int32 | np.float32]
+    NDArray[int32 | float32]
         DM smearing in the frequency channels due to finite bandwidth.
 
         If dm is a scalar, returns a 1D array of smearing. If dm is an array,

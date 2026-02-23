@@ -11,8 +11,9 @@ license = "MIT"
 license-files = ["LICENSE"]
 authors = [
     { name = "Pravir Kumar", email = "pravirka@gmail.com" },
-    { name = "Ewan Barr", email = "ewan.d.barr@gmail.com" },
+    { name = "Ewan Barr" },
 ]
+maintainers = [{ name = "Pravir Kumar", email = "pravirka@gmail.com" }]
 requires-python = ">=3.11"
 classifiers = [
     "Programming Language :: Python :: 3 :: Only",
@@ -46,7 +47,7 @@ dependencies = [
 Repository = "https://github.com/FRBs/sigpyproc3"
 
 [project.optional-dependencies]
-tests = [
+dev = [
     "pytest>=9.0",
     "pytest-cov",
     "pytest-randomly",
@@ -54,18 +55,19 @@ tests = [
     "pytest-benchmark",
     "pytest-mock",
     "scipy>=1.13",
+    "ruff",
+    "ty",
 ]
 docs = [
     "sphinx",
     "sphinx-book-theme",
     "sphinx-click",
-    "sphinx-prompt",
     "sphinx-copybutton",
     "numpydoc",
     "myst-nb",
     "jupyter_sphinx",
+    "sphinx-design",
 ]
-develop = ["ruff", "ty"]
 
 [project.scripts]
 spp_header = "sigpyproc.apps.spp_header:main"
@@ -90,7 +92,7 @@ ignore = ["COM812", "D1", "D301", "PLR2004", "G004"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["S101", "FBT", "PLR2004", "PT011", "SLF001"]
-"docs/**" = ["INP001"]
+"docs/**" = ["INP001", "ARG001", "ANN401"]
 
 [tool.ruff.lint.pylint]
 max-args = 15

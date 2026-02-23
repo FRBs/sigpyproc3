@@ -38,12 +38,12 @@ class Rescale:
 
         Parameters
         ----------
-        data : NDArray[np.float32]
+        data : NDArray[float32]
             Flattened data array.
 
         Returns
         -------
-        NDArray[np.float32]
+        NDArray[float32]
             Rescaled data array.
         """
         if data.size % self.nchans != 0:

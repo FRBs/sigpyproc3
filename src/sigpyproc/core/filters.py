@@ -1,3 +1,11 @@
+"""Matched filter class for pulse detection in 1D time series data.
+
+This module contains the MatchedFilter class for pulse detection in 1D time
+series data. It uses a set of pulse templates with varying widths and selects
+the template that produces the highest signal-to-noise ratio (SNR) as the best
+match.
+"""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal

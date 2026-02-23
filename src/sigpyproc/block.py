@@ -1,3 +1,10 @@
+"""Block classes for handling 2D data blocks.
+
+This module contains the base class for handling 2D data blocks and the
+FilterbankBlock and DMTBlock classes for handling filterbank and DM-time
+transform data blocks, respectively.
+"""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod

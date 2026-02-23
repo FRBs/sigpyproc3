@@ -1,3 +1,6 @@
-from importlib import metadata
+from importlib.metadata import PackageNotFoundError, version
 
-__version__ = metadata.version(__name__)
+try:
+    __version__ = version("sigpyproc")
+except PackageNotFoundError:
+    __version__ = "0+unknown"

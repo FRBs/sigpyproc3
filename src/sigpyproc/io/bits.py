@@ -22,18 +22,18 @@ def unpack(
 
     Parameters
     ----------
-    array : NDArray[np.uint8]
+    array : NDArray[uint8]
         Array to unpack.
     nbits : int
         Number of bits of the packed data.
-    unpacked : NDArray[np.uint8], optional
+    unpacked : NDArray[uint8], optional
         Array to unpack into.
     bitorder : str, optional
         Bit order of the packed data.
 
     Returns
     -------
-    NDArray[np.uint8]
+    NDArray[uint8]
         Unpacked array.
 
     Raises
@@ -41,7 +41,7 @@ def unpack(
     ValueError
         if input array is not uint8 type
         if nbits is not 1, 2, or 4
-        if bitorder is not 'big' or 'little'
+        if bitorder is not ``big`` or ``little``
         if unpacked array is not of the correct size
     """
     if array.dtype != np.uint8:
@@ -76,18 +76,18 @@ def pack(
 
     Parameters
     ----------
-    array : NDArray[np.uint8]
+    array : NDArray[uint8]
         Array to pack.
     nbits : int
         Number of bits of the unpacked data.
-    packed : NDArray[np.uint8], optional
+    packed : NDArray[uint8], optional
         Array to pack into.
     bitorder : str, optional
         Bit order in which to pack the data.
 
     Returns
     -------
-    NDArray[np.uint8]
+    NDArray[uint8]
         Packed array.
 
     Raises
@@ -95,7 +95,7 @@ def pack(
     ValueError
         if input array is not uint8 type
         if nbits is not 1, 2, or 4
-        if bitorder is not 'big' or 'little'
+        if bitorder is not ``big`` or ``little``
         if unpacked array is not of the correct size
     """
     if array.dtype != np.uint8:

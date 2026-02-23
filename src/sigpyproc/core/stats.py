@@ -352,7 +352,7 @@ def estimate_scale(
 
     Returns
     -------
-    np.float64 | NDArray[np.float64]
+    float64 | NDArray[float64]
         The estimated scale of the array. If the method is "doublemad", the
         output is an array of the same shape as the input array.
 

@@ -20,6 +20,8 @@ logger = get_logger(__name__)
 
 @dataclass(frozen=True, kw_only=True, slots=True)
 class HeaderField:
+    """Class to handle sigproc header schema."""
+
     fmt: struct.Struct | None  # None for string fields
     doc: str
 
