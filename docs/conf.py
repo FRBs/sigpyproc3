@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import datetime
 import inspect
 import os
@@ -21,8 +22,7 @@ from sigpyproc import __version__  # noqa: E402
 if TYPE_CHECKING:
     from sphinx.application import Sphinx
 
-# -- Project information -----------------------------------------------------
-
+# -- Project information
 project = "sigpyproc3"
 author = "Pravir Kumar"
 year = datetime.datetime.now(tz=datetime.UTC).date().year
@@ -32,8 +32,7 @@ version = release
 master_doc = "index"
 repo_url = "https://github.com/FRBs/sigpyproc3"
 
-# -- General configuration ---------------------------------------------------
-
+# -- General configuration
 extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.autosummary",
@@ -58,7 +57,7 @@ rst_epilog = f"""
 .. _rocket_fft: https://github.com/styfenschaer/rocket-fft
 """
 
-# -- Options for HTML output -------------------------------------------------
+# -- HTML
 html_theme = "sphinx_book_theme"
 html_context = {"default_mode": "light"}
 html_title = project
@@ -76,10 +75,9 @@ html_theme_options = {
     "show_navbar_depth": 2,
     "navigation_with_keys": True,
     "toc_title": "On this page",
-    "announcement": "",
 }
 
-# -- Extension configuration -------------------------------------------------
+# -- Autodoc / autosummary
 autosummary_generate = ["_autosummary_trigger.md"]
 autoclass_content = "class"  # include both class docstring and __init__
 autodoc_member_order = "bysource"
@@ -93,7 +91,7 @@ autodoc_default_options = {
 coverage_show_missing_items = True
 suppress_warnings = ["autosummary.import_cycle"]
 
-
+# -- Numpydoc
 numpydoc_show_class_members = True
 numpydoc_show_inherited_class_members = False
 numpydoc_class_members_toctree = False
@@ -139,7 +137,7 @@ numpydoc_xref_ignore = {
     "default",
 }
 
-
+# -- MyST / notebooks
 myst_enable_extensions = [
     "colon_fence",
     "substitution",
@@ -150,13 +148,14 @@ myst_enable_extensions = [
 nb_execution_mode = "auto"
 nb_execution_timeout = 300
 
+# -- Sphinx copybutton
 copybutton_prompt_text = ">>> "
 
-# -- Options for intersphinx extension ---------------------------------------
+# -- Intersphinx
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),
     "numpy": ("https://numpy.org/doc/stable/", None),
-    "scipy": ("https://docs.scipy.org/doc/scipy/reference", None),
+    "scipy": ("https://docs.scipy.org/doc/scipy/reference/", None),
     "astropy": ("https://docs.astropy.org/en/stable/", None),
     "attrs": ("https://www.attrs.org/en/stable/", None),
     "matplotlib": ("https://matplotlib.org/stable/", None),
@@ -164,7 +163,7 @@ intersphinx_mapping = {
 }
 
 
-# -- Linkcode configuration --------------------------------------------------
+# -- Linkcode
 def linkcode_resolve(domain: str, info: dict) -> str | None:
     """Point to the source code repository, file and line number."""
     if domain != "py":
@@ -203,6 +202,42 @@ def linkcode_resolve(domain: str, info: dict) -> str | None:
         github_ref = "main"
 
     return f"{repo_url}/blob/{github_ref}/{file_path}#L{start_line}-L{end_line}"
+
+
+def find_data_like_classes(src_path: Path) -> set[str]:  # noqa: C901
+    result = set()
+
+    for py_file in src_path.rglob("*.py"):
+        try:
+            tree = ast.parse(py_file.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001, S112
+            continue
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef):
+                for decorator in node.decorator_list:
+                    name = None
+
+                    # @dataclass
+                    if isinstance(decorator, ast.Name):
+                        name = decorator.id
+
+                    # @attrs.define / @attrs.frozen
+                    elif isinstance(decorator, ast.Attribute):
+                        name = decorator.attr
+
+                    # @dataclass(...)
+                    elif isinstance(decorator, ast.Call):
+                        if isinstance(decorator.func, ast.Name):
+                            name = decorator.func.id
+                        elif isinstance(decorator.func, ast.Attribute):
+                            name = decorator.func.attr
+
+                    if name in {"dataclass", "define", "frozen"}:
+                        result.add(node.name)
+                        break
+
+    return sorted(result)
 
 
 DICT_TABLE_TARGETS = {
