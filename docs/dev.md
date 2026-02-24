@@ -11,7 +11,7 @@ Clone the repository and install development dependencies:
 ```bash
 git clone https://github.com/FRBs/sigpyproc3.git
 cd sigpyproc3
-uv sync --extra dev --extra docs
+uv sync --extra tests --extra dev --extra docs
 ```
 
 This installs:
@@ -122,10 +122,10 @@ We keep kernels small, predictable, and side-effect free.
 From the repository root:
 
 ```bash
-uv run ruff check .
-uv run ruff format --check .
-uv run ty check
-uv run pytest
+ruff check
+ruff format --check
+ty check
+pytest --cov=src --cov-report=html -v
 ```
 
 All checks must pass before submitting a pull request.

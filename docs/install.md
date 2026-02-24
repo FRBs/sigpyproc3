@@ -35,7 +35,7 @@ Clone the repository and install development dependencies:
 ```bash
 git clone https://github.com/FRBs/sigpyproc3.git
 cd sigpyproc3
-uv sync --extra dev --extra docs
+uv sync --extra tests --extra dev --extra docs
 ```
 
 This installs:
@@ -52,7 +52,7 @@ This installs:
 From the repository root:
 
 ```bash
-pytest -v
+pytest --cov=src --cov-report=html -v
 ```
 
 All tests should pass on a supported Python version.

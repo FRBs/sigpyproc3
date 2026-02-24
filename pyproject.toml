@@ -47,7 +47,7 @@ dependencies = [
 Repository = "https://github.com/FRBs/sigpyproc3"
 
 [project.optional-dependencies]
-dev = [
+tests = [
     "pytest>=9.0",
     "pytest-cov",
     "pytest-randomly",
@@ -55,6 +55,8 @@ dev = [
     "pytest-benchmark",
     "pytest-mock",
     "scipy>=1.13",
+]
+dev = [
     "ruff",
     "ty",
 ]
