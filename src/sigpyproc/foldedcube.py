@@ -1,3 +1,9 @@
+"""Classes for handling folded data cubes.
+
+This module contains the Profile and FoldedData classes for handling 1D and 3D
+data cubes, respectively.
+"""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING

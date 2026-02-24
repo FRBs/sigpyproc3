@@ -1,3 +1,8 @@
+"""Furby class for generating mock FRB signals.
+
+This module contains the Furby class for generating mock FRB signals.
+"""
+
 from __future__ import annotations
 
 import logging
@@ -46,7 +51,8 @@ class PulseParams:
     tau0 : float, optional
         Decay timescale of the scattering kernel at central frequency,
         by default 1e-3 seconds.
-    spec_kind : SpecKindType, optional
+    spec_kind : Literal["flat", "power_law", "smooth_envelope", "gaussian",
+        "polynomial_peaks", "scintillation", "gaussian_blobs", "random"], optional
         Kind of the desired spectral structure, by default 'flat'.
     spec_idx : float, optional
         Spectral index for the power-law spectrum, by default -2.0.
@@ -117,7 +123,7 @@ class Furby:
 
     Parameters
     ----------
-    block : FilterbankBlock
+    block : :class:`~sigpyproc.block.FilterbankBlock`
         FilterbankBlock object containing the simulated FRB signal.
     params_hdr : PulseParams
         PulseParams object containing the simulation parameters.
@@ -180,7 +186,7 @@ class Furby:
 
         Returns
         -------
-        plt.Figure
+        Figure
             Matplotlib figure object containing the plot.
         """
         raise NotImplementedError
@@ -219,7 +225,7 @@ class FurbyGenerator:
 
     Parameters
     ----------
-    hdr : Header
+    hdr : :class:`~sigpyproc.header.Header`
         Header object containing the observation metadata.
     params : PulseParams
         PulseParams object containing the simulation parameters.
@@ -250,7 +256,7 @@ class FurbyGenerator:
 
         Returns
         -------
-        Header
+        :class:`~sigpyproc.header.Header`
             Header object.
         """
         return self._hdr
@@ -283,7 +289,7 @@ class FurbyGenerator:
 
         Returns
         -------
-        Header
+        :class:`~sigpyproc.header.Header`
             Header object.
         """
         return self._hdr_os
@@ -521,7 +527,7 @@ class SpectralStructure:
 
         Returns
         -------
-        plt.Axes
+        Figure
             Matplotlib axes object containing the plot.
         """
         if spec is None:

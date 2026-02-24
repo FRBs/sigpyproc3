@@ -1,3 +1,8 @@
+"""RFI masking functions.
+
+This module contains functions for masking RFI.
+"""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING

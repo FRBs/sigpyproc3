@@ -1,3 +1,8 @@
+"""Header class for handling observation metadata.
+
+This module contains the Header class for handling observation metadata.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -303,8 +308,8 @@ class Header:
 
         Returns
         -------
-        Time
-            Observation time.
+        :class:`~astropy.time.Time`
+            Observation time in Astropy Time format.
         """
         precision = int(np.ceil(abs(np.log10(self.tsamp))))
         return Time(self.tstart, format="mjd", scale="utc", precision=precision)

@@ -1,4 +1,7 @@
-# ruff: noqa: ARG001
+"""Numba kernel functions for the core of sigpyproc.
+
+This module contains kernel functions for the core of sigpyproc.
+"""
 
 from __future__ import annotations
 
@@ -1032,8 +1035,8 @@ def nb_roll(
 ) -> np.ndarray:
     """Roll array elements along a given axis.
 
-    This is a Numba-compiled wrapper around `numpy.roll`, implemented via `rocket-fft`
-    to support the `axis` argument.
+    This is a Numba-compiled wrapper around :py:func:`numpy.roll`, implemented
+    via `rocket_fft`_  to support the ``axis`` argument.
 
     Parameters
     ----------
@@ -1070,12 +1073,12 @@ def roll_block(arr: np.ndarray, shifts: np.ndarray) -> np.ndarray:
     Returns
     -------
     np.ndarray
-        Rolled 2D array with the same shape as `arr`.
+        Rolled 2D array with the same shape as ``arr``.
 
     Raises
     ------
     ValueError
-        If `arr` is not 2D or `shifts` length does not match number of rows.
+        If ``arr`` is not 2D or ``shifts`` length does not match number of rows.
 
     """
     if arr.ndim != 2:
@@ -1118,7 +1121,7 @@ def roll_block_valid(arr: np.ndarray, shifts: np.ndarray) -> np.ndarray:
     Raises
     ------
     ValueError
-        If `arr` is not 2D or `shifts` length doesn't match number of rows.
+        If ``arr`` is not 2D or ``shifts`` length doesn't match number of rows.
         If the shift range exceeds the number of columns.
 
     """

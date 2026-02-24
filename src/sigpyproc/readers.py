@@ -1,3 +1,9 @@
+"""Classes for reading filterbank and PSRFITS data.
+
+This module contains the FilReader and PFITSReader classes for reading
+filterbank and PSRFITS data.
+"""
+
 from __future__ import annotations
 
 import inspect

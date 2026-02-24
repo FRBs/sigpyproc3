@@ -21,13 +21,13 @@ The quickest way to install the package is to use [pip](https://pip.pypa.io):
 pip install -U git+https://github.com/FRBs/sigpyproc3
 ```
 
-Note that you will need Python (>=3.11) installed to use `sigpyproc`.
+Note that you will need Python (>=3.12) installed to use `sigpyproc`.
 Also check out the [installation documentation page](https://sigpyproc3.readthedocs.io/en/latest/install.html) for more options.
 
 ## Legacy Version
 
 `sigpyproc` is currently undergoing major developements which will modify the existing API in order to be a modern python
-replacemet for [SIGPROC](http://sigproc.sourceforge.net). To use the older API, you can install the ``legacy``
+replacement for [SIGPROC](http://sigproc.sourceforge.net). To use the older API, you can install the ``legacy``
 branch of this repo, or install the last released version 0.5.5.
 
 ## Usage

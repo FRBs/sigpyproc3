@@ -1,3 +1,8 @@
+"""Statistical functions for computing moments of data.
+
+This module contains functions for computing statistical moments of data.
+"""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal
@@ -352,7 +357,7 @@ def estimate_scale(
 
     Returns
     -------
-    np.float64 | NDArray[np.float64]
+    float64 | NDArray[float64]
         The estimated scale of the array. If the method is "doublemad", the
         output is an array of the same shape as the input array.
 

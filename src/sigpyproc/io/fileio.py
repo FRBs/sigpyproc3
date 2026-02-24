@@ -1,3 +1,9 @@
+"""File I/O base class and readers/writers.
+
+This module contains the FileBase class and the FileReader and FileWriter
+classes for reading and writing filterbank files.
+"""
+
 from __future__ import annotations
 
 import io

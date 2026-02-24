@@ -1,3 +1,8 @@
+"""Sigproc-style header parsing and editing.
+
+This module contains functions for parsing and editing Sigproc-style headers.
+"""
+
 from __future__ import annotations
 
 import struct
@@ -20,6 +25,16 @@ logger = get_logger(__name__)
 
 @dataclass(frozen=True, kw_only=True, slots=True)
 class HeaderField:
+    """Class to handle sigproc header schema fields.
+
+    Attributes
+    ----------
+    fmt : struct.Struct or None
+        Format struct; None for string fields.
+    doc : str
+        Human-readable description of the field.
+    """
+
     fmt: struct.Struct | None  # None for string fields
     doc: str
 
