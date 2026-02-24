@@ -40,11 +40,8 @@ jobs:
           enable-cache: true
           python-version: "3.12"
 
-      - name: Install with develop extras
-        run: uv sync --extra develop
-
       - name: Run ty
-        run: uv run ty check
+        run: uvx ty check
 
   test:
     name: Tests & Coverage
@@ -65,8 +62,8 @@ jobs:
           enable-cache: true
           python-version: ${{ matrix.python-version }}
 
-      - name: Install package + test deps
-        run: uv sync --extra tests
+      - name: Install package with development dependencies
+        run: uv sync --extra dev
 
       - name: Run pytest
         run: uv run pytest --cov=src --cov-report=xml -v
