@@ -1,5 +1,16 @@
+"""Rescaling of streaming data to zero mean and unit variance.
+
+This module contains the Rescale class for rescaling streaming data.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import numpy as np
-from numpy.typing import NDArray
+
+if TYPE_CHECKING:
+    from numpy.typing import NDArray
 
 
 class Rescale:

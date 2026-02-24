@@ -148,7 +148,7 @@ myst_enable_extensions = [
     "amsmath",
 ]
 nb_execution_mode = "auto"
-nb_execution_timeout = -1
+nb_execution_timeout = 300
 
 copybutton_prompt_text = ">>> "
 

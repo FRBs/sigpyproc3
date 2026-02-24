@@ -1,3 +1,8 @@
+"""Classes for handling 1D time series data.
+
+This module contains the TimeSeries class for handling 1D time series data.
+"""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING

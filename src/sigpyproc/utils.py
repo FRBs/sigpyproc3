@@ -1,4 +1,7 @@
-# ruff: noqa: ARG001
+"""Utility functions for sigpyproc.
+
+This module contains utility functions for sigpyproc.
+"""
 
 from __future__ import annotations
 
@@ -371,7 +374,7 @@ def pad_centre(array: np.ndarray, target_length: int) -> np.ndarray:
 
 
 def _validate_freqs(
-    instance: FrequencyChannels,
+    instance: FrequencyChannels,  # noqa: ARG001
     attribute: attrs.Attribute,
     value: NDArray[np.float64],
 ) -> None:

@@ -1,3 +1,8 @@
+"""Sigproc-style HDF5 header parsing.
+
+This module contains functions for parsing Sigproc-style HDF5 headers.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path

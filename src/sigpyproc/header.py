@@ -1,3 +1,8 @@
+"""Header class for handling observation metadata.
+
+This module contains the Header class for handling observation metadata.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path

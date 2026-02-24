@@ -1,3 +1,8 @@
+"""PSRFITS header and data reading.
+
+This module contains classes for reading PSRFITS headers and data.
+"""
+
 from __future__ import annotations
 
 from typing import Self

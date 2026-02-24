@@ -1,3 +1,9 @@
+"""Classes for handling 1D Fourier series data.
+
+This module contains the PowerSpectrum and FourierSeries classes for handling
+Fourier transformed data.
+"""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING

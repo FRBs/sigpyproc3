@@ -1,3 +1,8 @@
+"""Bit packing and unpacking functions.
+
+This module contains functions for packing and unpacking bits.
+"""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, ClassVar

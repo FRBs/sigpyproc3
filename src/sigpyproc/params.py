@@ -1,3 +1,8 @@
+"""Dispersion related parameters and functions.
+
+This module contains dispersion related parameters and functions.
+"""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING

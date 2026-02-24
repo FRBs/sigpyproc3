@@ -1,3 +1,9 @@
+"""Base classes for manipulating frequency-major order pulsar data.
+
+This module contains the Filterbank class for manipulating frequency-major
+order pulsar data.
+"""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod

@@ -1,3 +1,8 @@
+"""Plotting styles for sigpyproc.
+
+This module contains the Matplotlib/Seaborn style utilities for plotting in sigpyproc.
+"""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, ClassVar

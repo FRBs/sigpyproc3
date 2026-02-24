@@ -1,4 +1,7 @@
-# ruff: noqa: ARG001
+"""Numba kernel functions for the core of sigpyproc.
+
+This module contains kernel functions for the core of sigpyproc.
+"""
 
 from __future__ import annotations
 

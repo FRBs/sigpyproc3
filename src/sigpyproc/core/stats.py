@@ -1,3 +1,8 @@
+"""Statistical functions for computing moments of data.
+
+This module contains functions for computing statistical moments of data.
+"""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal

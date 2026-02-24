@@ -1,3 +1,8 @@
+"""Furby class for generating mock FRB signals.
+
+This module contains the Furby class for generating mock FRB signals.
+"""
+
 from __future__ import annotations
 
 import logging
