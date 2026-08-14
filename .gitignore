@@ -263,6 +263,7 @@ pyrightconfig.json
 .vscode/extensions.json
 .vscode/*.code-snippets
 .cursor/
+.grok/
 
 # Local History for Visual Studio Code
 .history/
