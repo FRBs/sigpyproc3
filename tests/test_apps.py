@@ -7,7 +7,9 @@ from sigpyproc.apps import (
     spp_bandpass,
     spp_clean,
     spp_decimate,
+    spp_dedisperse,
     spp_extract,
+    spp_fold,
     spp_header,
     spp_merge,
     spp_splice,
@@ -242,6 +244,100 @@ class TestSppMergeSplice:
         merged = FilReader(out)
         assert merged.header.nchans == half * len(files)
         assert merged.header.nsamples == src.header.nsamples
+
+
+class TestSppDedisperse:
+    def test_tim(self, filfile_8bit_1: str, tmpfile: str) -> None:
+        runner = CliRunner()
+        result = runner.invoke(
+            spp_dedisperse.main,
+            ["tim", filfile_8bit_1, "-d", "10", "-o", tmpfile],
+        )
+        assert result.exit_code == 0
+        tim = FilReader(tmpfile)
+        assert tim.header.nchans == 1
+
+    def test_subband(self, filfile_8bit_1: str, tmpfile: str) -> None:
+        runner = CliRunner()
+        result = runner.invoke(
+            spp_dedisperse.main,
+            ["subband", filfile_8bit_1, "-d", "10", "-b", "16", "-o", tmpfile],
+        )
+        assert result.exit_code == 0
+        assert FilReader(tmpfile).header.nchans == 16
+
+    def test_tree(self, filfile_8bit_1: str, tmpdir: str) -> None:
+        band = str(Path(tmpdir) / "band.fil")
+        src = FilReader(filfile_8bit_1)
+        src.extract_bands(
+            chanstart=0,
+            nchans=32,
+            chanpersub=32,
+            outfile_base=str(Path(tmpdir) / "b"),
+        )
+        band = next(Path(tmpdir).glob("b_sub*.fil")).as_posix()
+        runner = CliRunner()
+        result = runner.invoke(
+            spp_dedisperse.main,
+            [
+                "tree",
+                band,
+                "-l",
+                "0",
+                "-u",
+                "2",
+                "--chunk",
+                "256",
+                "-o",
+                str(Path(tmpdir) / "t"),
+            ],
+        )
+        assert result.exit_code == 0
+        assert len(list(Path(tmpdir).glob("t.DM*.tim"))) == 3
+
+    def test_plan(self, filfile_8bit_1: str, tmpdir: str) -> None:
+        src = FilReader(filfile_8bit_1)
+        src.extract_bands(
+            chanstart=0,
+            nchans=32,
+            chanpersub=32,
+            outfile_base=str(Path(tmpdir) / "p"),
+        )
+        band = next(Path(tmpdir).glob("p_sub*.fil")).as_posix()
+        runner = CliRunner()
+        result = runner.invoke(
+            spp_dedisperse.main,
+            ["plan", band, "--dm-max", "1", "-o", str(Path(tmpdir) / "plan")],
+        )
+        assert result.exit_code == 0
+        assert list(Path(tmpdir).glob("plan_DM*.tim"))
+
+
+class TestSppFold:
+    def test_main(self, filfile_8bit_1: str, tmpdir: str) -> None:
+        out = str(Path(tmpdir) / "fold")
+        runner = CliRunner()
+        result = runner.invoke(
+            spp_fold.main,
+            [
+                filfile_8bit_1,
+                "-p",
+                "0.5",
+                "-d",
+                "0",
+                "-n",
+                "32",
+                "--nints",
+                "8",
+                "--nbands",
+                "8",
+                "-o",
+                out,
+            ],
+        )
+        assert result.exit_code == 0
+        assert Path(out + ".npz").exists()
+        assert Path(out + ".txt").exists()
 
 
 class TestSppClean:

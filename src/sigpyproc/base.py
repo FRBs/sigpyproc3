@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 
     from sigpyproc.block import FilterbankBlock
     from sigpyproc.core.custom_types import MaskMethods
+    from sigpyproc.core.dmplan import DMPlan
     from sigpyproc.header import Header
 
     class PlanKwargs(TypedDict):
@@ -1295,6 +1296,140 @@ class Filterbank(ABC):
         fold_ar = fold_ar.reshape(nints, nbands, nbins)
         return FoldedData(fold_ar, self.header.new_header(), period, dm, accel)
 
+    def tree_dedisperse(
+        self,
+        dm_lo: int = 0,
+        dm_hi: int | None = None,
+        *,
+        flip: bool | None = None,
+        start: int = 0,
+        nsamps: int | None = None,
+        chunk: int = 4096,
+        outfile_base: str | None = None,
+        max_gb: float = 2.0,
+    ) -> list[str]:
+        """Dedisperse with a chunked Taylor tree and write one ``.tim`` per DM index.
+
+        Parameters
+        ----------
+        dm_lo, dm_hi : int
+            Inclusive tree-index range (0 … nchans-1).
+        flip : bool, optional
+            Reverse channel order so delay increases with tree index.
+            Default is to flip when ``foff < 0``.
+        start, nsamps : int, optional
+            Sample window. ``nsamps`` is truncated to the next lower power of two.
+        chunk : int, optional
+            Valid samples written per gulp (SIGPROC ``MAX``), by default 4096.
+        outfile_base : str, optional
+            Stem for ``{base}.DM{idx:04d}.tim``.
+        max_gb : float, optional
+            Refuse the gulp buffer if it would exceed this many GiB.
+
+        Returns
+        -------
+        list[str]
+            Paths of the written time series.
+        """
+        nchans, nsamps_out, dm_lo, dm_hi = _validate_tree(
+            self.header.nchans,
+            nsamps if nsamps is not None else self.header.nsamples - start,
+            chunk,
+            dm_lo,
+            dm_hi,
+            max_gb,
+        )
+        do_flip = self.header.foff < 0 if flip is None else flip
+        nbit = nchans.bit_length() - 1
+        ibrev = [int(kernels.bitrev(i, nbit)) for i in range(nchans)]
+        if outfile_base is None:
+            outfile_base = self.header.basename
+        indices = range(dm_lo, dm_hi + 1)
+        paths = [f"{outfile_base}.DM{idx:04d}.tim" for idx in indices]
+        writers = []
+        for path, idx in zip(paths, indices, strict=True):
+            hdr = self.header.new_header(
+                {
+                    "nchans": 1,
+                    "nbits": 32,
+                    "data_type": "time series",
+                    "dm": _tree_dm(self.header, idx),
+                    "nsamples": nsamps_out,
+                },
+            )
+            writers.append(hdr.prep_outfile(path, nbits=32))
+        written = 0
+        samp = start
+        try:
+            while written < nsamps_out:
+                this_chunk = min(chunk, nsamps_out - written)
+                this_gulp = this_chunk + 2 * nchans
+                avail = max(0, min(this_gulp, self.header.nsamples - samp))
+                buf = np.zeros((self.header.nchans, this_gulp), dtype=np.float32)
+                if avail > 0:
+                    buf[:, :avail] = self.read_block(samp, avail).data.astype(
+                        np.float32,
+                        copy=False,
+                    )
+                if do_flip:
+                    buf = np.ascontiguousarray(buf[::-1])
+                kernels.taylor_tree(buf.ravel(), nchans, this_gulp)
+                for writer, idx in zip(writers, indices, strict=True):
+                    writer.cwrite(buf[ibrev[idx], :this_chunk])
+                samp += this_chunk
+                written += this_chunk
+        finally:
+            for writer in writers:
+                writer.close()
+        return paths
+
+    def dedisperse_plan(
+        self,
+        plan: DMPlan,
+        *,
+        gulp: int = 16384,
+        ref_freq: str | float = "fch1",
+        outfile_base: str | None = None,
+        start: int = 0,
+        nsamps: int | None = None,
+        **plan_kwargs: Unpack[PlanKwargs],
+    ) -> list[str]:
+        """Dedisperse every DM in ``plan`` and write one ``.tim`` per trial."""
+        if len(plan) == 0:
+            msg = "DM plan is empty"
+            raise ValueError(msg)
+        delays = np.atleast_2d(
+            self.header.get_dmdelays(plan.dms, ref_freq),
+        ).astype(np.int32, copy=False)
+        max_delay = int(np.max(np.abs(delays)))
+        gulp = max(2 * max_delay, gulp)
+        if outfile_base is None:
+            outfile_base = self.header.basename
+        paths = [f"{outfile_base}_DM{dm:08.3f}.tim" for dm in plan.dms]
+        writers = [
+            self.header.dedispersed_header(float(dm)).prep_outfile(path, nbits=32)
+            for path, dm in zip(paths, plan.dms, strict=True)
+        ]
+        ndm = len(plan)
+        out = np.empty((ndm, gulp - max_delay), dtype=np.float32)
+        nchans = self.header.nchans
+        try:
+            for nsamps_r, _, data in self.read_plan(
+                gulp=gulp,
+                start=start,
+                nsamps=nsamps,
+                skipback=max_delay,
+                **plan_kwargs,
+            ):
+                valid = nsamps_r - max_delay
+                kernels.dedisperse_many(data, out, delays, nchans, nsamps_r)
+                for idm, writer in enumerate(writers):
+                    writer.cwrite(out[idm, :valid])
+        finally:
+            for writer in writers:
+                writer.close()
+        return paths
+
     def clean_rfi(
         self,
         method: MaskMethods = "mad",
@@ -1384,3 +1519,42 @@ class Filterbank(ABC):
             **plan_kwargs,
         )
         return out_file, rfimask
+
+
+def _validate_tree(
+    nchans: int,
+    nsamps: int,
+    chunk: int,
+    dm_lo: int,
+    dm_hi: int | None,
+    max_gb: float,
+) -> tuple[int, int, int, int]:
+    if nchans <= 0 or nchans & (nchans - 1):
+        msg = f"tree_dedisperse requires power-of-two nchans, got {nchans}"
+        raise ValueError(msg)
+    if chunk < 1:
+        msg = "chunk must be positive"
+        raise ValueError(msg)
+    nsamps_out = 1 << int(np.floor(np.log2(max(nsamps, 1))))
+    if nsamps_out < 1:
+        msg = "Not enough samples for a Taylor tree"
+        raise ValueError(msg)
+    if dm_hi is None:
+        dm_hi = nchans - 1
+    if dm_lo < 0 or dm_hi >= nchans or dm_lo > dm_hi:
+        msg = f"Invalid DM index range {dm_lo}…{dm_hi} for nchans={nchans}"
+        raise ValueError(msg)
+    gulp = chunk + 2 * nchans
+    nbytes = nchans * gulp * 4
+    if nbytes > max_gb * 1024**3:
+        msg = f"Tree gulp buffer ({nbytes / 1024**3:.2f} GiB) exceeds max_gb={max_gb}"
+        raise ValueError(msg)
+    return nchans, nsamps_out, dm_lo, dm_hi
+
+
+def _tree_dm(header: Header, idx: int) -> float:
+    """Small-bandwidth DM for Taylor-tree index ``idx`` (SIGPROC ``8.3e3``)."""
+    span = abs(header.fmax - header.fmin)
+    if span == 0:
+        return 0.0
+    return (header.tsamp / 8.3e3) * idx * header.fcenter**3 / span

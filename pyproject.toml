@@ -81,6 +81,8 @@ spp_bandpass = "sigpyproc.apps.spp_bandpass:main"
 spp_zerodm = "sigpyproc.apps.spp_zerodm:main"
 spp_merge = "sigpyproc.apps.spp_merge:main"
 spp_splice = "sigpyproc.apps.spp_splice:main"
+spp_dedisperse = "sigpyproc.apps.spp_dedisperse:main"
+spp_fold = "sigpyproc.apps.spp_fold:main"
 
 
 [tool.ruff]

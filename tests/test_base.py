@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from sigpyproc.core import rfi, stats
+from sigpyproc.core.dmplan import DMPlan
 from sigpyproc.foldedcube import FoldedData
 from sigpyproc.readers import FilReader
 from sigpyproc.timeseries import TimeSeries
@@ -207,6 +208,53 @@ class TestFilterbank:
         new_fil = FilReader(outfile)
         np.testing.assert_equal(new_fil.header.nchans, fil.header.nchans // 16)
         np.testing.assert_equal(new_fil.header.nsamples, fil.header.nsamples)
+
+    def test_tree_dedisperse(self, filfile_8bit_1: str, tmpdir: str) -> None:
+        src = FilReader(filfile_8bit_1)
+        band = src.extract_bands(
+            chanstart=0,
+            nchans=32,
+            chanpersub=32,
+            outfile_base=str(Path(tmpdir) / "treeband"),
+        )[0]
+        fil = FilReader(band)
+        paths = fil.tree_dedisperse(
+            dm_lo=0,
+            dm_hi=3,
+            chunk=256,
+            outfile_base=str(Path(tmpdir) / "tree"),
+        )
+        assert len(paths) == 4
+        for path in paths:
+            tim = TimeSeries.from_tim(path)
+            np.testing.assert_equal(tim.header.nchans, 1)
+            np.testing.assert_equal(tim.header.nbits, 32)
+            assert tim.nsamples > 0
+
+    def test_tree_dedisperse_requires_pow2(self, filfile_8bit_1: str) -> None:
+        fil = FilReader(filfile_8bit_1)
+        with pytest.raises(ValueError, match="power-of-two"):
+            fil.tree_dedisperse()
+
+    def test_dedisperse_plan(self, filfile_8bit_1: str, tmpdir: str) -> None:
+        src = FilReader(filfile_8bit_1)
+        band = src.extract_bands(
+            chanstart=0,
+            nchans=32,
+            chanpersub=32,
+            outfile_base=str(Path(tmpdir) / "planband"),
+        )[0]
+        fil = FilReader(band)
+        plan = DMPlan.from_header(fil.header, dm_max=2.0, ti=40e-6)
+        paths = fil.dedisperse_plan(
+            plan,
+            gulp=512,
+            outfile_base=str(Path(tmpdir) / "plan"),
+        )
+        assert len(paths) == len(plan)
+        tim = TimeSeries.from_tim(paths[0])
+        np.testing.assert_equal(tim.header.nchans, 1)
+        np.testing.assert_equal(tim.header.nbits, 32)
 
     def test_fold(self, filfile_4bit: str) -> None:
         fil = FilReader(filfile_4bit)

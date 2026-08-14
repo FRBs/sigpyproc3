@@ -52,6 +52,18 @@ separate `spp_*` script.
 ```
 
 ```{eval-rst}
+.. click:: sigpyproc.apps.spp_dedisperse:main
+   :prog: spp_dedisperse
+   :nested: full
+```
+
+```{eval-rst}
+.. click:: sigpyproc.apps.spp_fold:main
+   :prog: spp_fold
+   :nested: full
+```
+
+```{eval-rst}
 .. click:: sigpyproc.apps.spp_clean:main
    :prog: spp_clean
    :nested: full

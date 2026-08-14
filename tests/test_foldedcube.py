@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import numpy as np
 import pytest
 from numpy.typing import NDArray
@@ -112,3 +114,14 @@ class TestFoldedData:
         np.testing.assert_equal(cube.dm, 20.0)
         cube.update_period(2.0)
         np.testing.assert_equal(cube.period, 2.0)
+
+    def test_to_ascii_npz(self, filfile_4bit: str, tmpdir: str) -> None:
+        fil = FilReader(filfile_4bit)
+        cube = fil.fold(period=1, dm=10, nints=16, nbins=50)
+        txt = cube.to_ascii(str(Path(tmpdir) / "prof.txt"))
+        npz = cube.to_npz(str(Path(tmpdir) / "cube.npz"))
+        loaded_txt = np.loadtxt(txt)
+        np.testing.assert_allclose(loaded_txt, cube.get_profile().data)
+        loaded = np.load(npz)
+        np.testing.assert_array_equal(loaded["data"], cube.data)
+        np.testing.assert_equal(float(loaded["period"]), cube.period)

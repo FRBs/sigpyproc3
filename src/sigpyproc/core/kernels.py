@@ -362,6 +362,90 @@ def dedisperse(
         out_arr[out_start_index + isamp] = summ
 
 
+@njit("i8(i8, i8)", cache=True)
+def bitrev(inval: int, nbits: int) -> int:
+    """Bit-reverse ``inval`` in ``nbits`` bits (Ramachandran tree)."""
+    if nbits <= 1:
+        return inval
+    ifact = 1
+    for _ in range(1, nbits):
+        ifact *= 2
+    k = inval
+    ibitr = (k & 1) * ifact
+    for _ in range(2, nbits + 1):
+        k //= 2
+        ifact //= 2
+        ibitr += (k & 1) * ifact
+    return ibitr
+
+
+@njit("void(f4[::1], i8, i8)", cache=True, fastmath=True)
+def taylor_tree(buf: np.ndarray, nchans: int, nsamps: int) -> None:
+    """In-place Taylor/Ramachandran tree.
+
+    ``buf`` is C-contiguous ``(nchans, nsamps)`` flattened, where
+    ``nsamps = chunk + 2 * nchans``. Valid output per DM is the first
+    ``chunk`` samples of the bit-reversed channel row.
+    """
+    nsamp = nsamps - 2 * nchans
+    npts = nsamp + nchans
+    nstages = int(np.log2(nchans) + 0.5)
+    nmem = 1
+    for istages in range(nstages):
+        nmem *= 2
+        nsec1 = nchans // nmem
+        nmem2 = nmem - 2
+        for isec in range(nsec1):
+            ndelay = -1
+            koff = isec * nmem
+            for ipair in range(0, nmem2 + 1, 2):
+                ioff1 = (bitrev(ipair, istages + 1) + koff) * nsamps
+                i2 = (bitrev(ipair + 1, istages + 1) + koff) * nsamps
+                ndelay += 1
+                ndelay2 = ndelay + 1
+                nfin = npts + ioff1
+                for i1 in range(ioff1, nfin):
+                    itemp = buf[i1] + buf[i2 + ndelay]
+                    buf[i2] = buf[i1] + buf[i2 + ndelay2]
+                    buf[i1] = itemp
+                    i2 += 1
+
+
+@njit(
+    [
+        "void(u1[::1], f4[:, ::1], i4[:, ::1], i8, i8)",
+        "void(f4[::1], f4[:, ::1], i4[:, ::1], i8, i8)",
+    ],
+    cache=True,
+    parallel=True,
+    fastmath=True,
+)
+def dedisperse_many(
+    in_arr: np.ndarray,
+    out_arr: np.ndarray,
+    delays: np.ndarray,
+    nchans: int,
+    nsamps: int,
+) -> None:
+    """Dedisperse many DMs in one gulp.
+
+    ``in_arr`` is time-major flat ``(nsamps, nchans)``.
+    ``delays`` is ``(ndm, nchans)``; ``out_arr`` is ``(ndm, nsamps_valid)``.
+    """
+    ndm = delays.shape[0]
+    max_delay = 0
+    for idm in range(ndm):
+        for ichan in range(nchans):
+            max_delay = max(max_delay, int(delays[idm, ichan]))
+    in_2d = in_arr.reshape(nsamps, nchans)
+    for idm in prange(ndm):
+        for isamp in range(nsamps - max_delay):
+            summ = np.float64(0.0)
+            for ichan in range(nchans):
+                summ += in_2d[isamp + delays[idm, ichan], ichan]
+            out_arr[idm, isamp] = summ
+
+
 @njit(
     ["u1[::1](u1[::1], i8, i8)", "f4[::1](f4[::1], i8, i8)"],
     cache=True,

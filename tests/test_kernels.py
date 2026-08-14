@@ -526,7 +526,6 @@ class TestRollingKernels:
         shifts = np.array([-9, -5, -4, -2, -1])
         rolled = kernels.roll_block_valid.py_func(arr, shifts)
         assert rolled.shape == (arr.shape[0], 1)
-
         shifts = np.zeros(5, dtype=int)
         rolled = kernels.roll_block_valid.py_func(arr, shifts)
         assert rolled.shape == (arr.shape[0], arr.shape[1])
@@ -572,3 +571,31 @@ class TestRollingKernels:
                 arr,
                 np.expand_dims(np.arange(arr.shape[0]) * 5, 0),
             )
+
+
+class TestDedispKernels:
+    def test_bitrev(self) -> None:
+        assert kernels.bitrev(0, 3) == 0
+        assert kernels.bitrev(1, 3) == 4
+        assert kernels.bitrev(4, 3) == 1
+        assert kernels.bitrev(7, 3) == 7
+
+    def test_taylor_tree_ones(self) -> None:
+        nchans = 4
+        chunk = 8
+        nsamps = chunk + 2 * nchans
+        buf = np.ones((nchans, nsamps), dtype=np.float32)
+        kernels.taylor_tree(buf.ravel(), nchans, nsamps)
+        assert np.all(np.isfinite(buf))
+        assert buf[:, :chunk].mean() >= nchans - 0.1
+
+    def test_dedisperse_many_matches_single(self) -> None:
+        nchans, nsamps = 8, 32
+        rng = np.random.default_rng(0)
+        data = rng.normal(size=(nsamps, nchans)).astype(np.float32)
+        delays = np.array([[0, 0, 1, 1, 2, 2, 3, 3]], dtype=np.int32)
+        out = np.zeros((1, nsamps - 3), dtype=np.float32)
+        kernels.dedisperse_many(data.ravel(), out, delays, nchans, nsamps)
+        ref = np.zeros(nsamps, dtype=np.float32)
+        kernels.dedisperse(data.ravel(), ref, delays[0], nchans, nsamps, 0)
+        np.testing.assert_allclose(out[0], ref[: nsamps - 3], rtol=1e-5)
