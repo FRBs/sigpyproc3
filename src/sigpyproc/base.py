@@ -775,11 +775,13 @@ class Filterbank(ABC):
                                 "nchans": 1,
                                 "nbits": 32,
                                 "data_type": "time series",
+                                "fch1": self.header.fch1
+                                + float(chan) * self.header.foff,
                             },
                             nbits=32,
                         ),
                     )
-                    for filename in batch_files
+                    for filename, chan in zip(batch_files, batch_chans, strict=True)
                 ]
                 for nsamps_r, _, data in self.read_plan(
                     gulp=gulp,

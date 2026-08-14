@@ -110,12 +110,19 @@ class TestFilterbank:
     def test_extract_chans(self, filfile_4bit: str, chans: np.ndarray | None) -> None:
         fil = FilReader(filfile_4bit)
         timfiles = fil.extract_chans(chans)
-        for timfile in timfiles:
+        expected_chans = (
+            np.arange(fil.header.nchans) if chans is None else np.asarray(chans)
+        )
+        for timfile, chan in zip(timfiles, expected_chans, strict=True):
             timfile_path = Path(timfile)
             assert timfile_path.is_file()
             tim = TimeSeries.from_tim(timfile)
             np.testing.assert_equal(tim.header.nbits, 32)
             np.testing.assert_equal(tim.header.nchans, 1)
+            np.testing.assert_allclose(
+                tim.header.fch1,
+                fil.header.fch1 + chan * fil.header.foff,
+            )
             timfile_path.unlink()
         with pytest.raises(ValueError):
             fil.extract_chans(np.array([5000]))

@@ -75,6 +75,7 @@ docs = [
 spp_header = "sigpyproc.apps.spp_header:main"
 spp_extract = "sigpyproc.apps.spp_extract:main"
 spp_clean = "sigpyproc.apps.spp_clean:main"
+spp_stats = "sigpyproc.apps.spp_stats:main"
 
 
 [tool.ruff]
@@ -90,7 +91,7 @@ indent-style = "space"
 
 [tool.ruff.lint]
 select = ["ALL"]
-ignore = ["COM812", "D1", "D301", "PLR2004", "G004"]
+ignore = ["COM812", "CPY001", "D1", "D301", "PLR2004", "G004"]
 
 [tool.ruff.lint.per-file-ignores]
 "src/sigpyproc/core/kernels.py" = ["ARG001"]

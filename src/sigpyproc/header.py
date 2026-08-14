@@ -556,8 +556,10 @@ class Header:
                 ],
             )
         print_dur, print_unit = utils.duration_string(self.tobs).split()
+        signedness = "SIGNED" if self.signed else "UNSIGNED"
         hdr.extend(
             [
+                temp.format("Signedness of 8-bit numbers", signedness),
                 temp.format("Time stamp of first sample (MJD)", self.tstart),
                 temp.format("Gregorian date (YYYY-MM-DD)", self.obs_date),
                 temp.format(

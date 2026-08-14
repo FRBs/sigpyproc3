@@ -75,6 +75,9 @@ class TestHeader:
         header = Header.from_sigproc(filfile_4bit)
         header_string = header.to_string()
         assert isinstance(header_string, str)
+        assert "Signedness of 8-bit numbers" in header_string
+        expected = "SIGNED" if header.signed else "UNSIGNED"
+        assert expected in header_string
 
     def test_prep_outfile(self, filfile_4bit: str, tmpfile: str) -> None:
         header = Header.from_sigproc(filfile_4bit)
