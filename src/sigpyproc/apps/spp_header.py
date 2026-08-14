@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 import rich_click as click
 from rich import print as rprint
 from rich.pretty import pprint
+from rich.table import Table
 
 from sigpyproc.header import Header
 from sigpyproc.io import sigproc
@@ -102,9 +103,29 @@ def get(filfile: str | None, key: str | None, *, keys_help: bool = False) -> Non
     type=click.Tuple([str, str]),
     help="(key, value) to update in header",
 )
-def update(filfile: str, item: tuple[str, str]) -> None:
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="Show before/after values without writing",
+)
+def update(filfile: str, item: tuple[str, str], *, dry_run: bool = False) -> None:
     """Update a SIGPROC header key in place."""
     key, value = item
+    if dry_run:
+        before, after = sigproc.prepare_header_edit(filfile, key, value)
+        table = Table(title="Header update preview")
+        table.add_column("Before", overflow="fold")
+        table.add_column("After", overflow="fold")
+        keys = [k for k in sigproc.SIGPROC_SCHEMA if k in before]
+        if key not in keys:
+            keys.append(key)
+        for name in keys:
+            table.add_row(
+                f"{name} = {before.get(name, '')}", f"{name} = {after.get(name, '')}"
+            )
+        rprint(table)
+        return
     sigproc.edit_header(filfile, key, value)
 
 

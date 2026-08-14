@@ -13,14 +13,15 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from sigpyproc.core import kernels
-from sigpyproc.core.rfi import RFIMask
+from sigpyproc.core.rfi import RFIMask, zap_block
 from sigpyproc.core.stats import ChannelStats
 from sigpyproc.foldedcube import FoldedData
+from sigpyproc.io.rescale import Rescale
 from sigpyproc.timeseries import TimeSeries
 from sigpyproc.utils import get_logger
 
 if TYPE_CHECKING:
-    from collections.abc import Buffer, Callable, Iterator
+    from collections.abc import Buffer, Callable, Iterator, Sequence
     from typing import NotRequired, TypedDict, Unpack
 
     from sigpyproc.block import FilterbankBlock
@@ -582,6 +583,68 @@ class Filterbank(ABC):
             out_file.cwrite(data)
         return outfile_name
 
+    def zap_times(
+        self,
+        intervals: Sequence[tuple[int, int]],
+        mode: str = "zero",
+        outfile_name: str | None = None,
+        gulp: int = 16384,
+        start: int = 0,
+        nsamps: int | None = None,
+        **plan_kwargs: Unpack[PlanKwargs],
+    ) -> str:
+        """Replace time-sample ranges and write a new filterbank.
+
+        Parameters
+        ----------
+        intervals : sequence of (int, int)
+            Sample ranges ``[start, end)`` to replace.
+        mode : {"zero", "gaussian", "samples"}, optional
+            Replacement: zeros, Gaussian draws from unzapped samples in the
+            gulp, or copies of random unzapped samples, by default ``zero``.
+        outfile_name : str, optional
+            Output file name, by default ``basename_zap.fil``.
+        gulp : int, optional
+            Number of samples in each read, by default 16384.
+        start : int, optional
+            Start sample, by default 0.
+        nsamps : int, optional
+            Number of samples to read, by default all.
+        **plan_kwargs : dict
+            Additional keyword arguments for :func:`read_plan`.
+
+        Returns
+        -------
+        str
+            Name of output file.
+        """
+        if mode not in {"zero", "gaussian", "samples"}:
+            msg = f"mode must be 'zero', 'gaussian', or 'samples', got {mode!r}"
+            raise ValueError(msg)
+        spans = [(int(a), int(b)) for a, b in intervals]
+        if any(a < 0 or b <= a for a, b in spans):
+            msg = f"Invalid zap intervals: {spans}"
+            raise ValueError(msg)
+        if outfile_name is None:
+            outfile_name = f"{self.header.basename}_zap.fil"
+
+        nchans = self.header.nchans
+        rng = np.random.default_rng()
+        out_file = self.header.prep_outfile(outfile_name)
+        samp0 = start
+        for nsamps_r, _, data in self.read_plan(
+            gulp=gulp,
+            start=start,
+            nsamps=nsamps,
+            **plan_kwargs,
+        ):
+            block = np.array(data[: nsamps_r * nchans]).reshape(nsamps_r, nchans)
+            zap_block(block, spans, samp0, mode, rng)
+            out_file.cwrite(block.ravel())
+            samp0 += nsamps_r
+        out_file.close()
+        return outfile_name
+
     def downsample(
         self,
         tfactor: int = 1,
@@ -908,7 +971,7 @@ class Filterbank(ABC):
         nbits_out: int,
         outfile_name: str | None = None,
         *,
-        remove_bandpass: bool = False,  # noqa: ARG002
+        remove_bandpass: bool = False,
         gulp: int = 16384,
         start: int = 0,
         nsamps: int | None = None,
@@ -923,7 +986,7 @@ class Filterbank(ABC):
         outfile_name : str, optional
             Name of output file, by default ``basename_digi.fil``.
         remove_bandpass : bool, optional
-            Remove the bandpass from the data, by default False.
+            Subtract the mean bandpass before rescaling, by default False.
         gulp : int, optional
             Number of samples in each read, by default 16384.
         start : int, optional
@@ -949,14 +1012,38 @@ class Filterbank(ABC):
         if outfile_name is None:
             outfile_name = f"{self.header.basename}_digi.fil"
 
-        out_file = self.header.prep_outfile(outfile_name, nbits=nbits_out)
-        for _, _, data in self.read_plan(
+        need_quantize = nbits_out < 32
+        out_file = self.header.prep_outfile(
+            outfile_name,
+            nbits=nbits_out,
+            rescale=need_quantize,
+        )
+        bpass = None
+        if remove_bandpass:
+            bpass = self.bandpass(
+                method="mean",
+                gulp=gulp,
+                start=start,
+                nsamps=nsamps,
+                **plan_kwargs,
+            ).data
+        rescaler = (
+            Rescale(self.header.nchans, rescale_samples=gulp) if need_quantize else None
+        )
+        nchans = self.header.nchans
+        for nsamps_r, _, data in self.read_plan(
             gulp=gulp,
             start=start,
             nsamps=nsamps,
             **plan_kwargs,
         ):
-            out_file.cwrite(data)
+            arr = np.ascontiguousarray(data[: nsamps_r * nchans], dtype=np.float32)
+            if bpass is not None:
+                arr = arr.reshape(nsamps_r, nchans) - bpass
+                arr = arr.ravel()
+            if rescaler is not None:
+                arr = rescaler.execute(arr)
+            out_file.cwrite(arr)
         out_file.close()
         return outfile_name
 

@@ -22,6 +22,36 @@ separate `spp_*` script.
 ```
 
 ```{eval-rst}
+.. click:: sigpyproc.apps.spp_decimate:main
+   :prog: spp_decimate
+   :nested: full
+```
+
+```{eval-rst}
+.. click:: sigpyproc.apps.spp_bandpass:main
+   :prog: spp_bandpass
+   :nested: full
+```
+
+```{eval-rst}
+.. click:: sigpyproc.apps.spp_zerodm:main
+   :prog: spp_zerodm
+   :nested: full
+```
+
+```{eval-rst}
+.. click:: sigpyproc.apps.spp_merge:main
+   :prog: spp_merge
+   :nested: full
+```
+
+```{eval-rst}
+.. click:: sigpyproc.apps.spp_splice:main
+   :prog: spp_splice
+   :nested: full
+```
+
+```{eval-rst}
 .. click:: sigpyproc.apps.spp_clean:main
    :prog: spp_clean
    :nested: full

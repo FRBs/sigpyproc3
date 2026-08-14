@@ -3,7 +3,17 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
-from sigpyproc.apps import spp_clean, spp_extract, spp_header, spp_stats
+from sigpyproc.apps import (
+    spp_bandpass,
+    spp_clean,
+    spp_decimate,
+    spp_extract,
+    spp_header,
+    spp_merge,
+    spp_splice,
+    spp_stats,
+    spp_zerodm,
+)
 from sigpyproc.header import Header
 from sigpyproc.readers import FilReader
 
@@ -57,6 +67,21 @@ class TestSppHeader:
         result = runner.invoke(spp_header.main, ["get", tmpfile, "-k", "source_name"])
         assert result.exit_code == 0
         assert "source_name = TEST" in result.output
+
+    def test_update_dry_run(self, filfile_8bit_1: str, tmpfile: str) -> None:
+        shutil.copy(filfile_8bit_1, tmpfile)
+        before = Header.from_sigproc(tmpfile).source
+        runner = CliRunner()
+        result = runner.invoke(
+            spp_header.main,
+            ["update", tmpfile, "-i", "source_name", "DRYRUN", "--dry-run"],
+        )
+        assert result.exit_code == 0
+        assert "Before" in result.output
+        assert "After" in result.output
+        assert "DRYRUN" in result.output
+        after = Header.from_sigproc(tmpfile).source
+        assert after == before
 
 
 class TestSppExtract:
@@ -134,18 +159,6 @@ class TestSppExtract:
         outfiles = list(Path(tmpfile).parent.glob(f"{Path(tmpfile).name}_*"))
         assert outfiles
 
-    def test_mask(self, filfile_8bit_1: str, tmpfile: str) -> None:
-        runner = CliRunner()
-        result = runner.invoke(
-            spp_extract.main,
-            ["mask", filfile_8bit_1, "-c", "0", "-c", "1", "-o", tmpfile],
-        )
-        assert result.exit_code == 0
-        assert Path(tmpfile).exists()
-        out = FilReader(tmpfile)
-        src = FilReader(filfile_8bit_1)
-        assert out.header.nchans == src.header.nchans
-
 
 class TestSppStats:
     def test_print(self, filfile_8bit_1: str) -> None:
@@ -165,17 +178,108 @@ class TestSppStats:
         assert len(text.splitlines()) > 1
 
 
-class TestSppClean:
+class TestSppDecimate:
     def test_main(self, filfile_8bit_1: str, tmpfile: str) -> None:
         runner = CliRunner()
-        result = runner.invoke(spp_clean.main, [filfile_8bit_1, "-o", tmpfile])
+        result = runner.invoke(
+            spp_decimate.main,
+            [filfile_8bit_1, "-t", "2", "-c", "2", "-o", tmpfile],
+        )
+        assert result.exit_code == 0
+        out = FilReader(tmpfile)
+        src = FilReader(filfile_8bit_1)
+        assert out.header.tsamp == src.header.tsamp * 2
+        assert out.header.nchans == src.header.nchans // 2
+
+
+class TestSppBandpass:
+    def test_print(self, filfile_8bit_1: str) -> None:
+        runner = CliRunner()
+        result = runner.invoke(spp_bandpass.main, [filfile_8bit_1])
+        assert result.exit_code == 0
+        assert "freq_mhz" in result.output
+
+
+class TestSppZerodm:
+    def test_main(self, filfile_8bit_1: str, tmpfile: str) -> None:
+        runner = CliRunner()
+        result = runner.invoke(spp_zerodm.main, [filfile_8bit_1, "-o", tmpfile])
+        assert result.exit_code == 0
+        assert Path(tmpfile).exists()
+
+
+class TestSppMergeSplice:
+    def test_merge_time(self, filfile_8bit_1: str, tmpdir: str) -> None:
+        a = str(Path(tmpdir) / "a.fil")
+        b = str(Path(tmpdir) / "b.fil")
+        out = str(Path(tmpdir) / "merged.fil")
+        src = FilReader(filfile_8bit_1)
+        n = 32
+        src.extract_samps(0, n, outfile_name=a)
+        src.extract_samps(n, n, outfile_name=b)
+        runner = CliRunner()
+        result = runner.invoke(
+            spp_merge.main,
+            [a, b, "-a", "time", "-o", out],
+        )
+        assert result.exit_code == 0
+        assert FilReader(out).header.nsamples == 2 * n
+
+    def test_splice_freq(self, filfile_8bit_1: str, tmpdir: str) -> None:
+        src = FilReader(filfile_8bit_1)
+        nchan = src.header.nchans
+        half = nchan // 2
+        files = src.extract_bands(
+            chanstart=0,
+            nchans=nchan,
+            chanpersub=half,
+            outfile_base=str(Path(tmpdir) / "band"),
+        )
+        out = str(Path(tmpdir) / "spliced.fil")
+        runner = CliRunner()
+        result = runner.invoke(spp_splice.main, [*files, "-o", out])
+        assert result.exit_code == 0
+        merged = FilReader(out)
+        assert merged.header.nchans == half * len(files)
+        assert merged.header.nsamples == src.header.nsamples
+
+
+class TestSppClean:
+    def test_rfi(self, filfile_8bit_1: str, tmpfile: str) -> None:
+        runner = CliRunner()
+        result = runner.invoke(spp_clean.main, ["rfi", filfile_8bit_1, "-o", tmpfile])
         assert result.exit_code == 0
         assert Path(tmpfile).exists()
         maskfile = tmpfile + ".mask"
         result = runner.invoke(
             spp_clean.main,
-            [filfile_8bit_1, "-o", tmpfile, "-s", maskfile],
+            ["rfi", filfile_8bit_1, "-o", tmpfile, "-s", maskfile],
         )
         assert result.exit_code == 0
         assert Path(tmpfile).exists()
         assert Path(maskfile).exists()
+
+    def test_zap_channels(self, filfile_8bit_1: str, tmpfile: str) -> None:
+        runner = CliRunner()
+        result = runner.invoke(
+            spp_clean.main,
+            ["zap-channels", filfile_8bit_1, "-c", "0", "-c", "1", "-o", tmpfile],
+        )
+        assert result.exit_code == 0
+        assert Path(tmpfile).exists()
+        out = FilReader(tmpfile)
+        src = FilReader(filfile_8bit_1)
+        assert out.header.nchans == src.header.nchans
+
+    def test_zap_times(self, filfile_8bit_1: str, tmpfile: str) -> None:
+        runner = CliRunner()
+        result = runner.invoke(
+            spp_clean.main,
+            ["zap-times", filfile_8bit_1, "-s", "0", "-e", "8", "-o", tmpfile],
+        )
+        assert result.exit_code == 0
+        assert Path(tmpfile).exists()
+        assert (
+            FilReader(tmpfile).header.nsamples
+            == FilReader(filfile_8bit_1).header.nsamples
+        )

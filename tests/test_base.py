@@ -160,6 +160,40 @@ class TestFilterbank:
                     chanpersub=chanpersub,
                 )
 
+    def test_requantize(self, filfile_8bit_1: str, tmpfile: str) -> None:
+        fil = FilReader(filfile_8bit_1)
+        outfile = fil.requantize(nbits_out=8, outfile_name=tmpfile)
+        new_fil = FilReader(outfile)
+        np.testing.assert_equal(new_fil.header.nbits, 8)
+        np.testing.assert_equal(new_fil.header.nchans, fil.header.nchans)
+        np.testing.assert_equal(new_fil.header.nsamples, fil.header.nsamples)
+        hdrlen = int(new_fil.header.stream_info.get_combined("hdrlen"))
+        datalen = Path(outfile).stat().st_size - hdrlen
+        np.testing.assert_equal(
+            datalen,
+            new_fil.header.nsamples * new_fil.header.nchans,
+        )
+
+    def test_requantize_remove_bandpass(
+        self, filfile_8bit_1: str, tmpfile: str
+    ) -> None:
+        fil = FilReader(filfile_8bit_1)
+        outfile = fil.requantize(
+            nbits_out=8,
+            outfile_name=tmpfile,
+            remove_bandpass=True,
+        )
+        new_fil = FilReader(outfile)
+        np.testing.assert_equal(new_fil.header.nbits, 8)
+
+    def test_zap_times(self, filfile_8bit_1: str, tmpfile: str) -> None:
+        fil = FilReader(filfile_8bit_1)
+        outfile = fil.zap_times([(0, 8)], mode="zero", outfile_name=tmpfile)
+        new_fil = FilReader(outfile)
+        np.testing.assert_equal(new_fil.header.nsamples, fil.header.nsamples)
+        zapped = new_fil.read_block(0, 8).data
+        np.testing.assert_array_equal(zapped, 0)
+
     def test_remove_zerodm(self, filfile_4bit: str, tmpfile: str) -> None:
         fil = FilReader(filfile_4bit)
         outfile = fil.remove_zerodm(outfile_name=tmpfile)

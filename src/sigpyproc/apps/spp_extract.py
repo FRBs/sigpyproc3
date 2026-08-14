@@ -10,7 +10,7 @@ from sigpyproc.readers import FilReader
     context_settings={"help_option_names": ["-h", "--help"], "show_default": True},
 )
 def main() -> None:
-    """Extract samples, channels, bands, or mask channels in a filterbank."""
+    """Extract samples, channels, or bands from a filterbank."""
 
 
 @main.command()
@@ -148,57 +148,6 @@ def bands(
         outfile_base=outfile,
     ):
         click.echo(path)
-
-
-@main.command()
-@click.argument("filfile", type=click.Path(exists=True))
-@click.option(
-    "-c",
-    "--chans",
-    type=click.IntRange(0, None),
-    multiple=True,
-    help="Channels to zero",
-)
-@click.option(
-    "--mask-file",
-    type=click.Path(exists=True),
-    default=None,
-    help="Text file of channel indices to zero (one per line)",
-)
-@click.option(
-    "-g",
-    "--gulp",
-    type=int,
-    default=16384,
-    help="Number of samples to read at once",
-)
-@click.option(
-    "-o",
-    "--outfile",
-    type=click.Path(exists=False),
-    default=None,
-    help="Output filterbank file",
-)
-def mask(
-    filfile: str,
-    chans: tuple[int, ...],
-    mask_file: str | None,
-    gulp: int,
-    outfile: str | None,
-) -> None:
-    """Zero selected channels and write a new filterbank."""
-    if mask_file is not None:
-        zap = np.loadtxt(mask_file, dtype=int, ndmin=1)
-    else:
-        zap = np.asarray(chans, dtype=int)
-    if zap.size == 0:
-        msg = "Provide -c/--chans or --mask-file"
-        raise click.UsageError(msg)
-    fil = FilReader(filfile)
-    chan_mask = np.zeros(fil.header.nchans, dtype=bool)
-    chan_mask[zap] = True
-    path = fil.apply_channel_mask(chan_mask, outfile_name=outfile, gulp=gulp)
-    click.echo(path)
 
 
 if __name__ == "__main__":

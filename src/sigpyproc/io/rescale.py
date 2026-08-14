@@ -77,10 +77,12 @@ class Rescale:
 
         if self.isample >= self.rescale_samples or self.first_call:
             mean = self.sum_ar / self.isample
-            variance = self.sumsq_ar / self.isample - mean * mean
+            variance = np.maximum(self.sumsq_ar / self.isample - mean * mean, 0)
             self.offset = -mean
-            self.scale = np.where(
-                np.isclose(variance, 0, atol=1e-5),
-                1,
-                1.0 / np.sqrt(variance),
+            self.scale = np.ones_like(variance)
+            np.divide(
+                1.0,
+                np.sqrt(variance),
+                out=self.scale,
+                where=~np.isclose(variance, 0, atol=1e-5),
             )

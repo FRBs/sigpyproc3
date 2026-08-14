@@ -76,6 +76,11 @@ spp_header = "sigpyproc.apps.spp_header:main"
 spp_extract = "sigpyproc.apps.spp_extract:main"
 spp_clean = "sigpyproc.apps.spp_clean:main"
 spp_stats = "sigpyproc.apps.spp_stats:main"
+spp_decimate = "sigpyproc.apps.spp_decimate:main"
+spp_bandpass = "sigpyproc.apps.spp_bandpass:main"
+spp_zerodm = "sigpyproc.apps.spp_zerodm:main"
+spp_merge = "sigpyproc.apps.spp_merge:main"
+spp_splice = "sigpyproc.apps.spp_splice:main"
 
 
 [tool.ruff]
