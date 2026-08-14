@@ -1,6 +1,7 @@
 import shutil
 from pathlib import Path
 
+import pytest
 from click.testing import CliRunner
 
 from sigpyproc.apps import (
@@ -9,6 +10,7 @@ from sigpyproc.apps import (
     spp_decimate,
     spp_dedisperse,
     spp_extract,
+    spp_fake,
     spp_fold,
     spp_header,
     spp_merge,
@@ -379,3 +381,96 @@ class TestSppClean:
             FilReader(tmpfile).header.nsamples
             == FilReader(filfile_8bit_1).header.nsamples
         )
+
+
+class TestSppFake:
+    def test_noise(self, tmpdir: str) -> None:
+        out = str(Path(tmpdir) / "noise.fil")
+        runner = CliRunner()
+        result = runner.invoke(
+            spp_fake.main,
+            [
+                "noise",
+                "-o",
+                out,
+                "--nchans",
+                "16",
+                "--nbits",
+                "32",
+                "--tsamp",
+                "0.001",
+                "--tobs",
+                "0.2",
+                "--seed",
+                "1",
+            ],
+        )
+        assert result.exit_code == 0
+        assert out in result.output
+        fil = FilReader(out)
+        assert fil.header.nchans == 16
+        assert fil.header.nbits == 32
+        assert fil.header.nsamples == 200
+
+    def test_pulsar(self, tmpdir: str) -> None:
+        out = str(Path(tmpdir) / "psr.fil")
+        runner = CliRunner()
+        result = runner.invoke(
+            spp_fake.main,
+            [
+                "pulsar",
+                "-p",
+                "0.05",
+                "-d",
+                "10",
+                "-o",
+                out,
+                "--nchans",
+                "16",
+                "--nbits",
+                "8",
+                "--tsamp",
+                "0.001",
+                "--tobs",
+                "0.3",
+                "--seed",
+                "2",
+            ],
+        )
+        assert result.exit_code == 0
+        fil = FilReader(out)
+        assert fil.header.period == pytest.approx(0.05)
+        assert fil.header.dm == pytest.approx(10.0)
+
+    def test_pulse(self, tmpdir: str) -> None:
+        out = str(Path(tmpdir) / "sp.fil")
+        runner = CliRunner()
+        result = runner.invoke(
+            spp_fake.main,
+            [
+                "pulse",
+                "-t",
+                "0.1",
+                "-w",
+                "0.005",
+                "-o",
+                out,
+                "--nchans",
+                "16",
+                "--nbits",
+                "8",
+                "--tsamp",
+                "0.001",
+                "--tobs",
+                "0.3",
+                "--seed",
+                "3",
+            ],
+        )
+        assert result.exit_code == 0
+        assert FilReader(out).header.nsamples == 300
+
+    def test_pulse_requires_width(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(spp_fake.main, ["pulse", "-t", "0.1"])
+        assert result.exit_code != 0

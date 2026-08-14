@@ -83,6 +83,7 @@ spp_merge = "sigpyproc.apps.spp_merge:main"
 spp_splice = "sigpyproc.apps.spp_splice:main"
 spp_dedisperse = "sigpyproc.apps.spp_dedisperse:main"
 spp_fold = "sigpyproc.apps.spp_fold:main"
+spp_fake = "sigpyproc.apps.spp_fake:main"
 
 
 [tool.ruff]
@@ -102,6 +103,7 @@ ignore = ["COM812", "CPY001", "D1", "D301", "PLR2004", "G004"]
 
 [tool.ruff.lint.per-file-ignores]
 "src/sigpyproc/core/kernels.py" = ["ARG001"]
+"src/sigpyproc/apps/spp_fake.py" = ["PLR0913", "PLR0917"]
 "tests/**/*.py" = ["S101", "FBT", "PLR2004", "PT011", "SLF001"]
 "docs/**" = ["INP001", "ARG001", "ANN401"]
 

@@ -68,3 +68,9 @@ separate `spp_*` script.
    :prog: spp_clean
    :nested: full
 ```
+
+```{eval-rst}
+.. click:: sigpyproc.apps.spp_fake:main
+   :prog: spp_fake
+   :nested: full
+```
