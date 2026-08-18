@@ -24,7 +24,9 @@ Verify the installation:
 python -c "import sigpyproc; print(sigpyproc.__version__)"
 ```
 
-After installation, browse the {doc}`generated/sigpyproc` for the full API reference.
+After installation, browse the {doc}`generated/sigpyproc` for the full API reference,
+or jump to {doc}`/tutorials/quickstart` (filterbanks) and
+{doc}`/tutorials/search` (FFT / FFA / pulses).
 
 ---
 
@@ -86,3 +88,12 @@ sigpyproc depends on:
 - [click](https://click.palletsprojects.com/)  
 
 All required dependencies are installed automatically via `uv sync` or `uv pip install`.
+
+---
+
+## Next steps
+
+- {doc}`/tutorials/quickstart` — load a filterbank, inspect the header, dedisperse.
+- {doc}`/tutorials/search` — search a time series and work with `CandidateTable`.
+- {doc}`/cmd` — every `spp_*` command.
+- {doc}`/generated/sigpyproc` — full API.

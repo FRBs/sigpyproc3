@@ -1,0 +1,383 @@
+"""Search candidate tables.
+
+A modern stand-in for SIGPROC ``.prd`` / ``.bst`` bookkeeping: candidates
+from FFT search, FFA, and single-pulse detection live in one
+:class:`~astropy.table.QTable` with SI units. There is no ``.prd`` writer
+and no PGPLOT.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+import attrs
+import numpy as np
+from astropy import units as u
+from astropy.table import QTable, Table, vstack
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+    from pathlib import Path
+    from typing import TextIO
+
+CANDIDATE_DTYPE: list[tuple[str, str]] = [
+    ("period_s", "f8"),
+    ("freq_hz", "f8"),
+    ("snr", "f4"),
+    ("dm", "f8"),
+    ("accel", "f8"),
+    ("nharm", "i4"),
+    ("bin", "i8"),
+    ("width_s", "f8"),
+    ("kind", "U8"),
+]
+CANDIDATE_NAMES: tuple[str, ...] = tuple(name for name, _ in CANDIDATE_DTYPE)
+_COLUMN_UNITS: dict[str, u.UnitBase] = {
+    "period_s": u.s,
+    "freq_hz": u.Hz,
+    "dm": u.pc / u.cm**3,
+    "width_s": u.s,
+}
+_KIND_MAX = 8
+
+
+def _cell_float(row: Mapping[str, object], key: str) -> float | None:
+    if key not in row or row[key] is None:
+        return None
+    return float(np.asarray(row[key]).reshape(-1)[0])
+
+
+def _cell_int(row: Mapping[str, object], key: str, default: int) -> int:
+    value = _cell_float(row, key)
+    return default if value is None else int(value)
+
+
+def _plain(col: object) -> np.ndarray:
+    value = getattr(col, "value", col)
+    return np.asarray(value)
+
+
+def _empty_qtable() -> QTable:
+    table = QTable()
+    for name, dtype in CANDIDATE_DTYPE:
+        data = np.array([], dtype=dtype)
+        unit = _COLUMN_UNITS.get(name)
+        table[name] = data * unit if unit is not None else data
+    return table
+
+
+def _attach_units(table: QTable) -> QTable:
+    for name, unit in _COLUMN_UNITS.items():
+        if name in table.colnames and getattr(table[name], "unit", None) is None:
+            table[name] = _plain(table[name]) * unit
+    return table
+
+
+def _validate_columns(table: QTable) -> None:
+    missing = [name for name in CANDIDATE_NAMES if name not in table.colnames]
+    if missing:
+        msg = f"Candidate table is missing columns: {missing}"
+        raise ValueError(msg)
+
+
+def _as_qtable(value: QTable | Table) -> QTable:
+    if isinstance(value, QTable):
+        return value
+    return QTable(value)
+
+
+@attrs.define(auto_attribs=True, slots=True)
+class CandidateTable:
+    """Table of periodic or single-pulse search candidates.
+
+    Parameters
+    ----------
+    table : ~astropy.table.QTable
+        Table whose columns include ``period_s``, ``freq_hz``, ``snr``,
+        ``dm``, ``accel``, ``nharm``, ``bin``, ``width_s``, and ``kind``.
+        Units are attached to ``period_s``, ``freq_hz``, ``dm``, and
+        ``width_s``.
+
+    Attributes
+    ----------
+    table
+    """
+
+    table: QTable = attrs.field(converter=_as_qtable)
+
+    def __attrs_post_init__(self) -> None:
+        _validate_columns(self.table)
+        _attach_units(self.table)
+
+    def __len__(self) -> int:
+        return len(self.table)
+
+    def __repr__(self) -> str:
+        return f"CandidateTable(n={len(self)})"
+
+    def __getitem__(
+        self,
+        key: int | slice | np.ndarray,
+    ) -> CandidateTable:
+        """Return a row subset as a new :class:`CandidateTable`.
+
+        Parameters
+        ----------
+        key : int | slice | ndarray
+            Row index, slice, or boolean / integer mask.
+
+        Returns
+        -------
+        CandidateTable
+            Selected rows. An integer key yields a one-row table.
+        """
+        if isinstance(key, (int, np.integer)):
+            return CandidateTable(QTable(self.table[[int(key)]]))
+        return CandidateTable(QTable(self.table[key]))
+
+    def __add__(self, other: CandidateTable) -> CandidateTable:
+        if not isinstance(other, CandidateTable):
+            return NotImplemented
+        return self.concatenate([self, other])
+
+    @classmethod
+    def empty(cls) -> CandidateTable:
+        """Return an empty candidate table."""
+        return cls(_empty_qtable())
+
+    @classmethod
+    def from_rows(cls, rows: Sequence[Mapping[str, object]]) -> CandidateTable:
+        """Build a table from row mappings.
+
+        Missing ``period_s`` / ``freq_hz`` are inferred from each other.
+        Other omitted fields use defaults (``dm=0``, ``accel=0``,
+        ``nharm=1``, ``bin=-1``, ``width_s=NaN``, ``kind="fft"``).
+
+        Parameters
+        ----------
+        rows : sequence of dict
+            One mapping per candidate.
+
+        Returns
+        -------
+        CandidateTable
+            New table containing ``rows``.
+        """
+        if not rows:
+            return cls.empty()
+        period = np.empty(len(rows), dtype=np.float64)
+        freq = np.empty(len(rows), dtype=np.float64)
+        snr = np.empty(len(rows), dtype=np.float32)
+        dm = np.empty(len(rows), dtype=np.float64)
+        accel = np.empty(len(rows), dtype=np.float64)
+        nharm = np.empty(len(rows), dtype=np.int32)
+        bins = np.empty(len(rows), dtype=np.int64)
+        width = np.empty(len(rows), dtype=np.float64)
+        kind = np.empty(len(rows), dtype="U8")
+        for i, row in enumerate(rows):
+            period_s = _cell_float(row, "period_s")
+            freq_hz = _cell_float(row, "freq_hz")
+            if period_s is None and freq_hz is not None:
+                freq[i] = freq_hz
+                period[i] = (1.0 / freq_hz) if freq_hz != 0.0 else np.nan
+            elif freq_hz is None and period_s is not None:
+                period[i] = period_s
+                freq[i] = (1.0 / period_s) if period_s != 0.0 else np.nan
+            else:
+                period[i] = np.nan if period_s is None else period_s
+                freq[i] = np.nan if freq_hz is None else freq_hz
+            snr_val = _cell_float(row, "snr")
+            snr[i] = np.float32(np.nan if snr_val is None else snr_val)
+            dm[i] = _cell_float(row, "dm") or 0.0
+            accel[i] = _cell_float(row, "accel") or 0.0
+            nharm[i] = _cell_int(row, "nharm", 1)
+            bins[i] = _cell_int(row, "bin", -1)
+            width_val = _cell_float(row, "width_s")
+            width[i] = np.nan if width_val is None else width_val
+            raw_kind = "fft" if row.get("kind") is None else str(row["kind"])
+            kind[i] = raw_kind[:_KIND_MAX]
+        table = QTable()
+        table["period_s"] = period * u.s
+        table["freq_hz"] = freq * u.Hz
+        table["snr"] = snr
+        table["dm"] = dm * (u.pc / u.cm**3)
+        table["accel"] = accel
+        table["nharm"] = nharm
+        table["bin"] = bins
+        table["width_s"] = width * u.s
+        table["kind"] = kind
+        return cls(table)
+
+    @classmethod
+    def concatenate(cls, tables: Sequence[CandidateTable]) -> CandidateTable:
+        """Stack candidate tables row-wise.
+
+        Parameters
+        ----------
+        tables : sequence of CandidateTable
+            Tables to concatenate.
+
+        Returns
+        -------
+        CandidateTable
+            Combined table, or :meth:`empty` if every input is empty.
+        """
+        nonempty = [item.table for item in tables if len(item) > 0]
+        if not nonempty:
+            return cls.empty()
+        return cls(QTable(vstack(nonempty)))
+
+    @classmethod
+    def from_csv(cls, path: str | Path) -> CandidateTable:
+        """Read a CSV written by :meth:`to_csv`.
+
+        Parameters
+        ----------
+        path : str | Path
+            Input CSV path.
+
+        Returns
+        -------
+        CandidateTable
+            Loaded candidates.
+
+        Raises
+        ------
+        ValueError
+            If required columns are missing.
+        """
+        raw = Table.read(path, format="ascii.csv")
+        missing = [name for name in CANDIDATE_NAMES if name not in raw.colnames]
+        if missing:
+            msg = f"CSV is missing columns: {missing}"
+            raise ValueError(msg)
+        table = QTable()
+        table["period_s"] = np.asarray(raw["period_s"], dtype=np.float64) * u.s
+        table["freq_hz"] = np.asarray(raw["freq_hz"], dtype=np.float64) * u.Hz
+        table["snr"] = np.asarray(raw["snr"], dtype=np.float32)
+        table["dm"] = np.asarray(raw["dm"], dtype=np.float64) * (u.pc / u.cm**3)
+        table["accel"] = np.asarray(raw["accel"], dtype=np.float64)
+        table["nharm"] = np.asarray(raw["nharm"], dtype=np.int32)
+        table["bin"] = np.asarray(raw["bin"], dtype=np.int64)
+        table["width_s"] = np.asarray(raw["width_s"], dtype=np.float64) * u.s
+        table["kind"] = np.asarray(raw["kind"], dtype="U8")
+        return cls(table)
+
+    def to_csv(self, path: str | Path | TextIO) -> None:
+        """Write candidates as a plain CSV (no units metadata).
+
+        Column names carry the SI unit (``period_s``, ``freq_hz``, …) so
+        the file is usable outside astropy. This is the public interchange
+        format; there is no ``.prd`` writer.
+
+        Parameters
+        ----------
+        path : str | Path | TextIO
+            Output path (overwritten if it exists) or an open text stream.
+        """
+        plain = Table()
+        for name in CANDIDATE_NAMES:
+            plain[name] = _plain(self.table[name])
+        if hasattr(path, "write"):
+            plain.write(path, format="ascii.csv")
+        else:
+            plain.write(path, format="ascii.csv", overwrite=True)
+
+    def values(self, name: str) -> np.ndarray:
+        """Return a column as a unitless :class:`numpy.ndarray`.
+
+        Parameters
+        ----------
+        name : str
+            Column name.
+
+        Returns
+        -------
+        ndarray
+            Numeric or string values with units stripped.
+        """
+        return _plain(self.table[name])
+
+    def sort_by_snr(self) -> CandidateTable:
+        """Return a copy sorted by decreasing SNR."""
+        if len(self) == 0:
+            return self.empty()
+        order = np.argsort(-_plain(self.table["snr"]))
+        return CandidateTable(QTable(self.table[order]))
+
+    def cluster(  # noqa: C901
+        self,
+        *,
+        period_tol: float = 1e-4,
+        harm_max: int = 16,
+        snr_min: float = 8.0,
+    ) -> CandidateTable:
+        """Keep the loudest member of each harmonic family.
+
+        This is the bookkeeping half of SIGPROC ``best`` (no PGPLOT, no
+        ``.bst`` / ``.fld``). A weaker candidate with period ``P_i`` is
+        dropped when ``|P_i / P_j - k / n| <= period_tol`` for a louder
+        kept period ``P_j`` and integers ``k, n <= harm_max``.
+
+        Single-pulse rows (non-finite or non-positive period) are never
+        treated as harmonics of each other; they are kept if they pass
+        ``snr_min``. Slice the table first if you want to cluster only
+        one ``kind`` or a DM window.
+
+        Parameters
+        ----------
+        period_tol : float, optional
+            Relative period match tolerance, by default ``1e-4``.
+        harm_max : int, optional
+            Largest integer ``k`` and ``n`` in the ``k / n`` grid, by
+            default 16.
+        snr_min : float, optional
+            Discard candidates below this SNR first, by default 8.0.
+
+        Returns
+        -------
+        CandidateTable
+            Survivors, still sorted by decreasing SNR.
+
+        Raises
+        ------
+        ValueError
+            If ``period_tol`` is not positive or ``harm_max`` is ``< 1``.
+        """
+        if period_tol <= 0:
+            msg = "period_tol must be positive"
+            raise ValueError(msg)
+        if harm_max < 1:
+            msg = "harm_max must be at least 1"
+            raise ValueError(msg)
+        if len(self) == 0:
+            return self.empty()
+
+        snr = _plain(self.table["snr"]).astype(np.float64, copy=False)
+        period = _plain(self.table["period_s"]).astype(np.float64, copy=False)
+        eligible = np.isfinite(snr) & (snr >= snr_min)
+        order = np.argsort(-snr)
+
+        kept_period: list[float] = []
+        keep = np.zeros(len(self), dtype=bool)
+        ratios = [k / n for n in range(1, harm_max + 1) for k in range(1, harm_max + 1)]
+        for idx in order:
+            if not eligible[idx]:
+                continue
+            p_i = period[idx]
+            if not np.isfinite(p_i) or p_i <= 0:
+                keep[idx] = True
+                continue
+            harmonic = False
+            for p_j in kept_period:
+                ratio = p_i / p_j
+                for target in ratios:
+                    if abs(ratio - target) <= period_tol:
+                        harmonic = True
+                        break
+                if harmonic:
+                    break
+            if not harmonic:
+                keep[idx] = True
+                kept_period.append(float(p_i))
+        return CandidateTable(QTable(self.table[keep])).sort_by_snr()

@@ -1,7 +1,35 @@
 # Command line utilities
 
-Thin wrappers around the `sigpyproc` filterbank API. Each tool is a
-separate `spp_*` script.
+Thin wrappers around the `sigpyproc` API. Each tool is a separate
+`spp_*` script — there is no umbrella `spp` command and no SIGPROC
+binary-name aliases.
+
+Algorithms live on the data objects
+({py:class}`~sigpyproc.base.Filterbank`,
+{py:class}`~sigpyproc.timeseries.TimeSeries`,
+{py:class}`~sigpyproc.candidates.CandidateTable`). These pages document
+flags; {doc}`/tutorials/quickstart` and {doc}`/tutorials/search` show how
+to use the same methods from Python.
+
+| Script | Role |
+| --- | --- |
+| `spp_header` | Print, get, or edit a header |
+| `spp_extract` | Cut samples, channels, or a mask |
+| `spp_stats` | Channel statistics |
+| `spp_decimate` | Time / frequency downsample |
+| `spp_bandpass` | Mean bandpass |
+| `spp_zerodm` | Remove the time-mean (Eatough / PRESTO-style, not SIGPROC 8-bit) |
+| `spp_clean` | RFI cleaning and zap |
+| `spp_merge` | Concatenate in time |
+| `spp_splice` | Stack in frequency |
+| `spp_dedisperse` | `tim` / `subband` / `tree` / `plan` |
+| `spp_fold` | Fold to `.npz` + ASCII profile |
+| `spp_fake` | `noise` / `pulsar` / `pulse` filterbanks |
+| `spp_search` | `fft` / `pulses` / `ffa` / `cluster` on a `.tim` |
+
+`spp_search` writes **CSV** (or stdout with `-o -`). Periods on the
+Python API are in seconds; `spp_search ffa --pmin-ms` / `--pmax-ms`
+accept milliseconds for SIGPROC muscle memory and convert immediately.
 
 ```{eval-rst}
 .. click:: sigpyproc.apps.spp_header:main
@@ -72,5 +100,11 @@ separate `spp_*` script.
 ```{eval-rst}
 .. click:: sigpyproc.apps.spp_fake:main
    :prog: spp_fake
+   :nested: full
+```
+
+```{eval-rst}
+.. click:: sigpyproc.apps.spp_search:main
+   :prog: spp_search
    :nested: full
 ```

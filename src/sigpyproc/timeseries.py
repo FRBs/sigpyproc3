@@ -8,9 +8,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import numpy as np
+from numba import typed
 
 from sigpyproc import fourierseries
+from sigpyproc.candidates import CandidateTable
 from sigpyproc.core import kernels, stats
+from sigpyproc.core.filters import MatchedFilter, Template
 from sigpyproc.foldedcube import FoldedData
 from sigpyproc.header import Header
 from sigpyproc.utils import validate_path
@@ -22,6 +25,9 @@ if TYPE_CHECKING:
     from numpy.typing import ArrayLike, NDArray
 
     from sigpyproc.core.custom_types import FilterMethods, LocMethods, ScaleMethods
+
+_FFA_MAX_NSAMP = 1 << 24
+_FFA_WIDTH_REBINS = (1, 2, 4, 8, 16)
 
 
 class TimeSeries:
@@ -381,6 +387,321 @@ class TimeSeries:
             "nsamples": corr_ar.size,
         }
         return TimeSeries(corr_ar, self.header.new_header(header_changes))
+
+    def search(
+        self,
+        *,
+        nfolds: int = 4,
+        pmax: float = 10.0,
+        accel: float = 0.0,
+        interpolate: bool = True,
+        snr_min: float = 6.0,
+        npeaks: int = 100,
+    ) -> CandidateTable:
+        """FFT search with harmonic folding.
+
+        Pipeline (fixed order):
+
+        1. optional :meth:`resample` if ``accel != 0``
+        2. :meth:`rfft`
+        3. :meth:`~sigpyproc.fourierseries.FourierSeries.deredden` (not
+           :meth:`deredden`)
+        4. unfolded :meth:`~sigpyproc.fourierseries.FourierSeries.form_spec`
+        5. :meth:`~sigpyproc.fourierseries.PowerSpectrum.harmonic_fold`
+        6. :meth:`~sigpyproc.fourierseries.PowerSpectrum.find_peaks` on the
+           unfolded spectrum (``nharm=1``) and each fold
+           (``nharm = 2, 4, …, 2**nfolds``)
+
+        Parameters
+        ----------
+        nfolds : int, optional
+            Number of harmonic *folds* (2, 4, …, ``2**nfolds``) in
+            addition to the unfolded spectrum, by default 4.
+        pmax : float, optional
+            Longest period to keep, in seconds, by default 10.0.
+        accel : float, optional
+            Acceleration to remove before the FFT, by default 0.
+        interpolate : bool, optional
+            Inter-bin interpolate the amplitude spectrum, by default True.
+        snr_min : float, optional
+            Peak-pick SNR threshold, by default 6.0.
+        npeaks : int, optional
+            Maximum peaks kept *per* spectrum (unfolded and each fold),
+            by default 100.
+
+        Returns
+        -------
+        CandidateTable
+            Combined FFT candidates, sorted by decreasing SNR.
+
+        Raises
+        ------
+        ValueError
+            If ``nfolds`` is negative.
+        """
+        if nfolds < 0:
+            msg = "nfolds must be >= 0"
+            raise ValueError(msg)
+        series = self.resample(accel) if accel != 0.0 else self
+        spec0 = series.rfft().deredden().form_spec(interpolate=interpolate)
+        tables = [
+            spec0.find_peaks(
+                npeaks=npeaks,
+                snr_min=snr_min,
+                pmax=pmax,
+                dm=self.header.dm,
+                accel=accel,
+                nharm=1,
+            ),
+        ]
+        if nfolds > 0:
+            for i, fold in enumerate(spec0.harmonic_fold(nfolds)):
+                tables.append(
+                    fold.find_peaks(
+                        npeaks=npeaks,
+                        snr_min=snr_min,
+                        pmax=pmax,
+                        dm=self.header.dm,
+                        accel=accel,
+                        nharm=int(2 ** (i + 1)),
+                    ),
+                )
+        return CandidateTable.concatenate(tables).sort_by_snr()
+
+    def find_pulses(
+        self,
+        *,
+        snr_min: float = 6.0,
+        max_width: int = 256,
+        spacing_factor: float = 2.0,
+        deadtime: int = 8,
+    ) -> CandidateTable:
+        """Find multiple pulses with a boxcar matched-filter bank.
+
+        This is not a single :class:`~sigpyproc.core.filters.MatchedFilter`
+        call (that class returns one best peak). Widths are geometric
+        from 1 to ``max_width`` (powers of two when ``spacing_factor=2``).
+        SIGPROC ``peak``'s time-halving loop is not cloned — the width
+        bank already covers 1…``max_width``.
+
+        Parameters
+        ----------
+        snr_min : float, optional
+            Minimum matched-filter SNR, by default 6.0.
+        max_width : int, optional
+            Widest boxcar in bins, by default 256.
+        spacing_factor : float, optional
+            Geometric spacing of the width bank, by default 2.0.
+        deadtime : int, optional
+            Bins zeroed on *either* side of an accepted peak, by
+            default 8 (as in SIGPROC ``peak``).
+
+        Returns
+        -------
+        CandidateTable
+            Pulse candidates (``kind="pulse"``), sorted by SNR.
+
+        Raises
+        ------
+        ValueError
+            If ``max_width`` or ``deadtime`` is invalid.
+        """
+        if max_width < 1:
+            msg = "max_width must be at least 1"
+            raise ValueError(msg)
+        if deadtime < 0:
+            msg = "deadtime must be >= 0"
+            raise ValueError(msg)
+
+        zscores = stats.estimate_zscore(
+            self.data,
+            loc_method="median",
+            scale_method="iqr",
+        )
+        widths = MatchedFilter.get_box_width_spacing(max_width, spacing_factor)
+        templates = [Template.gen_boxcar(int(width)) for width in widths]
+        if any(temp.data.size > self.nsamples for temp in templates):
+            msg = "max_width is larger than the time series"
+            raise ValueError(msg)
+        convs = kernels.convolve_templates(
+            zscores.data,
+            typed.List([temp.data for temp in templates]),
+            typed.List([temp.ref_bin for temp in templates]),
+        )
+        best_idx = np.argmax(convs, axis=0)
+        best_snr = np.max(convs, axis=0).astype(np.float64, copy=True)
+
+        rows: list[dict[str, object]] = []
+        nsamp = best_snr.size
+        tsamp = self.header.tsamp
+        while True:
+            peak = int(np.argmax(best_snr))
+            peak_snr = float(best_snr[peak])
+            if peak_snr < snr_min or not np.isfinite(peak_snr):
+                break
+            width_bins = int(widths[best_idx[peak]])
+            rows.append(
+                {
+                    "period_s": np.nan,
+                    "freq_hz": np.nan,
+                    "snr": peak_snr,
+                    "dm": self.header.dm,
+                    "accel": self.header.accel,
+                    "nharm": 1,
+                    "bin": peak,
+                    "width_s": width_bins * tsamp,
+                    "kind": "pulse",
+                },
+            )
+            lo = max(0, peak - deadtime)
+            hi = min(nsamp, peak + deadtime + 1)
+            best_snr[lo:hi] = -np.inf
+        return CandidateTable.from_rows(rows).sort_by_snr()
+
+    def ffa(
+        self,
+        pmin: float,
+        pmax: float,
+        *,
+        nrebin: int = 1,
+        search_width: bool = False,
+        snr_min: float = 8.0,
+        npeaks: int = 100,
+        zero_pad: bool = False,
+    ) -> CandidateTable:
+        """Fast Folding Analysis (Staelin 1969 / Mueller).
+
+        Periods are in seconds. The CLI accepts SIGPROC-style milliseconds
+        and converts before calling this method. ``search_width`` loops
+        ``nrebin`` through ``{1, 2, 4, 8, 16}`` and is exclusive with
+        ``nrebin != 1``.
+
+        One candidate is kept per integer trial period (not every tree
+        shift). The fractional FFA offset is used only when it clearly
+        outranks the unshifted fold — wide pulses leave the sub-bin
+        index unconstrained, and reporting the integer period is the
+        honest result.
+
+        Parameters
+        ----------
+        pmin : float
+            Shortest trial period in seconds.
+        pmax : float
+            Longest trial period in seconds.
+        nrebin : int, optional
+            Mean-downsample factor applied first, by default 1.
+        search_width : bool, optional
+            Search several downsample factors instead of ``nrebin``,
+            by default False.
+        snr_min : float, optional
+            Minimum profile SNR, by default 8.0.
+        npeaks : int, optional
+            Maximum candidates to keep, by default 100.
+        zero_pad : bool, optional
+            Pad to the next power of two (after the ``2**24`` cap),
+            by default False.
+
+        Returns
+        -------
+        CandidateTable
+            FFA candidates (``kind="ffa"``), sorted by SNR.
+
+        Raises
+        ------
+        ValueError
+            If the period window or rebin options are invalid.
+        """
+        if pmin <= 0 or pmax <= pmin:
+            msg = "require 0 < pmin < pmax"
+            raise ValueError(msg)
+        if nrebin < 1:
+            msg = "nrebin must be at least 1"
+            raise ValueError(msg)
+        if search_width and nrebin != 1:
+            msg = "search_width and nrebin != 1 are mutually exclusive"
+            raise ValueError(msg)
+        if npeaks < 1:
+            msg = "npeaks must be at least 1"
+            raise ValueError(msg)
+
+        rebins = _FFA_WIDTH_REBINS if search_width else (nrebin,)
+        tables = [
+            self._ffa_one_rebin(pmin, pmax, rebin, snr_min, zero_pad=zero_pad)
+            for rebin in rebins
+        ]
+        combined = CandidateTable.concatenate(tables).sort_by_snr()
+        if len(combined) <= npeaks:
+            return combined
+        return combined[:npeaks]
+
+    def _ffa_one_rebin(
+        self,
+        pmin: float,
+        pmax: float,
+        nrebin: int,
+        snr_min: float,
+        *,
+        zero_pad: bool,
+    ) -> CandidateTable:
+        series = self.downsample(nrebin) if nrebin > 1 else self
+        if series.nsamples > _FFA_MAX_NSAMP:
+            series = TimeSeries(
+                series.data[:_FFA_MAX_NSAMP],
+                series.header.new_header({"nsamples": _FFA_MAX_NSAMP}),
+            )
+        if zero_pad:
+            n_pow2 = 1 << (series.nsamples - 1).bit_length()
+            if n_pow2 > series.nsamples:
+                padded = np.pad(series.data, (0, n_pow2 - series.nsamples))
+                series = TimeSeries(
+                    padded,
+                    series.header.new_header({"nsamples": n_pow2}),
+                )
+        tsamp = series.header.tsamp
+        pmin_bins = max(2, round(pmin / tsamp))
+        pmax_bins = min(series.nsamples // 2, round(pmax / tsamp))
+        if pmax_bins < pmin_bins:
+            return CandidateTable.empty()
+
+        data = np.ascontiguousarray(series.data, dtype=np.float32)
+        rows: list[dict[str, object]] = []
+        width_s = tsamp
+        dm = self.header.dm
+        accel = self.header.accel
+        for p_bins in range(pmin_bins, pmax_bins + 1):
+            n_rows = data.size // p_bins
+            if n_rows < 2:
+                continue
+            folded = data[: n_rows * p_bins].reshape(n_rows, p_bins)
+            block = np.ascontiguousarray(folded)
+            profiles = kernels.ffa_stage(block)
+            snrs = kernels.ffa_profile_snr(profiles)
+            j_best = int(np.argmax(snrs))
+            snr_best = float(snrs[j_best])
+            if snr_best < snr_min:
+                continue
+            n_pad = profiles.shape[0]
+            # Wide pulses make every tree shift look equally loud; the
+            # integer trial is then the honest period. Use the fractional
+            # FFA offset only when it is clearly preferred.
+            if snr_best <= 1.1 * float(snrs[0]):
+                p_eff = p_bins * tsamp
+            else:
+                p_eff = (p_bins + j_best / n_pad) * tsamp
+            rows.append(
+                {
+                    "period_s": p_eff,
+                    "freq_hz": 1.0 / p_eff,
+                    "snr": snr_best,
+                    "dm": dm,
+                    "accel": accel,
+                    "nharm": 1,
+                    "bin": p_bins,
+                    "width_s": width_s,
+                    "kind": "ffa",
+                },
+            )
+        return CandidateTable.from_rows(rows)
 
     def to_dat(self, basename: str | None = None) -> str:
         """Write time series in presto ``.dat`` format.

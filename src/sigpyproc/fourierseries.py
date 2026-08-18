@@ -11,7 +11,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from sigpyproc import timeseries
-from sigpyproc.core import kernels
+from sigpyproc.candidates import CandidateTable
+from sigpyproc.core import kernels, stats
 from sigpyproc.foldedcube import Profile
 from sigpyproc.header import Header
 from sigpyproc.utils import validate_path
@@ -150,6 +151,117 @@ class PowerSpectrum:
             new_header = self.header.new_header({"tsamp": self.header.tsamp * nharm})
             folds.append(PowerSpectrum(sum_arr[ii], new_header))
         return folds
+
+    def find_peaks(
+        self,
+        *,
+        npeaks: int = 100,
+        snr_min: float = 6.0,
+        pmax: float = 10.0,
+        dm: float = 0.0,
+        accel: float = 0.0,
+        nharm: int = 1,
+    ) -> CandidateTable:
+        """Pick local maxima in a whitened power spectrum.
+
+        SNR in bin ``i`` is ``(data[i] - med) / (1.4826 * MAD)`` over a
+        running window of ``max(128, nfreq // 64)`` bins. The DC bin and
+        every bin with period ``> pmax`` are skipped. A local maximum is
+        strictly greater than both neighbours.
+
+        Periods are reported at the fundamental. ``nharm`` undoes the
+        ``tsamp * nharm`` convention of :meth:`harmonic_fold` so a folded
+        spectrum is not assigned an ``nharm``-times-too-long period.
+
+        Parameters
+        ----------
+        npeaks : int, optional
+            Maximum number of peaks to return, by default 100.
+        snr_min : float, optional
+            Minimum SNR, by default 6.0.
+        pmax : float, optional
+            Longest period to keep, in seconds, by default 10.0.
+        dm : float, optional
+            Dispersion measure stored on each row, by default 0.0.
+        accel : float, optional
+            Acceleration stored on each row, by default 0.0.
+        nharm : int, optional
+            Harmonic fold that produced this spectrum (1 = unfolded),
+            by default 1.
+
+        Returns
+        -------
+        CandidateTable
+            Up to ``npeaks`` rows with ``kind="fft"``, sorted by SNR.
+
+        Raises
+        ------
+        ValueError
+            If ``npeaks``, ``pmax``, or ``nharm`` is not positive.
+        """
+        if npeaks < 1:
+            msg = "npeaks must be at least 1"
+            raise ValueError(msg)
+        if pmax <= 0:
+            msg = "pmax must be positive"
+            raise ValueError(msg)
+        if nharm < 1:
+            msg = "nharm must be at least 1"
+            raise ValueError(msg)
+
+        spec = np.asarray(self.data, dtype=np.float64)
+        nfreq = spec.size
+        window = max(128, nfreq // 64)
+        if window >= nfreq:
+            window = nfreq if nfreq % 2 == 1 else max(nfreq - 1, 1)
+        if window < 3:
+            med = np.full(nfreq, np.median(spec))
+            mad = np.full(nfreq, np.median(np.abs(spec - med[0])))
+        else:
+            med = np.asarray(
+                stats.running_filter(spec, window, "median"),
+                dtype=np.float64,
+            )
+            mad = np.asarray(
+                stats.running_filter(np.abs(spec - med), window, "median"),
+                dtype=np.float64,
+            )
+        scale = np.where(mad > 0.0, 1.4826 * mad, 1.0)
+        snr = (spec - med) / scale
+
+        # harmonic_fold multiplies tsamp by nharm; undo that for the fundamental.
+        tobs = self.header.tobs / nharm
+        r_min = max(1, int(np.ceil(tobs / pmax)))
+        r_max = nfreq - 1
+        if r_min >= r_max:
+            return CandidateTable.empty()
+
+        local = (snr[1:-1] > snr[:-2]) & (snr[1:-1] > snr[2:]) & (snr[1:-1] >= snr_min)
+        peak_bins = np.flatnonzero(local) + 1
+        peak_bins = peak_bins[(peak_bins >= r_min) & (peak_bins < r_max)]
+        if peak_bins.size == 0:
+            return CandidateTable.empty()
+
+        peak_snr = snr[peak_bins]
+        order = np.argsort(-peak_snr)[:npeaks]
+        peak_bins = peak_bins[order]
+        peak_snr = peak_snr[order]
+        freq = peak_bins / tobs
+        rows = [
+            {
+                "period_s": 1.0 / f_i,
+                "freq_hz": f_i,
+                "snr": float(s_i),
+                "dm": dm,
+                "accel": accel,
+                "nharm": nharm,
+                "bin": int(r_i),
+                "width_s": np.nan,
+                "kind": "fft",
+            }
+            for r_i, s_i, f_i in zip(peak_bins, peak_snr, freq, strict=True)
+        ]
+        return CandidateTable.from_rows(rows)
 
     def _check_input(self) -> None:
         if not isinstance(self.header, Header):

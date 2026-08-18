@@ -84,6 +84,7 @@ spp_splice = "sigpyproc.apps.spp_splice:main"
 spp_dedisperse = "sigpyproc.apps.spp_dedisperse:main"
 spp_fold = "sigpyproc.apps.spp_fold:main"
 spp_fake = "sigpyproc.apps.spp_fake:main"
+spp_search = "sigpyproc.apps.spp_search:main"
 
 
 [tool.ruff]

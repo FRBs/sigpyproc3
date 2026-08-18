@@ -48,10 +48,14 @@ The architecture separates:
 
 New functionality typically involves:
 
-1. Adding a method to a data object (e.g. {py:class}`~sigpyproc.base.Filterbank` class)
+1. Adding a method to a data object (e.g. {py:class}`~sigpyproc.base.Filterbank`, {py:class}`~sigpyproc.timeseries.TimeSeries`, {py:class}`~sigpyproc.candidates.CandidateTable`)
 2. Implementing or extending a Numba kernel
 3. Writing tests
 4. Documenting the public API
+
+Search (`TimeSeries.search` / `find_pulses` / `ffa`, `PowerSpectrum.find_peaks`)
+belongs on those objects, not in `apps/`. `spp_search` is a thin Click
+wrapper. Do not put search logic in `io/`.
 
 ---
 

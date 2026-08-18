@@ -13,6 +13,7 @@ sigpyproc
 
    ~sigpyproc.base
    ~sigpyproc.block
+   ~sigpyproc.candidates
    ~sigpyproc.foldedcube
    ~sigpyproc.fourierseries
    ~sigpyproc.header
@@ -55,6 +56,7 @@ sigpyproc.simulation
    :template: autosummary/module.rst
 
    ~sigpyproc.simulation.furby
+   ~sigpyproc.simulation.pulsar
 
 sigpyproc.viz
 -------------

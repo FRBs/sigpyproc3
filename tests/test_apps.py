@@ -1,6 +1,7 @@
 import shutil
 from pathlib import Path
 
+import numpy as np
 import pytest
 from click.testing import CliRunner
 
@@ -14,12 +15,14 @@ from sigpyproc.apps import (
     spp_fold,
     spp_header,
     spp_merge,
+    spp_search,
     spp_splice,
     spp_stats,
     spp_zerodm,
 )
 from sigpyproc.header import Header
 from sigpyproc.readers import FilReader
+from sigpyproc.timeseries import TimeSeries
 
 
 class TestSppHeader:
@@ -474,3 +477,116 @@ class TestSppFake:
         runner = CliRunner()
         result = runner.invoke(spp_fake.main, ["pulse", "-t", "0.1"])
         assert result.exit_code != 0
+
+
+def _write_search_tim(path: Path, nsamp: int = 4096, tsamp: float = 0.001) -> Path:
+    rng = np.random.default_rng(7)
+    data = rng.normal(0.0, 1.0, nsamp).astype(np.float32)
+    t = np.arange(nsamp) * tsamp
+    data += 4.0 * np.sin(2 * np.pi * t / 0.05).astype(np.float32)
+    data[200:208] += 8.0
+    header = Header(
+        filename=path.name,
+        rawdatafile=path.name,
+        data_type="time series",
+        nchans=1,
+        foff=1.0,
+        fch1=1400.0,
+        nbits=32,
+        tsamp=tsamp,
+        tstart=50000.0,
+        nsamples=nsamp,
+    )
+    TimeSeries(data, header).to_tim(str(path))
+    return path
+
+
+class TestSppSearch:
+    def test_fft(self, tmpdir: str) -> None:
+        tim = _write_search_tim(Path(tmpdir) / "inj.tim")
+        out = str(Path(tmpdir) / "fft.csv")
+        runner = CliRunner()
+        result = runner.invoke(
+            spp_search.main,
+            ["fft", str(tim), "--nfolds", "1", "--pmax", "1", "-o", out],
+        )
+        assert result.exit_code == 0
+        assert Path(out).is_file()
+        text = Path(out).read_text()
+        assert "period_s" in text
+        assert "fft" in text
+
+    def test_pulses(self, tmpdir: str) -> None:
+        tim = _write_search_tim(Path(tmpdir) / "inj.tim")
+        out = str(Path(tmpdir) / "pulses.csv")
+        runner = CliRunner()
+        result = runner.invoke(spp_search.main, ["pulses", str(tim), "-o", out])
+        assert result.exit_code == 0
+        assert Path(out).is_file()
+
+    def test_cluster(self, tmpdir: str) -> None:
+        src = Path(tmpdir) / "cands.csv"
+        src.write_text(
+            "period_s,freq_hz,snr,dm,accel,nharm,bin,width_s,kind\n"
+            "1.0,1.0,20.0,0.0,0.0,1,10,nan,fft\n"
+            "0.5,2.0,12.0,0.0,0.0,2,20,nan,fft\n",
+        )
+        out = str(Path(tmpdir) / "clustered.csv")
+        runner = CliRunner()
+        result = runner.invoke(spp_search.main, ["cluster", str(src), "-o", out])
+        assert result.exit_code == 0
+        lines = Path(out).read_text().strip().splitlines()
+        assert len(lines) == 2  # header + loudest only
+
+    def test_ffa(self, tmpdir: str) -> None:
+        nsamp = 2048
+        tsamp = 0.001
+        path = Path(tmpdir) / "ffa.tim"
+        rng = np.random.default_rng(8)
+        data = rng.normal(0.0, 1.0, nsamp).astype(np.float32)
+        header = Header(
+            filename=path.name,
+            rawdatafile=path.name,
+            data_type="time series",
+            nchans=1,
+            foff=1.0,
+            fch1=1400.0,
+            nbits=32,
+            tsamp=tsamp,
+            tstart=50000.0,
+            nsamples=nsamp,
+        )
+        TimeSeries(data, header).to_tim(str(path))
+        out = str(Path(tmpdir) / "ffa.csv")
+        runner = CliRunner()
+        result = runner.invoke(
+            spp_search.main,
+            [
+                "ffa",
+                str(path),
+                "--pmin-ms",
+                "20",
+                "--pmax-ms",
+                "40",
+                "-o",
+                out,
+            ],
+        )
+        assert result.exit_code == 0
+        assert Path(out).is_file()
+
+    def test_fft_stdout(self, tmpdir: str) -> None:
+        tim = _write_search_tim(Path(tmpdir) / "inj.tim")
+        runner = CliRunner()
+        result = runner.invoke(
+            spp_search.main,
+            ["fft", str(tim), "--nfolds", "0", "--pmax", "1", "-o", "-"],
+        )
+        assert result.exit_code == 0
+        assert "period_s" in result.output
+
+    def test_help(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(spp_search.main, ["fft", "--help"])
+        assert result.exit_code == 0
+        assert "harmonic folds" in result.output

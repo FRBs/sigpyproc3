@@ -126,6 +126,11 @@ numpydoc_xref_aliases = {
     "Iterator": "collections.abc.Iterator",
     "Callable": "collections.abc.Callable",
     "Literal": "typing.Literal",
+    "CandidateTable": "sigpyproc.candidates.CandidateTable",
+    "QTable": "astropy.table.QTable",
+    "Header": "sigpyproc.header.Header",
+    "TimeSeries": "sigpyproc.timeseries.TimeSeries",
+    "PulsarParams": "sigpyproc.simulation.pulsar.PulsarParams",
 }
 numpydoc_xref_ignore = {
     "of",

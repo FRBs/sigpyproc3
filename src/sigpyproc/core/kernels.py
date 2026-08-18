@@ -1381,3 +1381,82 @@ def simulate_ism(
             chan_data = fftconvolve(chan_data, scat_prof)
         final_arr[ichan] = chan_data[:max_len]
     return final_arr
+
+
+@njit(cache=True, fastmath=True)
+def ffa_stage(block: np.ndarray) -> np.ndarray:
+    """Run one FFA binary tree on a ``(n_rows, period)`` fold block.
+
+    Rows are zero-padded to the next power of two. Stage ``s`` combines
+    pairs of length-``2**s`` children: for each already-computed child
+    shift, the parent is formed with 0 or 1 extra bin of relative delay
+    (later-arriving pulse in the second child, i.e. a slightly longer
+    period). After ``k`` stages the ``2**k`` output rows are folded
+    profiles at ``P, P + 1/N, …, P + (N-1)/N`` bins.
+
+    Parameters
+    ----------
+    block : ndarray
+        C-contiguous ``float32`` array of shape ``(n_rows, period)``.
+
+    Returns
+    -------
+    ndarray
+        Folded profiles, shape ``(n_pad, period)``.
+    """
+    n_rows, nbin = block.shape
+    n_pad = 1
+    k = 0
+    while n_pad < n_rows:
+        n_pad *= 2
+        k += 1
+    src = np.zeros((n_pad, nbin), dtype=np.float32)
+    src[:n_rows, :] = block
+    if k == 0:
+        return src
+    dst = np.empty((n_pad, nbin), dtype=np.float32)
+    for stage in range(k):
+        step = 1 << stage
+        group = step << 1
+        for i in range(0, n_pad, group):
+            for shift in range(step):
+                a = src[i + shift]
+                b = src[i + step + shift]
+                out0 = dst[i + 2 * shift]
+                out1 = dst[i + 2 * shift + 1]
+                for j in range(nbin):
+                    out0[j] = a[j] + b[j]
+                # extra=1: shift the second child earlier by 1 bin
+                out1[nbin - 1] = a[nbin - 1] + b[0]
+                for j in range(nbin - 1):
+                    out1[j] = a[j] + b[j + 1]
+        src, dst = dst, src
+    return src
+
+
+@njit(cache=True, fastmath=True)
+def ffa_profile_snr(profiles: np.ndarray) -> np.ndarray:
+    """Robust SNR of each FFA profile: ``(max - median) / (1.4826 * MAD)``.
+
+    Parameters
+    ----------
+    profiles : ndarray
+        Array of shape ``(n_profiles, period)``.
+
+    Returns
+    -------
+    ndarray
+        SNR per profile (``float32``). Zero if MAD is zero.
+    """
+    nprof = profiles.shape[0]
+    snrs = np.empty(nprof, dtype=np.float32)
+    mad_norm = np.float32(1.4826)
+    for i in range(nprof):
+        row = profiles[i]
+        med = np.median(row)
+        mad = np.median(np.abs(row - med))
+        if mad <= 0:
+            snrs[i] = 0.0
+        else:
+            snrs[i] = (np.max(row) - med) / (mad_norm * mad)
+    return snrs
