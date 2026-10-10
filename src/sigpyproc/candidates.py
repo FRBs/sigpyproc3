@@ -305,7 +305,7 @@ class CandidateTable:
         order = np.argsort(-_plain(self.table["snr"]))
         return CandidateTable(QTable(self.table[order]))
 
-    def cluster(  # noqa: C901
+    def cluster(
         self,
         *,
         period_tol: float = 1e-4,
@@ -358,9 +358,12 @@ class CandidateTable:
         eligible = np.isfinite(snr) & (snr >= snr_min)
         order = np.argsort(-snr)
 
-        kept_period: list[float] = []
+        targets = np.unique(
+            [k / n for n in range(1, harm_max + 1) for k in range(1, harm_max + 1)]
+        )
+        kept_period = np.empty(len(self), dtype=np.float64)
+        nkept = 0
         keep = np.zeros(len(self), dtype=bool)
-        ratios = [k / n for n in range(1, harm_max + 1) for k in range(1, harm_max + 1)]
         for idx in order:
             if not eligible[idx]:
                 continue
@@ -368,16 +371,15 @@ class CandidateTable:
             if not np.isfinite(p_i) or p_i <= 0:
                 keep[idx] = True
                 continue
-            harmonic = False
-            for p_j in kept_period:
-                ratio = p_i / p_j
-                for target in ratios:
-                    if abs(ratio - target) <= period_tol:
-                        harmonic = True
-                        break
-                if harmonic:
-                    break
-            if not harmonic:
-                keep[idx] = True
-                kept_period.append(float(p_i))
+            if nkept:
+                ratio = p_i / kept_period[:nkept]
+                pos = np.searchsorted(targets, ratio)
+                below = targets[np.clip(pos - 1, 0, targets.size - 1)]
+                above = targets[np.clip(pos, 0, targets.size - 1)]
+                nearest = np.minimum(np.abs(ratio - below), np.abs(ratio - above))
+                if np.any(nearest <= period_tol):
+                    continue
+            keep[idx] = True
+            kept_period[nkept] = p_i
+            nkept += 1
         return CandidateTable(QTable(self.table[keep])).sort_by_snr()

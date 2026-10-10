@@ -142,7 +142,7 @@ class TestFilterbankBlock:
         dm = 50
         dmsteps = 256
         fil = FilReader(filfile_8bit_1)
-        block = fil.read_block(100, 1024)
+        block = fil.read_block(100, 256)
         block_dmt = block.dmt_transform(dm, dmsteps)
         np.testing.assert_equal(block_dmt.ndms, dmsteps)
         np.testing.assert_equal(block_dmt.nsamples, block.nsamples)

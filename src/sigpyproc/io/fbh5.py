@@ -6,7 +6,7 @@ This module contains functions for parsing Sigproc-style HDF5 headers.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import h5py
 
@@ -53,7 +53,7 @@ def parse_header(filename: str | Path) -> dict:
         if "data" not in h5file:
             msg = "No data block found in file"
             raise OSError(msg)
-        header = {}
+        header: dict[str, Any] = {}
         for key, val in h5file["data"].attrs.items():
             header[key] = val.decode() if isinstance(val, bytes) else val
         axis_map = map_dimensions(header["DIMENSION_LABELS"])

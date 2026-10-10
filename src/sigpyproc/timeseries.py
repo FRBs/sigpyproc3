@@ -5,15 +5,13 @@ This module contains the TimeSeries class for handling 1D time series data.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
-from numba import typed
 
 from sigpyproc import fourierseries
 from sigpyproc.candidates import CandidateTable
-from sigpyproc.core import kernels, stats
-from sigpyproc.core.filters import MatchedFilter, Template
+from sigpyproc.core import algorithms, kernels, stats
 from sigpyproc.foldedcube import FoldedData
 from sigpyproc.header import Header
 from sigpyproc.utils import validate_path
@@ -26,8 +24,19 @@ if TYPE_CHECKING:
 
     from sigpyproc.core.custom_types import FilterMethods, LocMethods, ScaleMethods
 
-_FFA_MAX_NSAMP = 1 << 24
-_FFA_WIDTH_REBINS = (1, 2, 4, 8, 16)
+PadMode = Literal[
+    "constant",
+    "edge",
+    "linear_ramp",
+    "maximum",
+    "mean",
+    "median",
+    "minimum",
+    "reflect",
+    "symmetric",
+    "wrap",
+    "empty",
+]
 
 
 class TimeSeries:
@@ -137,7 +146,12 @@ class TimeSeries:
         hdr_changes = {"tsamp": self.header.tsamp * factor, "nsamples": len(tim_data)}
         return TimeSeries(tim_data, self.header.new_header(hdr_changes))
 
-    def pad(self, npad: int, mode: str = "mean", **pad_kwargs: dict) -> TimeSeries:
+    def pad(
+        self,
+        npad: int,
+        mode: PadMode = "mean",
+        **pad_kwargs: Any,
+    ) -> TimeSeries:
         """Pad a time series with mean valued data.
 
         Parameters
@@ -146,7 +160,7 @@ class TimeSeries:
             Number of bins to add at the end of the time series.
         mode : str, optional
             Padding mode (as used by `numpy.pad`), by default 'mean'.
-        **pad_kwargs : dict
+        **pad_kwargs : Any
             Keyword arguments for `numpy.pad`.
 
         Returns
@@ -154,7 +168,7 @@ class TimeSeries:
         TimeSeries
             Padded time series.
         """
-        tim_data = np.pad(self.data, (0, npad), mode=mode, **pad_kwargs)  # type: ignore[call-overload]
+        tim_data = np.pad(self.data, (0, npad), mode=mode, **pad_kwargs)
         hdr_changes = {"nsamples": len(tim_data)}
         return TimeSeries(tim_data, self.header.new_header(hdr_changes))
 
@@ -513,50 +527,16 @@ class TimeSeries:
             msg = "deadtime must be >= 0"
             raise ValueError(msg)
 
-        zscores = stats.estimate_zscore(
+        return algorithms.boxcar_pulse_search(
             self.data,
-            loc_method="median",
-            scale_method="iqr",
+            self.header.tsamp,
+            snr_min=snr_min,
+            max_width=max_width,
+            spacing_factor=spacing_factor,
+            deadtime=deadtime,
+            dm=self.header.dm,
+            accel=self.header.accel,
         )
-        widths = MatchedFilter.get_box_width_spacing(max_width, spacing_factor)
-        templates = [Template.gen_boxcar(int(width)) for width in widths]
-        if any(temp.data.size > self.nsamples for temp in templates):
-            msg = "max_width is larger than the time series"
-            raise ValueError(msg)
-        convs = kernels.convolve_templates(
-            zscores.data,
-            typed.List([temp.data for temp in templates]),
-            typed.List([temp.ref_bin for temp in templates]),
-        )
-        best_idx = np.argmax(convs, axis=0)
-        best_snr = np.max(convs, axis=0).astype(np.float64, copy=True)
-
-        rows: list[dict[str, object]] = []
-        nsamp = best_snr.size
-        tsamp = self.header.tsamp
-        while True:
-            peak = int(np.argmax(best_snr))
-            peak_snr = float(best_snr[peak])
-            if peak_snr < snr_min or not np.isfinite(peak_snr):
-                break
-            width_bins = int(widths[best_idx[peak]])
-            rows.append(
-                {
-                    "period_s": np.nan,
-                    "freq_hz": np.nan,
-                    "snr": peak_snr,
-                    "dm": self.header.dm,
-                    "accel": self.header.accel,
-                    "nharm": 1,
-                    "bin": peak,
-                    "width_s": width_bins * tsamp,
-                    "kind": "pulse",
-                },
-            )
-            lo = max(0, peak - deadtime)
-            hi = min(nsamp, peak + deadtime + 1)
-            best_snr[lo:hi] = -np.inf
-        return CandidateTable.from_rows(rows).sort_by_snr()
 
     def ffa(
         self,
@@ -624,84 +604,26 @@ class TimeSeries:
             msg = "npeaks must be at least 1"
             raise ValueError(msg)
 
-        rebins = _FFA_WIDTH_REBINS if search_width else (nrebin,)
-        tables = [
-            self._ffa_one_rebin(pmin, pmax, rebin, snr_min, zero_pad=zero_pad)
-            for rebin in rebins
-        ]
+        rebins = algorithms.FFA_WIDTH_REBINS if search_width else (nrebin,)
+        tables = []
+        for rebin in rebins:
+            series = self.downsample(rebin) if rebin > 1 else self
+            tables.append(
+                algorithms.ffa_search(
+                    series.data,
+                    series.header.tsamp,
+                    pmin,
+                    pmax,
+                    snr_min=snr_min,
+                    zero_pad=zero_pad,
+                    dm=self.header.dm,
+                    accel=self.header.accel,
+                ),
+            )
         combined = CandidateTable.concatenate(tables).sort_by_snr()
         if len(combined) <= npeaks:
             return combined
         return combined[:npeaks]
-
-    def _ffa_one_rebin(
-        self,
-        pmin: float,
-        pmax: float,
-        nrebin: int,
-        snr_min: float,
-        *,
-        zero_pad: bool,
-    ) -> CandidateTable:
-        series = self.downsample(nrebin) if nrebin > 1 else self
-        if series.nsamples > _FFA_MAX_NSAMP:
-            series = TimeSeries(
-                series.data[:_FFA_MAX_NSAMP],
-                series.header.new_header({"nsamples": _FFA_MAX_NSAMP}),
-            )
-        if zero_pad:
-            n_pow2 = 1 << (series.nsamples - 1).bit_length()
-            if n_pow2 > series.nsamples:
-                padded = np.pad(series.data, (0, n_pow2 - series.nsamples))
-                series = TimeSeries(
-                    padded,
-                    series.header.new_header({"nsamples": n_pow2}),
-                )
-        tsamp = series.header.tsamp
-        pmin_bins = max(2, round(pmin / tsamp))
-        pmax_bins = min(series.nsamples // 2, round(pmax / tsamp))
-        if pmax_bins < pmin_bins:
-            return CandidateTable.empty()
-
-        data = np.ascontiguousarray(series.data, dtype=np.float32)
-        rows: list[dict[str, object]] = []
-        width_s = tsamp
-        dm = self.header.dm
-        accel = self.header.accel
-        for p_bins in range(pmin_bins, pmax_bins + 1):
-            n_rows = data.size // p_bins
-            if n_rows < 2:
-                continue
-            folded = data[: n_rows * p_bins].reshape(n_rows, p_bins)
-            block = np.ascontiguousarray(folded)
-            profiles = kernels.ffa_stage(block)
-            snrs = kernels.ffa_profile_snr(profiles)
-            j_best = int(np.argmax(snrs))
-            snr_best = float(snrs[j_best])
-            if snr_best < snr_min:
-                continue
-            n_pad = profiles.shape[0]
-            # Wide pulses make every tree shift look equally loud; the
-            # integer trial is then the honest period. Use the fractional
-            # FFA offset only when it is clearly preferred.
-            if snr_best <= 1.1 * float(snrs[0]):
-                p_eff = p_bins * tsamp
-            else:
-                p_eff = (p_bins + j_best / n_pad) * tsamp
-            rows.append(
-                {
-                    "period_s": p_eff,
-                    "freq_hz": 1.0 / p_eff,
-                    "snr": snr_best,
-                    "dm": dm,
-                    "accel": accel,
-                    "nharm": 1,
-                    "bin": p_bins,
-                    "width_s": width_s,
-                    "kind": "ffa",
-                },
-            )
-        return CandidateTable.from_rows(rows)
 
     def to_dat(self, basename: str | None = None) -> str:
         """Write time series in presto ``.dat`` format.

@@ -945,8 +945,8 @@ def detrend_2d(arr: np.ndarray) -> np.ndarray:
 @njit(cache=True, fastmath=True)
 def convolve_templates(
     data: np.ndarray,
-    temp_bank: types.List[types.Array],
-    ref_bin: types.List[int],
+    temp_bank: list[np.ndarray],
+    ref_bin: list[int],
 ) -> np.ndarray:
     """
     Convolve the data with the templates in the template bank.

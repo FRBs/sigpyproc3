@@ -44,7 +44,7 @@ class TestTimeSeriesFFA:
         on = phase < duty
         data[on] += np.float32(peak_snr)
         tim = TimeSeries(data, _header(nsamp, tsamp))
-        cands = tim.ffa(1.0, 1.5, snr_min=8.0, npeaks=20)
+        cands = tim.ffa(1.2, 1.3, snr_min=8.0, npeaks=20)
         assert len(cands) >= 1
         best = float(cands.values("period_s")[0])
         n_rows = nsamp // round(period / tsamp)

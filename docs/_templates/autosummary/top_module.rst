@@ -29,6 +29,7 @@ sigpyproc.core
    :toctree:
    :template: autosummary/module.rst
 
+   ~sigpyproc.core.algorithms
    ~sigpyproc.core.filters
    ~sigpyproc.core.kernels
    ~sigpyproc.core.rfi

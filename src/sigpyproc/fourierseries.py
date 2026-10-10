@@ -11,8 +11,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from sigpyproc import timeseries
-from sigpyproc.candidates import CandidateTable
-from sigpyproc.core import kernels, stats
+from sigpyproc.core import algorithms, kernels
 from sigpyproc.foldedcube import Profile
 from sigpyproc.header import Header
 from sigpyproc.utils import validate_path
@@ -22,6 +21,8 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from numpy.typing import ArrayLike, NDArray
+
+    from sigpyproc.candidates import CandidateTable
 
 
 class PowerSpectrum:
@@ -169,9 +170,9 @@ class PowerSpectrum:
         every bin with period ``> pmax`` are skipped. A local maximum is
         strictly greater than both neighbours.
 
-        Periods are reported at the fundamental. ``nharm`` undoes the
-        ``tsamp * nharm`` convention of :meth:`harmonic_fold` so a folded
-        spectrum is not assigned an ``nharm``-times-too-long period.
+        Folded spectra use ``tobs / nharm`` for the frequency axis. For
+        non-sinusoidal signals the reported period can be a harmonic of the
+        true period (see the search tutorial).
 
         Parameters
         ----------
@@ -209,59 +210,17 @@ class PowerSpectrum:
             msg = "nharm must be at least 1"
             raise ValueError(msg)
 
-        spec = np.asarray(self.data, dtype=np.float64)
-        nfreq = spec.size
-        window = max(128, nfreq // 64)
-        if window >= nfreq:
-            window = nfreq if nfreq % 2 == 1 else max(nfreq - 1, 1)
-        if window < 3:
-            med = np.full(nfreq, np.median(spec))
-            mad = np.full(nfreq, np.median(np.abs(spec - med[0])))
-        else:
-            med = np.asarray(
-                stats.running_filter(spec, window, "median"),
-                dtype=np.float64,
-            )
-            mad = np.asarray(
-                stats.running_filter(np.abs(spec - med), window, "median"),
-                dtype=np.float64,
-            )
-        scale = np.where(mad > 0.0, 1.4826 * mad, 1.0)
-        snr = (spec - med) / scale
-
-        # harmonic_fold multiplies tsamp by nharm; undo that for the fundamental.
-        tobs = self.header.tobs / nharm
-        r_min = max(1, int(np.ceil(tobs / pmax)))
-        r_max = nfreq - 1
-        if r_min >= r_max:
-            return CandidateTable.empty()
-
-        local = (snr[1:-1] > snr[:-2]) & (snr[1:-1] > snr[2:]) & (snr[1:-1] >= snr_min)
-        peak_bins = np.flatnonzero(local) + 1
-        peak_bins = peak_bins[(peak_bins >= r_min) & (peak_bins < r_max)]
-        if peak_bins.size == 0:
-            return CandidateTable.empty()
-
-        peak_snr = snr[peak_bins]
-        order = np.argsort(-peak_snr)[:npeaks]
-        peak_bins = peak_bins[order]
-        peak_snr = peak_snr[order]
-        freq = peak_bins / tobs
-        rows = [
-            {
-                "period_s": 1.0 / f_i,
-                "freq_hz": f_i,
-                "snr": float(s_i),
-                "dm": dm,
-                "accel": accel,
-                "nharm": nharm,
-                "bin": int(r_i),
-                "width_s": np.nan,
-                "kind": "fft",
-            }
-            for r_i, s_i, f_i in zip(peak_bins, peak_snr, freq, strict=True)
-        ]
-        return CandidateTable.from_rows(rows)
+        # harmonic_fold multiplies tsamp by nharm; divide it out for the fundamental.
+        return algorithms.pick_spectral_peaks(
+            self.data,
+            self.header.tobs / nharm,
+            npeaks=npeaks,
+            snr_min=snr_min,
+            pmax=pmax,
+            dm=dm,
+            accel=accel,
+            nharm=nharm,
+        )
 
     def _check_input(self) -> None:
         if not isinstance(self.header, Header):

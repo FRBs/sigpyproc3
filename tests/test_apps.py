@@ -371,6 +371,10 @@ class TestSppClean:
         out = FilReader(tmpfile)
         src = FilReader(filfile_8bit_1)
         assert out.header.nchans == src.header.nchans
+        zapped = out.read_block(0, out.header.nsamples).data
+        original = src.read_block(0, src.header.nsamples).data
+        np.testing.assert_array_equal(zapped[:2], 0)
+        np.testing.assert_array_equal(zapped[2:], original[2:])
 
     def test_zap_times(self, filfile_8bit_1: str, tmpfile: str) -> None:
         runner = CliRunner()
@@ -584,6 +588,7 @@ class TestSppSearch:
         )
         assert result.exit_code == 0
         assert "period_s" in result.output
+        assert result.output.splitlines()[-1] != "-"
 
     def test_help(self) -> None:
         runner = CliRunner()

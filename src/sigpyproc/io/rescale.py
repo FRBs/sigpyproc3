@@ -70,7 +70,7 @@ class Rescale:
         return normdata.ravel()
 
     def _compute_stats(self, data: NDArray[np.float32]) -> None:
-        _, nsamples = data.shape
+        nsamples = data.shape[0]
         self.sum_ar += np.sum(data, axis=0)
         self.sumsq_ar += np.sum(data**2, axis=0)
         self.isample += nsamples

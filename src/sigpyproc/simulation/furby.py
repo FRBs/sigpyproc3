@@ -79,7 +79,7 @@ class PulseParams:
     tau0: float = attrs.field(default=1e-3)
     spec_kind: SpecSimulMethods = attrs.field(default="flat")
     spec_idx: float = attrs.field(default=-2.0)
-    os_fact: int = attrs.field(default=10, validator=attrs.validators.ge(1))  # ty: ignore[no-matching-overload]
+    os_fact: int = attrs.field(default=10, validator=attrs.validators.ge(1))
     noise: float = attrs.field(default=1.0, validator=attrs.validators.ge(0.0))
 
 

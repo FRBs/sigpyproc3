@@ -111,7 +111,11 @@ print(hits.table["nharm"][:5])
 `nfolds` is the number of **folds**, not “use harmonics 1…n”.
 `nfolds=4` searches the unfolded spectrum plus 2, 4, 8 and 16 harmonics.
 
-Periods are reported at the **fundamental**, even for a folded spectrum.
+Folded spectra are not yet reliable for non-sinusoidal pulses. For a narrow
+pulse train the strongest candidate can be a harmonic of the true period, and
+the fold-to-period mapping is under review. For pulsed signals, prefer
+{py:meth}`~sigpyproc.timeseries.TimeSeries.ffa` (or `find_pulses` for single
+pulses). The FFT path is reliable for near-sinusoidal signals.
 
 ### Cluster harmonic families
 

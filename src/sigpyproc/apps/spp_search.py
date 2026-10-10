@@ -21,16 +21,16 @@ def _write_cands(
     outfile: str | None,
     source: str,
     tag: str,
-) -> str:
+) -> None:
     if outfile is None:
         outfile = f"{Path(source).stem}_{tag}.csv"
     if outfile == "-":
         buf = StringIO()
         cands.to_csv(buf)
         click.echo(buf.getvalue(), nl=False)
-        return "-"
+        return
     cands.to_csv(outfile)
-    return outfile
+    click.echo(outfile)
 
 
 @main.command()
@@ -71,7 +71,7 @@ def fft(
         snr_min=snr,
         npeaks=npeaks,
     )
-    click.echo(_write_cands(cands, outfile, timfile, "fft"))
+    _write_cands(cands, outfile, timfile, "fft")
 
 
 @main.command()
@@ -112,7 +112,7 @@ def pulses(
         spacing_factor=spacing_factor,
         deadtime=deadtime,
     )
-    click.echo(_write_cands(cands, outfile, timfile, "pulses"))
+    _write_cands(cands, outfile, timfile, "pulses")
 
 
 @main.command()
@@ -173,7 +173,7 @@ def ffa(
         npeaks=npeaks,
         zero_pad=zero_pad,
     )
-    click.echo(_write_cands(cands, outfile, timfile, "ffa"))
+    _write_cands(cands, outfile, timfile, "ffa")
 
 
 @main.command()
@@ -206,7 +206,7 @@ def cluster(
         harm_max=harm_max,
         snr_min=snr,
     )
-    click.echo(_write_cands(cands, outfile, candfile, "cluster"))
+    _write_cands(cands, outfile, candfile, "cluster")
 
 
 if __name__ == "__main__":

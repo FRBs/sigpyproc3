@@ -54,8 +54,10 @@ New functionality typically involves:
 4. Documenting the public API
 
 Search (`TimeSeries.search` / `find_pulses` / `ffa`, `PowerSpectrum.find_peaks`)
-belongs on those objects, not in `apps/`. `spp_search` is a thin Click
-wrapper. Do not put search logic in `io/`.
+is called from those objects. The algorithms themselves (boxcar pulse search,
+FFA, spectral peak picking) live in `sigpyproc.core.algorithms` on plain arrays,
+so the data classes stay readable. `spp_search` is a thin Click wrapper.
+Do not put search logic in `apps/` or `io/`.
 
 ---
 

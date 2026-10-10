@@ -1,5 +1,5 @@
 [build-system]
-requires = ["uv_build>=0.10.4,<0.11.0"]
+requires = ["uv_build>=0.12.0"]
 build-backend = "uv_build"
 
 [project]
@@ -14,7 +14,7 @@ authors = [
     { name = "Ewan Barr" },
 ]
 maintainers = [{ name = "Pravir Kumar", email = "pravirka@gmail.com" }]
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 classifiers = [
     "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.12",
@@ -104,6 +104,7 @@ ignore = ["COM812", "CPY001", "D1", "D301", "PLR2004", "G004"]
 
 [tool.ruff.lint.per-file-ignores]
 "src/sigpyproc/core/kernels.py" = ["ARG001"]
+"src/sigpyproc/timeseries.py" = ["ANN401"] # numpy.pad kwargs depend on mode
 "src/sigpyproc/apps/spp_fake.py" = ["PLR0913", "PLR0917"]
 "tests/**/*.py" = ["S101", "FBT", "PLR2004", "PT011", "SLF001"]
 "docs/**" = ["INP001", "ARG001", "ANN401"]
@@ -129,6 +130,12 @@ include = ["tests/test_stats.py"]
 
 [tool.ty.overrides.rules]
 invalid-argument-type = "ignore"
+
+[[tool.ty.overrides]]
+include = ["src/sigpyproc/core/kernels.py"]
+
+[tool.ty.overrides.rules]
+no-matching-overload = "ignore" # numba Dispatcher.py_func is not modelled by ty
 
 [tool.pytest]
 minversion = "9.0"

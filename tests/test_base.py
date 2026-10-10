@@ -108,8 +108,20 @@ class TestFilterbank:
             fil.extract_samps(start=-10, nsamps=nsamps)
 
     @pytest.mark.parametrize("chans", [None, np.array([1, 2, 3, 4, 5])])
-    def test_extract_chans(self, filfile_4bit: str, chans: np.ndarray | None) -> None:
-        fil = FilReader(filfile_4bit)
+    def test_extract_chans(
+        self,
+        filfile_4bit: str,
+        chans: np.ndarray | None,
+        tmpdir: str,
+    ) -> None:
+        # A 32-channel band keeps the all-channel case cheap.
+        band = FilReader(filfile_4bit).extract_bands(
+            chanstart=0,
+            nchans=32,
+            chanpersub=32,
+            outfile_base=str(Path(tmpdir) / "chanband"),
+        )[0]
+        fil = FilReader(band)
         timfiles = fil.extract_chans(chans)
         expected_chans = (
             np.arange(fil.header.nchans) if chans is None else np.asarray(chans)
@@ -174,6 +186,17 @@ class TestFilterbank:
             datalen,
             new_fil.header.nsamples * new_fil.header.nchans,
         )
+
+    def test_requantize_values_are_rescaled(
+        self, filfile_8bit_1: str, tmpfile: str
+    ) -> None:
+        fil = FilReader(filfile_8bit_1)
+        outfile = fil.requantize(nbits_out=4, outfile_name=tmpfile)
+        data = FilReader(outfile).read_block(0, 256).data.astype(np.float64)
+        assert data.min() >= 0
+        assert data.max() <= 15
+        assert abs(data.mean() - 7.5) < 1.0
+        assert data.std() > 0.5
 
     def test_requantize_remove_bandpass(
         self, filfile_8bit_1: str, tmpfile: str
