@@ -15,8 +15,8 @@ import numpy as np
 from sigpyproc.core import kernels
 from sigpyproc.core.rfi import RFIMask, zap_block
 from sigpyproc.core.stats import ChannelStats
+from sigpyproc.digifil import DigifilConfig, digifil
 from sigpyproc.foldedcube import FoldedData
-from sigpyproc.io.rescale import Rescale
 from sigpyproc.timeseries import TimeSeries
 from sigpyproc.utils import get_logger
 
@@ -972,30 +972,36 @@ class Filterbank(ABC):
         nbits_out: int,
         outfile_name: str | None = None,
         *,
-        remove_bandpass: bool = False,
-        gulp: int = 16384,
+        rescale_seconds: float = 10.0,
+        gulp: int | None = None,
         start: int = 0,
         nsamps: int | None = None,
-        **plan_kwargs: Unpack[PlanKwargs],
     ) -> str:
-        """Requantize the data and write to a new file.
+        """Requantize the data and write to a new sigproc file.
+
+        This follows dspsr ``digifil``. The data are rescaled to zero mean and unit
+        variance over ``rescale_seconds`` (which subtracts the mean bandpass, per
+        channel, over each interval) and digitised to ``nbits_out``. Sub-byte output
+        is packed least-significant-bit first, as dspsr does. See
+        :func:`sigpyproc.digifil.digifil` for the full pipeline.
 
         Parameters
         ----------
         nbits_out : int
-            Number of bits into requantize the data.
+            Number of bits to requantize the data to (1, 2, 4, 8, 16 or 32).
+            ``32`` writes float32 samples without rescaling.
         outfile_name : str, optional
             Name of output file, by default ``basename_digi.fil``.
-        remove_bandpass : bool, optional
-            Subtract the mean bandpass before rescaling, by default False.
+        rescale_seconds : float, optional
+            Rescale interval in seconds. Positive values rescale and so remove the
+            bandpass; 0 keeps the data unscaled, by default 10.
         gulp : int, optional
-            Number of samples in each read, by default 16384.
+            Input samples per block. The rescale depends on block boundaries, so by
+            default this is dspsr's block (see :func:`sigpyproc.digifil.default_gulp`).
         start : int, optional
             Start sample, by default 0.
         nsamps : int, optional
             Number of samples to read, by default all.
-        **plan_kwargs : dict
-            Keyword arguments for :func:`read_plan`.
 
         Returns
         -------
@@ -1005,7 +1011,7 @@ class Filterbank(ABC):
         Raises
         ------
         ValueError
-            If ``nbits_out`` is less than 1 or greater than 32.
+            If ``nbits_out`` is not one of 1, 2, 4, 8, 16 or 32.
         """
         if nbits_out not in {1, 2, 4, 8, 16, 32}:
             msg = f"nbits_out must be one of {1, 2, 4, 8, 16, 32}, got {nbits_out}"
@@ -1013,40 +1019,18 @@ class Filterbank(ABC):
         if outfile_name is None:
             outfile_name = f"{self.header.basename}_digi.fil"
 
-        need_quantize = nbits_out < 32
-        out_file = self.header.prep_outfile(
-            outfile_name,
-            nbits=nbits_out,
-            rescale=need_quantize,
-        )
-        bpass = None
-        if remove_bandpass:
-            bpass = self.bandpass(
-                method="mean",
-                gulp=gulp,
-                start=start,
-                nsamps=nsamps,
-                **plan_kwargs,
-            ).data
-        rescaler = (
-            Rescale(self.header.nchans, rescale_samples=gulp) if need_quantize else None
-        )
-        nchans = self.header.nchans
-        for nsamps_r, _, data in self.read_plan(
+        config = DigifilConfig(
+            nbits=-32 if nbits_out == 32 else nbits_out,
             gulp=gulp,
+            rescale_seconds=0.0 if nbits_out == 32 else rescale_seconds,
+        )
+        return digifil(
+            self,
+            outfile_name,
+            config,
             start=start,
             nsamps=nsamps,
-            **plan_kwargs,
-        ):
-            arr = np.ascontiguousarray(data[: nsamps_r * nchans], dtype=np.float32)
-            if bpass is not None:
-                arr = arr.reshape(nsamps_r, nchans) - bpass
-                arr = arr.ravel()
-            if rescaler is not None:
-                arr = rescaler.execute(arr)
-            out_file.cwrite(arr)
-        out_file.close()
-        return outfile_name
+        )
 
     def remove_zerodm(
         self,

@@ -26,6 +26,7 @@ to use the same methods from Python.
 | `spp_fold` | Fold to `.npz` + ASCII profile |
 | `spp_fake` | `noise` / `pulsar` / `pulse` filterbanks |
 | `spp_search` | `fft` / `pulses` / `ffa` / `cluster` on a `.tim` |
+| `spp_digifil` | Convert PSRFITS / filterbank to N-bit filterbank (dspsr `digifil` numerics) |
 
 `spp_search` writes **CSV** (or stdout with `-o -`). Periods on the
 Python API are in seconds; `spp_search ffa --pmin-ms` / `--pmax-ms`
@@ -106,5 +107,11 @@ accept milliseconds for SIGPROC muscle memory and convert immediately.
 ```{eval-rst}
 .. click:: sigpyproc.apps.spp_search:main
    :prog: spp_search
+   :nested: full
+```
+
+```{eval-rst}
+.. click:: sigpyproc.apps.spp_digifil:main
+   :prog: spp_digifil
    :nested: full
 ```

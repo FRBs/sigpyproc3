@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from astropy import units
+from astropy.coordinates import Angle
 
-from sigpyproc.header import Header
+from sigpyproc.header import Header, _fill_horizon
 from sigpyproc.io import sigproc
 
 
@@ -112,3 +114,22 @@ class TestHeader:
     def test_from_pfits_otherfile(self, inffile: str) -> None:
         with np.testing.assert_raises(OSError):
             Header.from_pfits(inffile)
+
+
+class TestHorizon:
+    def test_pfits_angles_are_computed(self, fitsfile_4bit: str) -> None:
+        hdr = Header.from_pfits(fitsfile_4bit)
+        assert 0 < hdr.azimuth.deg < 360
+        assert 0 < hdr.zenith.deg < 180
+        out = hdr.to_sigproc()
+        np.testing.assert_allclose(out["az_start"], hdr.azimuth.deg)
+        np.testing.assert_allclose(out["za_start"], hdr.zenith.deg)
+
+    def test_known_angles_are_kept(self, filfile_8bit_1: str) -> None:
+        hdr = Header.from_sigproc(filfile_8bit_1)
+        values = {"telescope": "Parkes", "coord": hdr.coord, "tstart": hdr.tstart}
+        values["azimuth"] = Angle(12.5 * units.deg)
+        values["zenith"] = Angle(30.0 * units.deg)
+        _fill_horizon(values)
+        assert values["azimuth"].deg == 12.5
+        assert values["zenith"].deg == 30.0

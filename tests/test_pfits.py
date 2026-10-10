@@ -5,6 +5,7 @@ from astropy.time import Time
 
 from sigpyproc.io import pfits
 from sigpyproc.io.bits import BitsInfo
+from sigpyproc.readers import PFITSReader
 from sigpyproc.utils import FrequencyChannels
 
 
@@ -85,3 +86,15 @@ class TestPFITSFile:
                 data.shape,
                 (fitsfile.sub_hdr.subint_samples * nsub, fitsfile.sub_hdr.nchans),
             )
+
+
+class TestPFITSReaderReadPlan:
+    def test_blocks_cover_file(self, fitsfile_4bit: str) -> None:
+        reader = PFITSReader(fitsfile_4bit)
+        nsamps = reader.header.nsamples
+        blocks = list(reader.read_plan(gulp=300, quiet=True))
+        assert sum(block for block, _, _ in blocks) == nsamps
+        assert all(block <= 300 for block, _, _ in blocks)
+        data = np.concatenate([d for _, _, d in blocks])
+        expected = reader.read_block(0, nsamps).data.T.ravel()
+        np.testing.assert_allclose(data, expected, rtol=1e-6)

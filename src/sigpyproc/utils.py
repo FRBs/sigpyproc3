@@ -13,7 +13,9 @@ from typing import TYPE_CHECKING
 import attrs
 import numpy as np
 from astropy import units
+from astropy.coordinates import Angle, EarthLocation, SkyCoord
 from astropy.stats import gaussian_fwhm_to_sigma
+from astropy.time import Time
 from rich.logging import RichHandler
 
 if TYPE_CHECKING:
@@ -372,6 +374,53 @@ def pad_centre(array: np.ndarray, target_length: int) -> np.ndarray:
         mode="constant",
     )
 
+
+def horizon_angles(
+    telescope: str,
+    coord: SkyCoord,
+    tstart: float,
+) -> tuple[Angle, Angle] | None:
+    """Return the source azimuth and zenith angle at the start of an observation.
+
+    The angles follow dspsr: the geocentric latitude and longitude of the telescope
+    site, the catalogue (J2000) position of the source, and the mean sidereal time at
+    ``tstart``. Refraction is ignored.
+
+    Parameters
+    ----------
+    telescope : str
+        Telescope name, looked up as an astropy site (for example ``Parkes``).
+    coord : SkyCoord
+        Source position.
+    tstart : float
+        Start of the observation as an MJD.
+
+    Returns
+    -------
+    tuple[Angle, Angle] | None
+        Azimuth (east of north) and zenith angle, or None if the site is unknown.
+    """
+    try:
+        site = EarthLocation.of_site(telescope.lower())
+    except KeyError:
+        return None
+    x, y, z = (float(c.to_value(units.m)) for c in (site.x, site.y, site.z))
+    lat = np.arctan2(z, np.hypot(x, y))
+    lon = np.arctan2(y, x)
+    ra = coord.ra.radian
+    dec = coord.dec.radian
+    gmst = Time(tstart, format="mjd", scale="utc").sidereal_time("mean", "greenwich")
+    hour_angle = gmst.radian + lon - ra
+    sin_alt = np.sin(lat) * np.sin(dec) + np.cos(lat) * np.cos(dec) * np.cos(hour_angle)
+    alt = np.arcsin(sin_alt)
+    az = np.arctan2(
+        -np.cos(dec) * np.sin(hour_angle),
+        np.sin(dec) * np.cos(lat) - np.cos(dec) * np.sin(lat) * np.cos(hour_angle),
+    )
+    return (
+        Angle(float(np.degrees(az) % 360.0) * units.deg),
+        Angle(float(90.0 - np.degrees(alt)) * units.deg),
+    )
 
 def _validate_freqs(
     instance: FrequencyChannels,  # noqa: ARG001

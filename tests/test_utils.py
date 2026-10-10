@@ -3,6 +3,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from astropy.coordinates import SkyCoord
 from rich.logging import RichHandler
 
 from sigpyproc import utils
@@ -131,6 +132,12 @@ class TestLogger:
         assert len(logger.handlers) == 2
         assert isinstance(logger.handlers[1], logging.FileHandler)
         assert logger.handlers[1].baseFilename == tmpfile
+
+
+class TestHorizonAngles:
+    def test_unknown_telescope_gives_none(self) -> None:
+        coord = SkyCoord(0, 0, unit="deg")
+        assert utils.horizon_angles("NoSuchTelescope", coord, 59000.0) is None
 
 
 class TestFrequencyChannels:

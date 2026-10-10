@@ -338,16 +338,19 @@ class PFITSReader(Filterbank):
         if lastread != 0:
             blocks.append((nreads, lastread, 0))
 
+        pos = start
         for ii, block, skip in track(blocks, description=description, disable=quiet):
-            startsub, startsamp = divmod(start, self.sub_hdr.subint_samples)
-            nsubs = (
-                nsamps + self.sub_hdr.subint_samples - 1
-            ) // self.sub_hdr.subint_samples
-
-            data = self._fitsfile.read_subints(startsub, nsubs)
-            data = data[startsamp : startsamp + nsamps]
-            start += block + skip
+            data = self._read_samples(pos, block)
+            pos += block + skip
             yield block, ii, data.ravel()
+
+    def _read_samples(self, start: int, nsamps: int) -> np.ndarray:
+        """Read ``nsamps`` samples from ``start``, reading only the subints needed."""
+        subint = self.sub_hdr.subint_samples
+        startsub, startsamp = divmod(start, subint)
+        nsubs = (startsamp + nsamps + subint - 1) // subint
+        data = self._fitsfile.read_subints(startsub, nsubs)
+        return data[startsamp : startsamp + nsamps]
 
 
 @attrs.define(auto_attribs=True, slots=True)

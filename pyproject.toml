@@ -85,11 +85,11 @@ spp_dedisperse = "sigpyproc.apps.spp_dedisperse:main"
 spp_fold = "sigpyproc.apps.spp_fold:main"
 spp_fake = "sigpyproc.apps.spp_fake:main"
 spp_search = "sigpyproc.apps.spp_search:main"
+spp_digifil = "sigpyproc.apps.spp_digifil:main"
 
 
 [tool.ruff]
 include = ["pyproject.toml", "src/**/*.py", "tests/**/*.py", "docs/**/*.py"]
-exclude = ["src/sigpyproc/apps/spp_digifil.py"]
 line-length = 88
 indent-width = 4
 target-version = "py312"
@@ -108,6 +108,7 @@ ignore = ["COM812", "CPY001", "D1", "D301", "PLR2004", "G004"]
 "src/sigpyproc/apps/spp_fake.py" = ["PLR0913", "PLR0917"]
 "tests/**/*.py" = ["S101", "FBT", "PLR2004", "PT011", "SLF001"]
 "docs/**" = ["INP001", "ARG001", "ANN401"]
+"bench/**" = ["INP001", "S603"]
 
 [tool.ruff.lint.pylint]
 max-args = 15
@@ -120,7 +121,7 @@ python-version = "3.12"
 
 [tool.ty.src]
 include = ["src"]
-exclude = ["tests", "src/sigpyproc/apps/spp_digifil.py"]
+exclude = ["tests"]
 
 [tool.ty.rules]
 not-iterable = "ignore" # For Numba prange

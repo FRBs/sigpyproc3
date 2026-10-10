@@ -174,8 +174,8 @@ class BitsInfo:
     }
     default_bitorder: ClassVar[dict[int, str]] = {
         1: "little",
-        2: "big",
-        4: "big",
+        2: "little",
+        4: "little",
         8: "invalid",
         16: "invalid",
         32: "invalid",

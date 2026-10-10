@@ -23,6 +23,24 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 
+def _fill_horizon(values: dict[str, Any]) -> None:
+    """Compute the azimuth and zenith angle when the file records them as zero.
+
+    Sigproc files written without these keys, and PSRFITS files, have no angles, so
+    they are computed from the telescope, the source position and ``tstart``.
+    """
+    azimuth = values.get("azimuth", Angle(0 * units.deg))
+    zenith = values.get("zenith", Angle(0 * units.deg))
+    required = {"telescope", "coord", "tstart"}
+    if azimuth.deg != 0 or zenith.deg != 0 or not required <= values.keys():
+        return
+    angles = utils.horizon_angles(
+        values["telescope"], values["coord"], values["tstart"]
+    )
+    if angles is not None:
+        values["azimuth"], values["zenith"] = angles
+
+
 @attrs.frozen(auto_attribs=True, kw_only=True)
 class Header:
     """Container object to handle observation metadata.
@@ -741,6 +759,7 @@ class Header:
             "frame": frame,
         }
         header.update(hdr_update)
+        _fill_horizon(header)
         header_check = {
             key: value for key, value in header.items() if key in attrs.fields_dict(cls)
         }
@@ -780,6 +799,7 @@ class Header:
             "source": primary_hdr.source,
         }
         header.update(hdr_update)
+        _fill_horizon(header)
         header_check = {
             key: value for key, value in header.items() if key in attrs.fields_dict(cls)
         }
@@ -821,6 +841,7 @@ class Header:
             "frame": frame,
         }
         header.update(hdr_update)
+        _fill_horizon(header)
         header_check = {
             key: value for key, value in header.items() if key in attrs.fields_dict(cls)
         }
