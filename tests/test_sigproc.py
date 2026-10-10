@@ -362,6 +362,28 @@ class TestParseHeaderValid:
 
 
 class TestParseHeaderInvalid:
+    def test_frequency_start_raises(
+        self,
+        tmpfile: str,
+        builder: SigprocBuilder,
+    ) -> None:
+        f = Path(tmpfile)
+        payload = (
+            builder.header_start()
+            ._write_string("FREQUENCY_START")
+            .uint_field("nchans", 2)
+            .double_field("fchannel", 1400.0)
+            .double_field("fchannel", 1399.0)
+            ._write_string("FREQUENCY_END")
+            .uint_field("nbits", 8)
+            .double_field("tsamp", 6.4e-5)
+            .header_end()
+            .build()
+        )
+        f.write_bytes(payload)
+        with pytest.raises(NotImplementedError, match="FREQUENCY_START"):
+            sigproc.parse_header(f)
+
     def test_empty_file(self, tmpfile: str) -> None:
         f = Path(tmpfile)
         f.write_bytes(b"")

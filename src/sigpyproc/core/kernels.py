@@ -362,6 +362,90 @@ def dedisperse(
         out_arr[out_start_index + isamp] = summ
 
 
+@njit("i8(i8, i8)", cache=True)
+def bitrev(inval: int, nbits: int) -> int:
+    """Bit-reverse ``inval`` in ``nbits`` bits (Ramachandran tree)."""
+    if nbits <= 1:
+        return inval
+    ifact = 1
+    for _ in range(1, nbits):
+        ifact *= 2
+    k = inval
+    ibitr = (k & 1) * ifact
+    for _ in range(2, nbits + 1):
+        k //= 2
+        ifact //= 2
+        ibitr += (k & 1) * ifact
+    return ibitr
+
+
+@njit("void(f4[::1], i8, i8)", cache=True, fastmath=True)
+def taylor_tree(buf: np.ndarray, nchans: int, nsamps: int) -> None:
+    """In-place Taylor/Ramachandran tree.
+
+    ``buf`` is C-contiguous ``(nchans, nsamps)`` flattened, where
+    ``nsamps = chunk + 2 * nchans``. Valid output per DM is the first
+    ``chunk`` samples of the bit-reversed channel row.
+    """
+    nsamp = nsamps - 2 * nchans
+    npts = nsamp + nchans
+    nstages = int(np.log2(nchans) + 0.5)
+    nmem = 1
+    for istages in range(nstages):
+        nmem *= 2
+        nsec1 = nchans // nmem
+        nmem2 = nmem - 2
+        for isec in range(nsec1):
+            ndelay = -1
+            koff = isec * nmem
+            for ipair in range(0, nmem2 + 1, 2):
+                ioff1 = (bitrev(ipair, istages + 1) + koff) * nsamps
+                i2 = (bitrev(ipair + 1, istages + 1) + koff) * nsamps
+                ndelay += 1
+                ndelay2 = ndelay + 1
+                nfin = npts + ioff1
+                for i1 in range(ioff1, nfin):
+                    itemp = buf[i1] + buf[i2 + ndelay]
+                    buf[i2] = buf[i1] + buf[i2 + ndelay2]
+                    buf[i1] = itemp
+                    i2 += 1
+
+
+@njit(
+    [
+        "void(u1[::1], f4[:, ::1], i4[:, ::1], i8, i8)",
+        "void(f4[::1], f4[:, ::1], i4[:, ::1], i8, i8)",
+    ],
+    cache=True,
+    parallel=True,
+    fastmath=True,
+)
+def dedisperse_many(
+    in_arr: np.ndarray,
+    out_arr: np.ndarray,
+    delays: np.ndarray,
+    nchans: int,
+    nsamps: int,
+) -> None:
+    """Dedisperse many DMs in one gulp.
+
+    ``in_arr`` is time-major flat ``(nsamps, nchans)``.
+    ``delays`` is ``(ndm, nchans)``; ``out_arr`` is ``(ndm, nsamps_valid)``.
+    """
+    ndm = delays.shape[0]
+    max_delay = 0
+    for idm in range(ndm):
+        for ichan in range(nchans):
+            max_delay = max(max_delay, int(delays[idm, ichan]))
+    in_2d = in_arr.reshape(nsamps, nchans)
+    for idm in prange(ndm):
+        for isamp in range(nsamps - max_delay):
+            summ = np.float64(0.0)
+            for ichan in range(nchans):
+                summ += in_2d[isamp + delays[idm, ichan], ichan]
+            out_arr[idm, isamp] = summ
+
+
 @njit(
     ["u1[::1](u1[::1], i8, i8)", "f4[::1](f4[::1], i8, i8)"],
     cache=True,
@@ -861,8 +945,8 @@ def detrend_2d(arr: np.ndarray) -> np.ndarray:
 @njit(cache=True, fastmath=True)
 def convolve_templates(
     data: np.ndarray,
-    temp_bank: types.List[types.Array],
-    ref_bin: types.List[int],
+    temp_bank: list[np.ndarray],
+    ref_bin: list[int],
 ) -> np.ndarray:
     """
     Convolve the data with the templates in the template bank.
@@ -1297,3 +1381,82 @@ def simulate_ism(
             chan_data = fftconvolve(chan_data, scat_prof)
         final_arr[ichan] = chan_data[:max_len]
     return final_arr
+
+
+@njit(cache=True, fastmath=True)
+def ffa_stage(block: np.ndarray) -> np.ndarray:
+    """Run one FFA binary tree on a ``(n_rows, period)`` fold block.
+
+    Rows are zero-padded to the next power of two. Stage ``s`` combines
+    pairs of length-``2**s`` children: for each already-computed child
+    shift, the parent is formed with 0 or 1 extra bin of relative delay
+    (later-arriving pulse in the second child, i.e. a slightly longer
+    period). After ``k`` stages the ``2**k`` output rows are folded
+    profiles at ``P, P + 1/N, …, P + (N-1)/N`` bins.
+
+    Parameters
+    ----------
+    block : ndarray
+        C-contiguous ``float32`` array of shape ``(n_rows, period)``.
+
+    Returns
+    -------
+    ndarray
+        Folded profiles, shape ``(n_pad, period)``.
+    """
+    n_rows, nbin = block.shape
+    n_pad = 1
+    k = 0
+    while n_pad < n_rows:
+        n_pad *= 2
+        k += 1
+    src = np.zeros((n_pad, nbin), dtype=np.float32)
+    src[:n_rows, :] = block
+    if k == 0:
+        return src
+    dst = np.empty((n_pad, nbin), dtype=np.float32)
+    for stage in range(k):
+        step = 1 << stage
+        group = step << 1
+        for i in range(0, n_pad, group):
+            for shift in range(step):
+                a = src[i + shift]
+                b = src[i + step + shift]
+                out0 = dst[i + 2 * shift]
+                out1 = dst[i + 2 * shift + 1]
+                for j in range(nbin):
+                    out0[j] = a[j] + b[j]
+                # extra=1: shift the second child earlier by 1 bin
+                out1[nbin - 1] = a[nbin - 1] + b[0]
+                for j in range(nbin - 1):
+                    out1[j] = a[j] + b[j + 1]
+        src, dst = dst, src
+    return src
+
+
+@njit(cache=True, fastmath=True)
+def ffa_profile_snr(profiles: np.ndarray) -> np.ndarray:
+    """Robust SNR of each FFA profile: ``(max - median) / (1.4826 * MAD)``.
+
+    Parameters
+    ----------
+    profiles : ndarray
+        Array of shape ``(n_profiles, period)``.
+
+    Returns
+    -------
+    ndarray
+        SNR per profile (``float32``). Zero if MAD is zero.
+    """
+    nprof = profiles.shape[0]
+    snrs = np.empty(nprof, dtype=np.float32)
+    mad_norm = np.float32(1.4826)
+    for i in range(nprof):
+        row = profiles[i]
+        med = np.median(row)
+        mad = np.median(np.abs(row - med))
+        if mad <= 0:
+            snrs[i] = 0.0
+        else:
+            snrs[i] = (np.max(row) - med) / (mad_norm * mad)
+    return snrs

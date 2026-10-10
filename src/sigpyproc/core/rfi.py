@@ -17,7 +17,7 @@ from sigpyproc.header import Header
 from sigpyproc.viz.styles import PlotTable
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
     from numpy.typing import NDArray
 
@@ -431,3 +431,37 @@ class RFIMask:
             **fp_stats,
         }
         return cls(**kws)  # ty: ignore[invalid-argument-type]
+
+
+def zap_block(
+    block: np.ndarray,
+    spans: Sequence[tuple[int, int]],
+    samp0: int,
+    mode: str,
+    rng: np.random.Generator,
+) -> None:
+    """Replace sample ranges in a ``(nsamps, nchans)`` block in-place."""
+    nsamps_r, nchans = block.shape
+    for a, b in spans:
+        lo = max(a, samp0) - samp0
+        hi = min(b, samp0 + nsamps_r) - samp0
+        if lo >= hi:
+            continue
+        if mode == "zero":
+            block[lo:hi] = 0
+            continue
+        keep = np.ones(nsamps_r, dtype=bool)
+        keep[lo:hi] = False
+        if not keep.any():
+            block[lo:hi] = 0
+        elif mode == "gaussian":
+            mu = block[keep].mean(axis=0)
+            sd = np.where(block[keep].std(axis=0) == 0, 1.0, block[keep].std(axis=0))
+            noise = rng.normal(mu, sd, size=(hi - lo, nchans))
+            if np.issubdtype(block.dtype, np.integer):
+                info = np.iinfo(block.dtype)
+                np.clip(noise, info.min, info.max, out=noise)
+            block[lo:hi] = noise.astype(block.dtype, copy=False)
+        else:
+            idx = rng.choice(np.flatnonzero(keep), size=hi - lo)
+            block[lo:hi] = block[idx]

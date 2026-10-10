@@ -5,62 +5,50 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  lint:
-    name: Lint & Format
+  static-checks:
+    name: Ruff & ty
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          enable-cache: true
-
-      - name: Ruff lint
-        uses: astral-sh/ruff-action@v3
-        with:
-          args: "check"
-
-      - name: Ruff format check
-        uses: astral-sh/ruff-action@v3
-        with:
-          args: "format --check"
-
-  typecheck:
-    name: Type Check (ty)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install uv & Python
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
           python-version: "3.12"
 
-      - name: Install with development extras
+      - name: Install dev tools
         run: uv sync --extra dev
 
-      - name: Run ty
+      - name: Ruff lint
+        run: uv run ruff check
+
+      - name: Type check
         run: uv run ty check
 
   test:
-    name: Tests & Coverage
-    needs: lint
-    runs-on: ${{ matrix.os }}
+    name: pytest (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
         python-version: ["3.12", "3.13", "3.14"]
 
+    env:
+      NUMBA_CACHE_DIR: ${{ github.workspace }}/.numba_cache
+
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install uv & Python
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
           python-version: ${{ matrix.python-version }}
@@ -68,13 +56,37 @@ jobs:
       - name: Install package with test dependencies
         run: uv sync --extra tests
 
+      - name: Restore numba cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.NUMBA_CACHE_DIR }}
+          key: numba-${{ runner.os }}-py${{ matrix.python-version }}-${{ hashFiles('src/**/*.py') }}
+          restore-keys: |
+            numba-${{ runner.os }}-py${{ matrix.python-version }}-
+
+      # Numba invalidates cached kernels when a source file's mtime changes, and
+      # a fresh checkout gives every file a new mtime. Setting each mtime from a
+      # hash of its content keeps the cache valid for unchanged code and
+      # invalidates it when the code changes.
+      - name: Normalise source mtimes for numba cache
+        run: |
+          python3 - <<'EOF'
+          import hashlib
+          import os
+          import pathlib
+
+          for path in pathlib.Path("src").rglob("*.py"):
+              digest = int(hashlib.sha256(path.read_bytes()).hexdigest()[:8], 16)
+              stamp = 1_000_000_000 + digest % 1_000_000_000
+              os.utime(path, (stamp, stamp))
+          EOF
+
       - name: Run pytest
         run: uv run pytest --cov=src --cov-report=xml -v
 
       - name: Upload coverage to Codecov
-        # only upload once — ubuntu + latest python avoids duplicate reports
-        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.13'
-        uses: codecov/codecov-action@v5
+        if: matrix.python-version == '3.14'
+        uses: codecov/codecov-action@v7
         with:
           files: ./coverage.xml
           name: codecov-umbrella

@@ -121,18 +121,20 @@ class TestEstimateScale:
         method: str,
         axis: int | tuple[int, ...] | None,
     ) -> None:
-        result = stats.estimate_scale(random_normal_2d, method=method, axis=axis)
+        # Short rows keep the O(n^2) estimators (qn, sn) fast.
+        data = random_normal_2d[:, :300]
+        result = stats.estimate_scale(data, method=method, axis=axis)
         assert isinstance(result, np.floating)
-        np.testing.assert_almost_equal(result, random_normal_2d.std(), decimal=1)
+        np.testing.assert_almost_equal(result, data.std(), decimal=1)
         result = stats.estimate_scale(
-            random_normal_2d,
+            data,
             method=method,
             axis=axis,
             keepdims=True,
         )
         assert isinstance(result, np.ndarray)
         assert result.shape == (1, 1)
-        np.testing.assert_almost_equal(result[0, 0], random_normal_2d.std(), decimal=1)
+        np.testing.assert_almost_equal(result[0, 0], data.std(), decimal=1)
 
     @pytest.mark.parametrize(
         "method",

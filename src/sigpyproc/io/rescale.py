@@ -70,17 +70,19 @@ class Rescale:
         return normdata.ravel()
 
     def _compute_stats(self, data: NDArray[np.float32]) -> None:
-        _, nsamples = data.shape
+        nsamples = data.shape[0]
         self.sum_ar += np.sum(data, axis=0)
         self.sumsq_ar += np.sum(data**2, axis=0)
         self.isample += nsamples
 
         if self.isample >= self.rescale_samples or self.first_call:
             mean = self.sum_ar / self.isample
-            variance = self.sumsq_ar / self.isample - mean * mean
+            variance = np.maximum(self.sumsq_ar / self.isample - mean * mean, 0)
             self.offset = -mean
-            self.scale = np.where(
-                np.isclose(variance, 0, atol=1e-5),
-                1,
-                1.0 / np.sqrt(variance),
+            self.scale = np.ones_like(variance)
+            np.divide(
+                1.0,
+                np.sqrt(variance),
+                out=self.scale,
+                where=~np.isclose(variance, 0, atol=1e-5),
             )

@@ -265,6 +265,23 @@ class FoldedData:
         new_ar = np.roll(self.data, -(pos - self.nbins // 2), axis=2)
         return FoldedData(new_ar, self.header, self.period, self.dm)
 
+    def to_ascii(self, filename: str) -> str:
+        """Write the summed profile as one float per line."""
+        np.savetxt(filename, self.get_profile().data)
+        return filename
+
+    def to_npz(self, filename: str) -> str:
+        """Write the fold cube and scalar metadata to a ``.npz`` file."""
+        np.savez(
+            filename,
+            data=self.data,
+            period=np.float64(self.period),
+            dm=np.float64(self.dm),
+            accel=np.float64(self._accel),
+            tsamp=np.float64(self.header.tsamp),
+        )
+        return filename
+
     def replace_nan(self) -> None:
         self.data[np.isnan(self.data)] = np.nanmedian(self.data)
 

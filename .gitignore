@@ -263,6 +263,7 @@ pyrightconfig.json
 .vscode/extensions.json
 .vscode/*.code-snippets
 .cursor/
+.grok/
 
 # Local History for Visual Studio Code
 .history/
@@ -302,3 +303,6 @@ $RECYCLE.BIN/
 *.lnk
 
 # End of https://www.toptal.com/developers/gitignore/api/c++,python,windows,macos,linux,visualstudiocode
+
+# Local files
+uv.lock

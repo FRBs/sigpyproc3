@@ -318,7 +318,11 @@ class FileReader(FileBase):
         if whence == 0:
             self._seek_set(offset)
         elif whence == 1:
-            self._seek_set(offset + self.cur_data_pos_stream)  # type: ignore [operator]
+            cur_pos = self.cur_data_pos_stream
+            if cur_pos is None:
+                msg = "No file is open for reading"
+                raise OSError(msg)
+            self._seek_set(offset + cur_pos)
         else:
             msg = "whence should be either 0 (SEEK_SET) or 1 (SEEK_CUR)"
             raise ValueError(msg)

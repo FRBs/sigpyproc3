@@ -34,12 +34,19 @@ branch of this repo, or install the last released version 0.5.5.
 
 ```python
 from sigpyproc.readers import FilReader, PFITSReader
+from sigpyproc.timeseries import TimeSeries
 
 fil = FilReader("tutorial.fil")
 fits = PFITSReader("tutorial.fits")
+
+ts = TimeSeries.from_tim("observation.tim")
+hits = ts.search(nfolds=4, pmax=10.0)
+hits.cluster(snr_min=8.0).to_csv("cands.csv")
 ```
 
-Check out the tutorials and API docs on [the docs page](https://sigpyproc3.readthedocs.io) for example usage and more info.
+Check out the [filterbank quickstart](https://sigpyproc3.readthedocs.io/en/latest/tutorials/quickstart.html),
+the [search tutorial](https://sigpyproc3.readthedocs.io/en/latest/tutorials/search.html),
+and the [API docs](https://sigpyproc3.readthedocs.io) for more.
 
 ## Contributing
 

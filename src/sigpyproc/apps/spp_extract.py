@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import numpy as np
 import rich_click as click
 
@@ -8,19 +10,21 @@ from sigpyproc.readers import FilReader
     context_settings={"help_option_names": ["-h", "--help"], "show_default": True},
 )
 def main() -> None:
-    pass
+    """Extract samples, channels, or bands from a filterbank."""
 
 
 @main.command()
 @click.argument("filfile", type=click.Path(exists=True))
-@click.option("-s", "--start", type=int, required=True, help="Start time sample")
+@click.option("-s", "--start", type=int, default=0, help="Start time sample")
 @click.option(
     "-n",
     "--nsamps",
     type=int,
-    required=True,
+    default=None,
     help="Number of time samples to extract",
 )
+@click.option("--start-sec", type=float, default=None, help="Start time in seconds")
+@click.option("--duration", type=float, default=None, help="Duration in seconds")
 @click.option(
     "-g",
     "--gulp",
@@ -35,10 +39,31 @@ def main() -> None:
     default=None,
     help="Output filename",
 )
-def samples(filfile: str, start: int, nsamps: int, gulp: int, outfile: str) -> None:
+def samples(
+    filfile: str,
+    start: int,
+    nsamps: int | None,
+    start_sec: float | None,
+    duration: float | None,
+    gulp: int,
+    outfile: str | None,
+) -> None:
     """Extract time samples from filterbank data."""
     fil = FilReader(filfile)
-    fil.extract_samps(start=start, nsamps=nsamps, outfile_name=outfile, gulp=gulp)
+    if start_sec is not None:
+        start = round(start_sec / fil.header.tsamp)
+    if duration is not None:
+        nsamps = round(duration / fil.header.tsamp)
+    if nsamps is None:
+        msg = "Provide -n/--nsamps or --duration"
+        raise click.UsageError(msg)
+    path = fil.extract_samps(
+        start=start,
+        nsamps=nsamps,
+        outfile_name=outfile,
+        gulp=gulp,
+    )
+    click.echo(path)
 
 
 @main.command()
@@ -46,10 +71,16 @@ def samples(filfile: str, start: int, nsamps: int, gulp: int, outfile: str) -> N
 @click.option(
     "-c",
     "--chans",
-    required=True,
     type=click.IntRange(0, None),
     multiple=True,
-    help="Channels to extract",
+    help="Channels to extract (default: all)",
+)
+@click.option("--chan-start", type=int, default=None, help="First channel of a range")
+@click.option(
+    "--nchans",
+    type=int,
+    default=None,
+    help="Number of channels in the range",
 )
 @click.option(
     "-o",
@@ -58,10 +89,24 @@ def samples(filfile: str, start: int, nsamps: int, gulp: int, outfile: str) -> N
     default=None,
     help="Output file basename",
 )
-def channels(filfile: str, chans: np.ndarray, outfile: str) -> None:
-    """Extract frequency channels from filterbank data."""
+def channels(
+    filfile: str,
+    chans: tuple[int, ...],
+    chan_start: int | None,
+    nchans: int | None,
+    outfile: str | None,
+) -> None:
+    """Extract frequency channels as time series (one ``.tim`` per channel)."""
     fil = FilReader(filfile)
-    fil.extract_chans(chans=chans, outfile_base=outfile)
+    if chans:
+        chan_arr = np.asarray(chans)
+    elif chan_start is not None:
+        n_out = fil.header.nchans - chan_start if nchans is None else nchans
+        chan_arr = np.arange(chan_start, chan_start + n_out)
+    else:
+        chan_arr = None
+    for path in fil.extract_chans(chans=chan_arr, outfile_base=outfile):
+        click.echo(path)
 
 
 @main.command()
@@ -91,17 +136,18 @@ def bands(
     filfile: str,
     chanstart: int,
     nchans: int,
-    chanpersub: int,
-    outfile: str,
+    chanpersub: int | None,
+    outfile: str | None,
 ) -> None:
     """Extract frequency bands from filterbank data."""
     fil = FilReader(filfile)
-    fil.extract_bands(
+    for path in fil.extract_bands(
         chanstart=chanstart,
         nchans=nchans,
         chanpersub=chanpersub,
         outfile_base=outfile,
-    )
+    ):
+        click.echo(path)
 
 
 if __name__ == "__main__":

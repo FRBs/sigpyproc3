@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import ast
-import datetime
+import datetime as dt
 import inspect
 import os
 import struct
@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 # -- Project information
 project = "sigpyproc3"
 author = "Pravir Kumar"
-year = datetime.datetime.now(tz=datetime.UTC).date().year
+year = dt.datetime.now(tz=dt.UTC).date().year
 copyright = f"{year}, {author}"  # noqa: A001
 release = __version__
 version = release
@@ -126,6 +126,11 @@ numpydoc_xref_aliases = {
     "Iterator": "collections.abc.Iterator",
     "Callable": "collections.abc.Callable",
     "Literal": "typing.Literal",
+    "CandidateTable": "sigpyproc.candidates.CandidateTable",
+    "QTable": "astropy.table.QTable",
+    "Header": "sigpyproc.header.Header",
+    "TimeSeries": "sigpyproc.timeseries.TimeSeries",
+    "PulsarParams": "sigpyproc.simulation.pulsar.PulsarParams",
 }
 numpydoc_xref_ignore = {
     "of",

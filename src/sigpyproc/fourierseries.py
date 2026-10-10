@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from sigpyproc import timeseries
-from sigpyproc.core import kernels
+from sigpyproc.core import algorithms, kernels
 from sigpyproc.foldedcube import Profile
 from sigpyproc.header import Header
 from sigpyproc.utils import validate_path
@@ -21,6 +21,8 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from numpy.typing import ArrayLike, NDArray
+
+    from sigpyproc.candidates import CandidateTable
 
 
 class PowerSpectrum:
@@ -150,6 +152,75 @@ class PowerSpectrum:
             new_header = self.header.new_header({"tsamp": self.header.tsamp * nharm})
             folds.append(PowerSpectrum(sum_arr[ii], new_header))
         return folds
+
+    def find_peaks(
+        self,
+        *,
+        npeaks: int = 100,
+        snr_min: float = 6.0,
+        pmax: float = 10.0,
+        dm: float = 0.0,
+        accel: float = 0.0,
+        nharm: int = 1,
+    ) -> CandidateTable:
+        """Pick local maxima in a whitened power spectrum.
+
+        SNR in bin ``i`` is ``(data[i] - med) / (1.4826 * MAD)`` over a
+        running window of ``max(128, nfreq // 64)`` bins. The DC bin and
+        every bin with period ``> pmax`` are skipped. A local maximum is
+        strictly greater than both neighbours.
+
+        Folded spectra use ``tobs / nharm`` for the frequency axis. For
+        non-sinusoidal signals the reported period can be a harmonic of the
+        true period (see the search tutorial).
+
+        Parameters
+        ----------
+        npeaks : int, optional
+            Maximum number of peaks to return, by default 100.
+        snr_min : float, optional
+            Minimum SNR, by default 6.0.
+        pmax : float, optional
+            Longest period to keep, in seconds, by default 10.0.
+        dm : float, optional
+            Dispersion measure stored on each row, by default 0.0.
+        accel : float, optional
+            Acceleration stored on each row, by default 0.0.
+        nharm : int, optional
+            Harmonic fold that produced this spectrum (1 = unfolded),
+            by default 1.
+
+        Returns
+        -------
+        CandidateTable
+            Up to ``npeaks`` rows with ``kind="fft"``, sorted by SNR.
+
+        Raises
+        ------
+        ValueError
+            If ``npeaks``, ``pmax``, or ``nharm`` is not positive.
+        """
+        if npeaks < 1:
+            msg = "npeaks must be at least 1"
+            raise ValueError(msg)
+        if pmax <= 0:
+            msg = "pmax must be positive"
+            raise ValueError(msg)
+        if nharm < 1:
+            msg = "nharm must be at least 1"
+            raise ValueError(msg)
+
+        # harmonic_fold multiplies tsamp by nharm; divide it out for the fundamental.
+        return algorithms.pick_spectral_peaks(
+            self.data,
+            self.header.tobs / nharm,
+            npeaks=npeaks,
+            snr_min=snr_min,
+            pmax=pmax,
+            dm=dm,
+            accel=accel,
+            nharm=nharm,
+        )
 
     def _check_input(self) -> None:
         if not isinstance(self.header, Header):

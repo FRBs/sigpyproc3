@@ -5,12 +5,13 @@ This module contains the TimeSeries class for handling 1D time series data.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 
 from sigpyproc import fourierseries
-from sigpyproc.core import kernels, stats
+from sigpyproc.candidates import CandidateTable
+from sigpyproc.core import algorithms, kernels, stats
 from sigpyproc.foldedcube import FoldedData
 from sigpyproc.header import Header
 from sigpyproc.utils import validate_path
@@ -22,6 +23,20 @@ if TYPE_CHECKING:
     from numpy.typing import ArrayLike, NDArray
 
     from sigpyproc.core.custom_types import FilterMethods, LocMethods, ScaleMethods
+
+PadMode = Literal[
+    "constant",
+    "edge",
+    "linear_ramp",
+    "maximum",
+    "mean",
+    "median",
+    "minimum",
+    "reflect",
+    "symmetric",
+    "wrap",
+    "empty",
+]
 
 
 class TimeSeries:
@@ -131,7 +146,12 @@ class TimeSeries:
         hdr_changes = {"tsamp": self.header.tsamp * factor, "nsamples": len(tim_data)}
         return TimeSeries(tim_data, self.header.new_header(hdr_changes))
 
-    def pad(self, npad: int, mode: str = "mean", **pad_kwargs: dict) -> TimeSeries:
+    def pad(
+        self,
+        npad: int,
+        mode: PadMode = "mean",
+        **pad_kwargs: Any,
+    ) -> TimeSeries:
         """Pad a time series with mean valued data.
 
         Parameters
@@ -140,7 +160,7 @@ class TimeSeries:
             Number of bins to add at the end of the time series.
         mode : str, optional
             Padding mode (as used by `numpy.pad`), by default 'mean'.
-        **pad_kwargs : dict
+        **pad_kwargs : Any
             Keyword arguments for `numpy.pad`.
 
         Returns
@@ -148,7 +168,7 @@ class TimeSeries:
         TimeSeries
             Padded time series.
         """
-        tim_data = np.pad(self.data, (0, npad), mode=mode, **pad_kwargs)  # type: ignore[call-overload]
+        tim_data = np.pad(self.data, (0, npad), mode=mode, **pad_kwargs)
         hdr_changes = {"nsamples": len(tim_data)}
         return TimeSeries(tim_data, self.header.new_header(hdr_changes))
 
@@ -381,6 +401,229 @@ class TimeSeries:
             "nsamples": corr_ar.size,
         }
         return TimeSeries(corr_ar, self.header.new_header(header_changes))
+
+    def search(
+        self,
+        *,
+        nfolds: int = 4,
+        pmax: float = 10.0,
+        accel: float = 0.0,
+        interpolate: bool = True,
+        snr_min: float = 6.0,
+        npeaks: int = 100,
+    ) -> CandidateTable:
+        """FFT search with harmonic folding.
+
+        Pipeline (fixed order):
+
+        1. optional :meth:`resample` if ``accel != 0``
+        2. :meth:`rfft`
+        3. :meth:`~sigpyproc.fourierseries.FourierSeries.deredden` (not
+           :meth:`deredden`)
+        4. unfolded :meth:`~sigpyproc.fourierseries.FourierSeries.form_spec`
+        5. :meth:`~sigpyproc.fourierseries.PowerSpectrum.harmonic_fold`
+        6. :meth:`~sigpyproc.fourierseries.PowerSpectrum.find_peaks` on the
+           unfolded spectrum (``nharm=1``) and each fold
+           (``nharm = 2, 4, …, 2**nfolds``)
+
+        Parameters
+        ----------
+        nfolds : int, optional
+            Number of harmonic *folds* (2, 4, …, ``2**nfolds``) in
+            addition to the unfolded spectrum, by default 4.
+        pmax : float, optional
+            Longest period to keep, in seconds, by default 10.0.
+        accel : float, optional
+            Acceleration to remove before the FFT, by default 0.
+        interpolate : bool, optional
+            Inter-bin interpolate the amplitude spectrum, by default True.
+        snr_min : float, optional
+            Peak-pick SNR threshold, by default 6.0.
+        npeaks : int, optional
+            Maximum peaks kept *per* spectrum (unfolded and each fold),
+            by default 100.
+
+        Returns
+        -------
+        CandidateTable
+            Combined FFT candidates, sorted by decreasing SNR.
+
+        Raises
+        ------
+        ValueError
+            If ``nfolds`` is negative.
+        """
+        if nfolds < 0:
+            msg = "nfolds must be >= 0"
+            raise ValueError(msg)
+        series = self.resample(accel) if accel != 0.0 else self
+        spec0 = series.rfft().deredden().form_spec(interpolate=interpolate)
+        tables = [
+            spec0.find_peaks(
+                npeaks=npeaks,
+                snr_min=snr_min,
+                pmax=pmax,
+                dm=self.header.dm,
+                accel=accel,
+                nharm=1,
+            ),
+        ]
+        if nfolds > 0:
+            for i, fold in enumerate(spec0.harmonic_fold(nfolds)):
+                tables.append(
+                    fold.find_peaks(
+                        npeaks=npeaks,
+                        snr_min=snr_min,
+                        pmax=pmax,
+                        dm=self.header.dm,
+                        accel=accel,
+                        nharm=int(2 ** (i + 1)),
+                    ),
+                )
+        return CandidateTable.concatenate(tables).sort_by_snr()
+
+    def find_pulses(
+        self,
+        *,
+        snr_min: float = 6.0,
+        max_width: int = 256,
+        spacing_factor: float = 2.0,
+        deadtime: int = 8,
+    ) -> CandidateTable:
+        """Find multiple pulses with a boxcar matched-filter bank.
+
+        This is not a single :class:`~sigpyproc.core.filters.MatchedFilter`
+        call (that class returns one best peak). Widths are geometric
+        from 1 to ``max_width`` (powers of two when ``spacing_factor=2``).
+        SIGPROC ``peak``'s time-halving loop is not cloned — the width
+        bank already covers 1…``max_width``.
+
+        Parameters
+        ----------
+        snr_min : float, optional
+            Minimum matched-filter SNR, by default 6.0.
+        max_width : int, optional
+            Widest boxcar in bins, by default 256.
+        spacing_factor : float, optional
+            Geometric spacing of the width bank, by default 2.0.
+        deadtime : int, optional
+            Bins zeroed on *either* side of an accepted peak, by
+            default 8 (as in SIGPROC ``peak``).
+
+        Returns
+        -------
+        CandidateTable
+            Pulse candidates (``kind="pulse"``), sorted by SNR.
+
+        Raises
+        ------
+        ValueError
+            If ``max_width`` or ``deadtime`` is invalid.
+        """
+        if max_width < 1:
+            msg = "max_width must be at least 1"
+            raise ValueError(msg)
+        if deadtime < 0:
+            msg = "deadtime must be >= 0"
+            raise ValueError(msg)
+
+        return algorithms.boxcar_pulse_search(
+            self.data,
+            self.header.tsamp,
+            snr_min=snr_min,
+            max_width=max_width,
+            spacing_factor=spacing_factor,
+            deadtime=deadtime,
+            dm=self.header.dm,
+            accel=self.header.accel,
+        )
+
+    def ffa(
+        self,
+        pmin: float,
+        pmax: float,
+        *,
+        nrebin: int = 1,
+        search_width: bool = False,
+        snr_min: float = 8.0,
+        npeaks: int = 100,
+        zero_pad: bool = False,
+    ) -> CandidateTable:
+        """Fast Folding Analysis (Staelin 1969 / Mueller).
+
+        Periods are in seconds. The CLI accepts SIGPROC-style milliseconds
+        and converts before calling this method. ``search_width`` loops
+        ``nrebin`` through ``{1, 2, 4, 8, 16}`` and is exclusive with
+        ``nrebin != 1``.
+
+        One candidate is kept per integer trial period (not every tree
+        shift). The fractional FFA offset is used only when it clearly
+        outranks the unshifted fold — wide pulses leave the sub-bin
+        index unconstrained, and reporting the integer period is the
+        honest result.
+
+        Parameters
+        ----------
+        pmin : float
+            Shortest trial period in seconds.
+        pmax : float
+            Longest trial period in seconds.
+        nrebin : int, optional
+            Mean-downsample factor applied first, by default 1.
+        search_width : bool, optional
+            Search several downsample factors instead of ``nrebin``,
+            by default False.
+        snr_min : float, optional
+            Minimum profile SNR, by default 8.0.
+        npeaks : int, optional
+            Maximum candidates to keep, by default 100.
+        zero_pad : bool, optional
+            Pad to the next power of two (after the ``2**24`` cap),
+            by default False.
+
+        Returns
+        -------
+        CandidateTable
+            FFA candidates (``kind="ffa"``), sorted by SNR.
+
+        Raises
+        ------
+        ValueError
+            If the period window or rebin options are invalid.
+        """
+        if pmin <= 0 or pmax <= pmin:
+            msg = "require 0 < pmin < pmax"
+            raise ValueError(msg)
+        if nrebin < 1:
+            msg = "nrebin must be at least 1"
+            raise ValueError(msg)
+        if search_width and nrebin != 1:
+            msg = "search_width and nrebin != 1 are mutually exclusive"
+            raise ValueError(msg)
+        if npeaks < 1:
+            msg = "npeaks must be at least 1"
+            raise ValueError(msg)
+
+        rebins = algorithms.FFA_WIDTH_REBINS if search_width else (nrebin,)
+        tables = []
+        for rebin in rebins:
+            series = self.downsample(rebin) if rebin > 1 else self
+            tables.append(
+                algorithms.ffa_search(
+                    series.data,
+                    series.header.tsamp,
+                    pmin,
+                    pmax,
+                    snr_min=snr_min,
+                    zero_pad=zero_pad,
+                    dm=self.header.dm,
+                    accel=self.header.accel,
+                ),
+            )
+        combined = CandidateTable.concatenate(tables).sort_by_snr()
+        if len(combined) <= npeaks:
+            return combined
+        return combined[:npeaks]
 
     def to_dat(self, basename: str | None = None) -> str:
         """Write time series in presto ``.dat`` format.

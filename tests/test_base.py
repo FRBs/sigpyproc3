@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from sigpyproc.core import rfi, stats
+from sigpyproc.core.dmplan import DMPlan
 from sigpyproc.foldedcube import FoldedData
 from sigpyproc.readers import FilReader
 from sigpyproc.timeseries import TimeSeries
@@ -107,15 +108,34 @@ class TestFilterbank:
             fil.extract_samps(start=-10, nsamps=nsamps)
 
     @pytest.mark.parametrize("chans", [None, np.array([1, 2, 3, 4, 5])])
-    def test_extract_chans(self, filfile_4bit: str, chans: np.ndarray | None) -> None:
-        fil = FilReader(filfile_4bit)
+    def test_extract_chans(
+        self,
+        filfile_4bit: str,
+        chans: np.ndarray | None,
+        tmpdir: str,
+    ) -> None:
+        # A 32-channel band keeps the all-channel case cheap.
+        band = FilReader(filfile_4bit).extract_bands(
+            chanstart=0,
+            nchans=32,
+            chanpersub=32,
+            outfile_base=str(Path(tmpdir) / "chanband"),
+        )[0]
+        fil = FilReader(band)
         timfiles = fil.extract_chans(chans)
-        for timfile in timfiles:
+        expected_chans = (
+            np.arange(fil.header.nchans) if chans is None else np.asarray(chans)
+        )
+        for timfile, chan in zip(timfiles, expected_chans, strict=True):
             timfile_path = Path(timfile)
             assert timfile_path.is_file()
             tim = TimeSeries.from_tim(timfile)
             np.testing.assert_equal(tim.header.nbits, 32)
             np.testing.assert_equal(tim.header.nchans, 1)
+            np.testing.assert_allclose(
+                tim.header.fch1,
+                fil.header.fch1 + chan * fil.header.foff,
+            )
             timfile_path.unlink()
         with pytest.raises(ValueError):
             fil.extract_chans(np.array([5000]))
@@ -153,6 +173,51 @@ class TestFilterbank:
                     chanpersub=chanpersub,
                 )
 
+    def test_requantize(self, filfile_8bit_1: str, tmpfile: str) -> None:
+        fil = FilReader(filfile_8bit_1)
+        outfile = fil.requantize(nbits_out=8, outfile_name=tmpfile)
+        new_fil = FilReader(outfile)
+        np.testing.assert_equal(new_fil.header.nbits, 8)
+        np.testing.assert_equal(new_fil.header.nchans, fil.header.nchans)
+        np.testing.assert_equal(new_fil.header.nsamples, fil.header.nsamples)
+        hdrlen = int(new_fil.header.stream_info.get_combined("hdrlen"))
+        datalen = Path(outfile).stat().st_size - hdrlen
+        np.testing.assert_equal(
+            datalen,
+            new_fil.header.nsamples * new_fil.header.nchans,
+        )
+
+    def test_requantize_values_are_rescaled(
+        self, filfile_8bit_1: str, tmpfile: str
+    ) -> None:
+        fil = FilReader(filfile_8bit_1)
+        outfile = fil.requantize(nbits_out=4, outfile_name=tmpfile)
+        data = FilReader(outfile).read_block(0, 256).data.astype(np.float64)
+        assert data.min() >= 0
+        assert data.max() <= 15
+        assert abs(data.mean() - 7.5) < 1.0
+        assert data.std() > 0.5
+
+    def test_requantize_remove_bandpass(
+        self, filfile_8bit_1: str, tmpfile: str
+    ) -> None:
+        fil = FilReader(filfile_8bit_1)
+        outfile = fil.requantize(
+            nbits_out=8,
+            outfile_name=tmpfile,
+            remove_bandpass=True,
+        )
+        new_fil = FilReader(outfile)
+        np.testing.assert_equal(new_fil.header.nbits, 8)
+
+    def test_zap_times(self, filfile_8bit_1: str, tmpfile: str) -> None:
+        fil = FilReader(filfile_8bit_1)
+        outfile = fil.zap_times([(0, 8)], mode="zero", outfile_name=tmpfile)
+        new_fil = FilReader(outfile)
+        np.testing.assert_equal(new_fil.header.nsamples, fil.header.nsamples)
+        zapped = new_fil.read_block(0, 8).data
+        np.testing.assert_array_equal(zapped, 0)
+
     def test_remove_zerodm(self, filfile_4bit: str, tmpfile: str) -> None:
         fil = FilReader(filfile_4bit)
         outfile = fil.remove_zerodm(outfile_name=tmpfile)
@@ -166,6 +231,53 @@ class TestFilterbank:
         new_fil = FilReader(outfile)
         np.testing.assert_equal(new_fil.header.nchans, fil.header.nchans // 16)
         np.testing.assert_equal(new_fil.header.nsamples, fil.header.nsamples)
+
+    def test_tree_dedisperse(self, filfile_8bit_1: str, tmpdir: str) -> None:
+        src = FilReader(filfile_8bit_1)
+        band = src.extract_bands(
+            chanstart=0,
+            nchans=32,
+            chanpersub=32,
+            outfile_base=str(Path(tmpdir) / "treeband"),
+        )[0]
+        fil = FilReader(band)
+        paths = fil.tree_dedisperse(
+            dm_lo=0,
+            dm_hi=3,
+            chunk=256,
+            outfile_base=str(Path(tmpdir) / "tree"),
+        )
+        assert len(paths) == 4
+        for path in paths:
+            tim = TimeSeries.from_tim(path)
+            np.testing.assert_equal(tim.header.nchans, 1)
+            np.testing.assert_equal(tim.header.nbits, 32)
+            assert tim.nsamples > 0
+
+    def test_tree_dedisperse_requires_pow2(self, filfile_8bit_1: str) -> None:
+        fil = FilReader(filfile_8bit_1)
+        with pytest.raises(ValueError, match="power-of-two"):
+            fil.tree_dedisperse()
+
+    def test_dedisperse_plan(self, filfile_8bit_1: str, tmpdir: str) -> None:
+        src = FilReader(filfile_8bit_1)
+        band = src.extract_bands(
+            chanstart=0,
+            nchans=32,
+            chanpersub=32,
+            outfile_base=str(Path(tmpdir) / "planband"),
+        )[0]
+        fil = FilReader(band)
+        plan = DMPlan.from_header(fil.header, dm_max=2.0, ti=40e-6)
+        paths = fil.dedisperse_plan(
+            plan,
+            gulp=512,
+            outfile_base=str(Path(tmpdir) / "plan"),
+        )
+        assert len(paths) == len(plan)
+        tim = TimeSeries.from_tim(paths[0])
+        np.testing.assert_equal(tim.header.nchans, 1)
+        np.testing.assert_equal(tim.header.nbits, 32)
 
     def test_fold(self, filfile_4bit: str) -> None:
         fil = FilReader(filfile_4bit)

@@ -638,7 +638,7 @@ def _scale_biweight(
     np.float64 | NDArray[np.float64]
         The Biweight Midvariance scale of the array.
     """
-    return astrostats.biweight_scale(data, axis=axis)  # type: ignore[return-value]
+    return astrostats.biweight_scale(data, axis=axis)  # ty: ignore[invalid-return-type]
 
 
 def _scale_qn(

@@ -208,6 +208,45 @@ class StreamInfo:
         return tsamp_check and contiguous
 
 
+def prepare_header_edit(
+    filename: str | Path,
+    key: str,
+    value: float | str,
+) -> tuple[dict[str, float | int | str], dict[str, float | int | str]]:
+    """Return ``(before, after)`` parsed headers for a would-be in-place edit.
+
+    Does not write to disk. String keys are padded/truncated to the existing
+    byte length, matching :func:`edit_header`.
+    """
+    if key not in SIGPROC_SCHEMA:
+        msg = f"Key '{key}' is not a valid sigproc key."
+        raise ValueError(msg)
+    before = parse_header(filename)
+    after = dict(before)
+    if key in ("source_name", "rawdatafile") and isinstance(value, str):
+        old_value = str(before.get(key, ""))
+        old_bytes = old_value.encode("ascii")
+        try:
+            new_bytes = value.encode("ascii")
+        except UnicodeEncodeError as exc:
+            msg = (
+                f"New value for '{key}' contains non-ASCII characters, which is "
+                f"not allowed."
+            )
+            raise ValueError(msg) from exc
+        oldlen = len(old_bytes)
+        if len(new_bytes) > oldlen:
+            logger.warning(
+                f"New value for '{key}' is too long ({len(new_bytes)} bytes) to "
+                f"fit in existing header space ({oldlen} bytes). Value will be "
+                f"truncated.",
+            )
+            new_bytes = new_bytes[:oldlen]
+        value = new_bytes.ljust(oldlen, b" ").decode("ascii")
+    after[key] = value
+    return before, after
+
+
 def edit_header(filename: str | Path, key: str, value: float | str) -> None:
     """Edit a sigproc style header directly in place for the given file.
 
@@ -231,38 +270,11 @@ def edit_header(filename: str | Path, key: str, value: float | str) -> None:
        It is up to the user to be responsible with this function, as it will directly
        change the file on which it is being operated.
     """
-    if key not in SIGPROC_SCHEMA:
-        msg = f"Key '{key}' is not a valid sigproc key."
-        raise ValueError(msg)
-    header = parse_header(filename)
+    _before, header = prepare_header_edit(filename, key, value)
     # nsamples is always injected by parse_header (computed), but may or may
     # not have existed in the original binary header. We must not encode it
     # unless it was genuinely there — otherwise we silently grow the header.
     nsamples_in_file = _nsamples_in_binary_header(filename)
-    if key in ("source_name", "rawdatafile") and isinstance(value, str):
-        old_value = str(header.get(key, ""))
-        old_bytes = old_value.encode("ascii")  # existing header must already obey this
-        try:
-            new_bytes = value.encode("ascii")
-        except UnicodeEncodeError as exc:
-            msg = (
-                f"New value for '{key}' contains non-ASCII characters, which is "
-                f"not allowed."
-            )
-            raise ValueError(msg) from exc
-        oldlen = len(old_bytes)
-        newlen = len(new_bytes)
-        if newlen > oldlen:
-            logger.warning(
-                f"New value for '{key}' is too long ({newlen} bytes) to fit in "
-                f"existing header space ({oldlen} bytes). Value will be truncated.",
-            )
-            new_bytes = new_bytes[:oldlen]
-        # Pad shorter values
-        new_bytes = new_bytes.ljust(oldlen, b" ")
-        value = new_bytes.decode("ascii")
-
-    header[key] = value
     new_hdr = encode_header(header, allow_nsamples_overwrite=nsamples_in_file)
     filepath = validate_path(filename, writable=True)
     if len(new_hdr) != int(header["hdrlen"]):
@@ -498,6 +510,13 @@ def _read_sigproc_header(fp: BinaryIO, filepath: Path) -> dict[str, int | float 
             raise OSError(msg) from exc
         if key == "HEADER_END":
             break
+        if key == "FREQUENCY_START":
+            _consume_frequency_start(fp, filepath)
+            msg = (
+                f"{filepath}: irregular frequency axis (FREQUENCY_START); "
+                "linear fch1/foff only"
+            )
+            raise NotImplementedError(msg)
         if key not in SIGPROC_SCHEMA:
             # Unknown key: warn and attempt best-effort skip.
             logger.warning(
@@ -542,6 +561,25 @@ def _nsamples_in_binary_header(filename: str | Path) -> bool:
                 _read_string(fp)
             else:
                 fp.read(field.fmt.size)
+
+
+def _consume_frequency_start(fp: BinaryIO, filepath: Path) -> None:
+    """Skip a SIGPROC FREQUENCY_START / fchannel / FREQUENCY_END block."""
+    key = _read_string(fp)
+    if key != "nchans":
+        msg = f"{filepath}: expected 'nchans' after FREQUENCY_START, got {key!r}"
+        raise OSError(msg)
+    nchans = int(_read_numeric(fp, _UINT))
+    for _ in range(nchans):
+        key = _read_string(fp)
+        if key != "fchannel":
+            msg = f"{filepath}: expected 'fchannel', got {key!r}"
+            raise OSError(msg)
+        _read_numeric(fp, _DOUBLE)
+    key = _read_string(fp)
+    if key != "FREQUENCY_END":
+        msg = f"{filepath}: expected 'FREQUENCY_END', got {key!r}"
+        raise OSError(msg)
 
 
 def _read_numeric(fp: BinaryIO, fmt: struct.Struct) -> int | float:
