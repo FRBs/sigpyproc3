@@ -11,6 +11,25 @@ Algorithms live on the data objects
 flags; {doc}`/tutorials/quickstart` and {doc}`/tutorials/search` show how
 to use the same methods from Python.
 
+## Logging
+
+Every `spp_*` tool accepts global logging flags:
+
+- **`-v` / `--verbose`** — repeat for more detail (`-v` sets DEBUG).
+- **`-q` / `--quiet`** — only warnings and errors (`-q` overrides `-v`).
+
+Default output is INFO-level messages with Rich formatting. On **group**
+commands (`spp_header`, `spp_extract`, `spp_search`, …), put the flags
+**before** the subcommand, for example:
+
+```bash
+spp_header -v print my_test.fil
+spp_search -q fft observation.tim -o fft.csv
+```
+
+From Python, call `sigpyproc.logging.configure_logging()` for the same
+Rich styling, or rely on your application's own `logging` configuration.
+
 | Script | Role |
 | --- | --- |
 | `spp_header` | Print, get, or edit a header |

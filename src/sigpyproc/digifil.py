@@ -7,6 +7,7 @@ reproduces dspsr's ``digifil`` pipeline.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -28,7 +29,6 @@ from sigpyproc.header import Header
 from sigpyproc.io import sigproc
 from sigpyproc.io.fileio import FileWriter
 from sigpyproc.io.pfits import PFITSFile
-from sigpyproc.utils import get_logger
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator
@@ -38,7 +38,7 @@ if TYPE_CHECKING:
 
     from sigpyproc.base import Filterbank
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 MEGABYTE = 1024.0 * 1024.0
 VALID_NBITS = (1, 2, 4, 8, 16, -32)

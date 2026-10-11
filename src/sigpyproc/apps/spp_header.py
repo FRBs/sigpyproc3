@@ -7,6 +7,7 @@ from rich import print as rprint
 from rich.pretty import pprint
 from rich.table import Table
 
+from sigpyproc.apps._logging import logging_options, setup_cli_logging
 from sigpyproc.header import Header
 from sigpyproc.io import sigproc
 from sigpyproc.utils import detect_file_type
@@ -22,11 +23,13 @@ file_readers: dict[str, Callable] = {
 }
 
 
+@logging_options
 @click.group(
     context_settings={"help_option_names": ["-h", "--help"], "show_default": True},
 )
-def main() -> None:
+def main(verbose: int, *, quiet: bool) -> None:
     """Print or edit filterbank headers."""
+    setup_cli_logging(verbose, quiet=quiet)
 
 
 @main.command("print")

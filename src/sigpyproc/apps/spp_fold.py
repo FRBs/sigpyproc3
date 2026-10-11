@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import rich_click as click
 
+from sigpyproc.apps._logging import logging_options, setup_cli_logging
 from sigpyproc.readers import FilReader
 
 
+@logging_options
 @click.command(
     context_settings={"help_option_names": ["-h", "--help"], "show_default": True},
 )
@@ -32,6 +34,8 @@ from sigpyproc.readers import FilReader
     help="Output basename (writes .npz and .txt)",
 )
 def main(
+    verbose: int,
+    quiet: bool,
     filfile: str,
     period: float,
     dm: float,
@@ -43,6 +47,7 @@ def main(
     outfile: str | None,
 ) -> None:
     """Fold a filterbank at a period and DM."""
+    setup_cli_logging(verbose, quiet)
     fil = FilReader(filfile)
     cube = fil.fold(
         period,

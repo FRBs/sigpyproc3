@@ -263,6 +263,11 @@ class TestSppHeader:
 
 
 class TestSppStats:
+    def test_quiet_flag(self, filfile_8bit_1: str) -> None:
+        runner = CliRunner()
+        result = runner.invoke(spp_stats.main, ["-q", filfile_8bit_1])
+        assert result.exit_code == 0
+
     def test_print(self, filfile_8bit_1: str) -> None:
         runner = CliRunner()
         result = runner.invoke(spp_stats.main, [filfile_8bit_1])

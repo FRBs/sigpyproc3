@@ -16,7 +16,6 @@ from astropy import units
 from astropy.coordinates import Angle, EarthLocation, SkyCoord
 from astropy.stats import gaussian_fwhm_to_sigma
 from astropy.time import Time
-from rich.logging import RichHandler
 
 if TYPE_CHECKING:
     import inspect
@@ -128,56 +127,6 @@ def next_multiple(x: int, y: int) -> int:
         msg = f"y={y} must be positive."
         raise ValueError(msg)
     return ((x + y - 1) // y) * y
-
-
-def get_logger(
-    name: str,
-    *,
-    level: int | str = logging.INFO,
-    quiet: bool = False,
-    log_file: str | None = None,
-) -> logging.Logger:
-    """Get a fancy configured logger.
-
-    Parameters
-    ----------
-    name : str
-        Logger name.
-    level : int or str, optional
-        Logging level, by default `logging.INFO`.
-    quiet : bool, optional
-        If True set ``level`` as `logging.WARNING`, by default False.
-    log_file : str, optional
-        Path to log file, by default None.
-
-    Returns
-    -------
-    logging.Logger
-        A logging object.
-    """
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.WARNING if quiet else level)
-    logformat = "- %(name)s - %(message)s"
-    formatter = logging.Formatter(fmt=logformat)
-    if not logger.hasHandlers():
-        handler = RichHandler(
-            show_path=False,
-            rich_tracebacks=True,
-            log_time_format="%Y-%m-%d %H:%M:%S",
-        )
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
-    if log_file:
-        log_path = validate_path(log_file, writable=True)
-        if not any(
-            isinstance(hndlr, logging.FileHandler)
-            and hndlr.baseFilename == log_path.as_posix()
-            for hndlr in logger.handlers
-        ):
-            file_handler = logging.FileHandler(log_path)
-            file_handler.setFormatter(formatter)
-            logger.addHandler(file_handler)
-    return logger
 
 
 def get_callerfunc(stack: list[inspect.FrameInfo]) -> str:
@@ -375,7 +324,7 @@ def pad_centre(array: np.ndarray, target_length: int) -> np.ndarray:
     )
 
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def horizon_angles(

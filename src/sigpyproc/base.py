@@ -6,6 +6,7 @@ order pulsar data.
 
 from __future__ import annotations
 
+import logging
 from abc import ABC, abstractmethod
 from contextlib import ExitStack
 from typing import TYPE_CHECKING
@@ -18,7 +19,6 @@ from sigpyproc.core.stats import ChannelStats
 from sigpyproc.digifil import DigifilConfig, digifil
 from sigpyproc.foldedcube import FoldedData
 from sigpyproc.timeseries import TimeSeries
-from sigpyproc.utils import get_logger
 
 if TYPE_CHECKING:
     from collections.abc import Buffer, Callable, Iterator, Sequence
@@ -35,6 +35,9 @@ if TYPE_CHECKING:
         allocator: NotRequired[Callable[[int], Buffer] | None]
 
 
+logger = logging.getLogger(__name__)
+
+
 class Filterbank(ABC):
     """Base class for manipulating frequency-major order pulsar data.
 
@@ -49,7 +52,6 @@ class Filterbank(ABC):
 
     def __init__(self) -> None:
         self._chan_stats: ChannelStats | None = None
-        self.logger = get_logger(__name__)
 
     @property
     @abstractmethod
@@ -1236,11 +1238,11 @@ class Filterbank(ABC):
         maximum dispersion delay.
         """
         if np.isclose(np.modf(period / self.header.tsamp)[0], 0.001, atol=0):
-            self.logger.warning(
+            logger.warning(
                 "Foldng interval is an integer multiple of the sampling time",
             )
         if nbins > period / self.header.tsamp:
-            self.logger.warning(
+            logger.warning(
                 "Number of phase bins is greater than period/sampling time",
             )
         if (self.header.nsamples * self.header.nchans) // (nbands * nints * nbins) < 10:

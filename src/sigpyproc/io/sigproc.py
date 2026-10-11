@@ -5,6 +5,7 @@ This module contains functions for parsing and editing Sigproc-style headers.
 
 from __future__ import annotations
 
+import logging
 import math
 import re
 import struct
@@ -19,12 +20,12 @@ from astropy.coordinates import SkyCoord
 from bidict import bidict
 
 from sigpyproc import params
-from sigpyproc.utils import get_logger, validate_path
+from sigpyproc.utils import validate_path
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)

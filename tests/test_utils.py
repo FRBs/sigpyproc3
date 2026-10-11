@@ -1,10 +1,8 @@
-import logging
 from pathlib import Path
 
 import numpy as np
 import pytest
 from astropy.coordinates import SkyCoord
-from rich.logging import RichHandler
 
 from sigpyproc import utils
 
@@ -107,31 +105,6 @@ class TestPaths:
         assert (
             utils.validate_path(tmpfile, resolve_path=True) == Path(tmpfile).resolve()
         )
-
-
-class TestLogger:
-    def test_get_logger_default(self) -> None:
-        name = "test_logger"
-        logger_def = logging.getLogger(name)
-        logger_def.propagate = False
-        for handler in logger_def.handlers[:]:
-            logger_def.removeHandler(handler)
-        logger = utils.get_logger(name)
-        assert isinstance(logger, logging.Logger)
-        assert logger.level == logging.INFO
-        assert len(logger.handlers) == 1
-        assert isinstance(logger.handlers[0], RichHandler)
-
-    def test_get_logger_log_file(self, tmpfile: str) -> None:
-        name = "test_logger"
-        logger_def = logging.getLogger(name)
-        logger_def.propagate = False
-        for handler in logger_def.handlers[:]:
-            logger_def.removeHandler(handler)
-        logger = utils.get_logger(name, log_file=tmpfile)
-        assert len(logger.handlers) == 2
-        assert isinstance(logger.handlers[1], logging.FileHandler)
-        assert logger.handlers[1].baseFilename == tmpfile
 
 
 class TestHorizonAngles:

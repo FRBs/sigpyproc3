@@ -1,9 +1,11 @@
 import attrs
 import rich_click as click
 
+from sigpyproc.apps._logging import logging_options, setup_cli_logging
 from sigpyproc.digifil import DigifilConfig, default_gulp, digifil
 
 
+@logging_options
 @click.command(
     context_settings={"help_option_names": ["-h", "--help"], "show_default": True},
 )
@@ -95,6 +97,8 @@ from sigpyproc.digifil import DigifilConfig, default_gulp, digifil
     help="Output filename (default: <input stem>.fil)",
 )
 def main(
+    verbose: int,
+    quiet: bool,
     filfile: str,
     nbits: int,
     block_size: float | None,  # noqa: ARG001
@@ -112,6 +116,7 @@ def main(
     output_filename: str | None,
 ) -> None:
     """Convert to Sigproc filterbank format, following dspsr digifil."""
+    setup_cli_logging(verbose, quiet)
     if gulp is not None and max_ram is not None:
         msg = "give either --gulp or -U, not both"
         raise click.UsageError(msg)

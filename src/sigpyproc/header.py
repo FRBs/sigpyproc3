@@ -5,6 +5,7 @@ This module contains the Header class for handling observation metadata.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -25,7 +26,7 @@ if TYPE_CHECKING:
     from bidict import bidict
 
 
-_LOG = utils.get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 # Header attributes and the Sigproc keys they are read from and written as. An
 # attribute is written only when it is in ``Header.known_keys``.
@@ -761,12 +762,12 @@ class Header:
             self.sigproc_telescope_id is None
             and self.telescope not in sigproc.telescope_ids
         ):
-            _LOG.warning(
+            logger.warning(
                 f"Telescope {self.telescope!r} has no Sigproc id; "
                 "writing telescope_id 0."
             )
         if self.sigproc_machine_id is None and self.backend not in sigproc.machine_ids:
-            _LOG.warning(
+            logger.warning(
                 f"Backend {self.backend!r} has no Sigproc id; writing machine_id 0."
             )
         sig_header: dict[str, Any] = {
@@ -810,7 +811,7 @@ class Header:
             if attr == "signed":
                 value = int(value)
                 if value:
-                    _LOG.warning("signed=1 is rejected by some readers")
+                    logger.warning("signed=1 is rejected by some readers")
             values[key] = value
         return values
 

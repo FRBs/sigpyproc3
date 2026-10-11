@@ -607,7 +607,7 @@ class TestSigprocRules:
     ) -> None:
         hdr = _minimal_header().new_header({"signed": True})
         assert hdr.to_sigproc()["signed"] == 1
-        assert "predate it" in caplog.text
+        assert "signed=1 is rejected by some readers" in caplog.text
 
     def test_rewrite_keeps_known_signed_zero(self, tmp_path: Path) -> None:
         src = _write_fil(tmp_path / "in.fil", signed=0)

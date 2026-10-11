@@ -3,14 +3,17 @@ from __future__ import annotations
 import numpy as np
 import rich_click as click
 
+from sigpyproc.apps._logging import logging_options, setup_cli_logging
 from sigpyproc.readers import FilReader
 
 
+@logging_options
 @click.group(
     context_settings={"help_option_names": ["-h", "--help"], "show_default": True},
 )
-def main() -> None:
+def main(verbose: int, quiet: bool) -> None:
     """Extract samples, channels, or bands from a filterbank."""
+    setup_cli_logging(verbose, quiet)
 
 
 @main.command()

@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import rich_click as click
 
+from sigpyproc.apps._logging import logging_options, setup_cli_logging
 from sigpyproc.combine import splice_filterbanks
 
 
+@logging_options
 @click.command(
     context_settings={"help_option_names": ["-h", "--help"], "show_default": True},
 )
@@ -23,8 +25,11 @@ from sigpyproc.combine import splice_filterbanks
     required=True,
     help="Output filename",
 )
-def main(filfiles: tuple[str, ...], gulp: int, outfile: str) -> None:
+def main(
+    verbose: int, quiet: bool, filfiles: tuple[str, ...], gulp: int, outfile: str
+) -> None:
     """Splice simultaneous filterbanks along frequency (linear fch1/foff)."""
+    setup_cli_logging(verbose, quiet)
     path = splice_filterbanks(filfiles, outfile, gulp=gulp)
     click.echo(path)
 

@@ -7,6 +7,7 @@ filterbank and PSRFITS data.
 from __future__ import annotations
 
 import inspect
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -19,7 +20,7 @@ from sigpyproc.block import FilterbankBlock
 from sigpyproc.header import Header
 from sigpyproc.io.fileio import FileReader, allocate_buffer
 from sigpyproc.io.pfits import PFITSFile, PrimaryHdr, SubintHdr
-from sigpyproc.utils import get_callerfunc, get_logger
+from sigpyproc.utils import get_callerfunc
 
 if TYPE_CHECKING:
     from collections.abc import Buffer, Callable, Iterator, Sequence
@@ -27,7 +28,7 @@ if TYPE_CHECKING:
     from sigpyproc.core.custom_types import LocMethods
     from sigpyproc.io.bits import BitsInfo
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class FilReader(Filterbank):
