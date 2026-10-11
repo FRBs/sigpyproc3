@@ -199,6 +199,11 @@ struct_to_numpy = {"I": "uint", "d": "float", "str": "S256"}
 # not required (may be of use in future)
 telescope_lats_longs = {"Effelsberg": (50.52485, 6.883593)}
 
+# Barycentric line as PRESTO writes it, and the equals-sign spelling sigpyproc wrote
+# before. Both are read; only the PRESTO spelling is written.
+PRESTO_BARYCENTRIC_LABEL = "Barycentered?           (1 yes, 0 no)"
+PRESTO_BARYCENTRIC_ALIASES = ("Barycentered?           (1=yes, 0=no)",)
+
 # useful for creating inf files
 presto_inf: dict[str, tuple[str, type, str]] = {
     "Data file name without suffix": ("basename", str, "s"),
@@ -209,7 +214,7 @@ presto_inf: dict[str, tuple[str, type, str]] = {
     "J2000 Declination     (dd:mm:ss.ssss)": ("dec", str, "s"),
     "Data observed by": ("observer", str, "s"),
     "Epoch of observation (MJD)": ("tstart", float, "05.15f"),
-    "Barycentered?           (1=yes, 0=no)": ("barycentric", int, "d"),
+    PRESTO_BARYCENTRIC_LABEL: ("barycentric", int, "d"),
     "Number of bins in the time series": ("nsamples", int, "-11.0f"),
     "Width of each time series bin (sec)": ("tsamp", float, ".15g"),
     "Dispersion measure (cm-3 pc)": ("dm", float, ".12g"),

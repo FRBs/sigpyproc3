@@ -1152,7 +1152,7 @@ class Filterbank(ABC):
         updates = {
             "fch1": new_fch1,
             "foff": new_foff,
-            "refdm": dm,
+            "dm": dm,
             "nchans": nsub,
             "nbits": 32,
         }

@@ -483,9 +483,8 @@ def _output_header(
     """Build the output sigproc header as dspsr digifil does.
 
     The output bandwidth is negative (dspsr's convention), so the channels are
-    reversed when the input bandwidth is positive. The source azimuth and zenith
-    angle are computed for the telescope, as dspsr does, and ``rawdatafile`` is
-    ``unknown`` as dspsr writes it.
+    reversed when the input bandwidth is positive. Optional keys of the input, such as
+    ``rawdatafile`` and the azimuth and zenith angles, are carried over unchanged.
     """
     bw_abs = abs(hdr_in.foff) * nchan_in
     centre = hdr_in.fch1 + 0.5 * hdr_in.foff * (nchan_in - 1)
@@ -500,13 +499,9 @@ def _output_header(
             "nbits": nbits_out,
             "nifs": npol_out,
             "nsamples": nsamples_out,
-            "rawdatafile": "unknown",
         },
     )
 
-
-# Optional sigproc keys that dspsr does not write; they are left out of the output.
-DSPSR_OMITTED_KEYS = ("barycentric", "pulsarcentric", "period", "refdm", "signed")
 
 DSPSR_MAX_RAM_MB = 256.0
 
@@ -643,8 +638,6 @@ def digifil(
     exact = cfg.rescale_seconds != 0
     out_file = FileWriter(outfile, mode="w+", nbits=pipeline.nbits_out)
     out_sig = hdr_out.to_sigproc()
-    for key in DSPSR_OMITTED_KEYS:
-        out_sig.pop(key, None)
     out_file.write(sigproc.encode_header(out_sig))
     for raw in src.blocks(block, exact=exact):
         processed = pipeline.process(raw)

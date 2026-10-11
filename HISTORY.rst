@@ -6,6 +6,7 @@ Unreleased
 - Sub-byte (2- and 4-bit) sigproc data are now read and written least-significant-bit first, as dspsr does.
 - Replaced ``sigpyproc.io.rescale.Rescale`` with ``sigpyproc.core.digifil``.
 - Removes the ``remove_bandpass`` option of ``requantize``.
+- Robust Header reading and writing.
 
 
 1.2.0 (2024-05-04)

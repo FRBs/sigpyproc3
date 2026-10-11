@@ -5,10 +5,11 @@ This module contains functions for parsing and editing Sigproc-style headers.
 
 from __future__ import annotations
 
+import re
 import struct
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, BinaryIO
+from typing import TYPE_CHECKING, Any, BinaryIO
 
 import numpy as np
 from astropy import units
@@ -335,7 +336,8 @@ def parse_header(filename: str | Path) -> dict[str, float | int | str]:
     Returns
     -------
     dict[str, float | int | str]
-        Observational metadata, plus computed keys.
+        Observational metadata, plus computed keys. Unrecognised sigproc keys are
+        kept as ``(key, raw value bytes)`` pairs under ``unknown_keys``.
 
     Raises
     ------
@@ -374,6 +376,10 @@ def parse_header(filename: str | Path) -> dict[str, float | int | str]:
 def match_header(header1: dict, header2: dict) -> None:
     """Match header keywords between two parsed sigproc headers.
 
+    A schema key must be present in both headers with the same value, or absent from
+    both. ``tstart``, ``rawdatafile`` and ``nsamples`` are not compared, since they
+    legitimately differ between sequential files.
+
     Parameters
     ----------
     header1 : dict
@@ -386,24 +392,32 @@ def match_header(header1: dict, header2: dict) -> None:
     ValueError
         if key values do not match.
     """
-    keys_nomatch = {"tstart", "rawdatafile"}
-    for key, value in header1.items():
-        if key in keys_nomatch or key not in SIGPROC_SCHEMA:
-            continue
-        if value != header2[key]:
+    keys_nomatch = {"tstart", "rawdatafile", "nsamples"}
+    keys = [
+        key
+        for key in SIGPROC_SCHEMA
+        if key not in keys_nomatch and (key in header1 or key in header2)
+    ]
+    for key in keys:
+        value1 = header1.get(key)
+        value2 = header2.get(key)
+        if value1 != value2:
             msg = (
-                f"Header key ({key} = {value}) and ({key} = {header2[key]}) "
-                f"do not match for file {header2['filename']}"
+                f"Header key ({key} = {value1}) and ({key} = {value2}) "
+                f"do not match for file {header2.get('filename', '')}"
             )
             raise ValueError(msg)
 
 
 def encode_header(
-    header: dict[str, int | float | str],
+    header: dict[str, Any],
     *,
     allow_nsamples_overwrite: bool = False,
 ) -> bytes:
     """Encode sigproc header dict in binary format.
+
+    Schema keys present in ``header`` are written in schema order, followed by any
+    raw unknown keys stored under ``header["unknown_keys"]``.
 
     Returns
     -------
@@ -420,6 +434,9 @@ def encode_header(
         if key not in header:
             continue
         hdr_encoded += encode_key(key, value=header[key])
+
+    for key, raw_value in header.get("unknown_keys", ()):
+        hdr_encoded += _encode_string(key) + raw_value
 
     hdr_encoded += _encode_string("HEADER_END")
     return hdr_encoded
@@ -476,11 +493,13 @@ def parse_radec(src_raj: float, src_dej: float) -> SkyCoord:
     ho, mi = divmod(src_raj, 10000)
     mi, se = divmod(mi, 100)
 
-    sign = -1 if src_dej < 0 else 1
+    sign = "-" if src_dej < 0 else ""
     de, ami = divmod(abs(src_dej), 10000)
     ami, ase = divmod(ami, 100)
 
-    radec_str = f"{int(ho)} {int(mi)} {se} {sign * int(de)} {int(ami)} {ase}"
+    # Fixed-point seconds avoid exponent tokens such as 1e-08, which Astropy rejects.
+    # The sign goes on the degree field so that declinations above -1 degree keep it.
+    radec_str = f"{int(ho)} {int(mi)} {se:.10f} {sign}{int(de)} {int(ami)} {ase:.10f}"
     return SkyCoord(radec_str, unit=(units.hourangle, units.deg))
 
 
@@ -489,8 +508,9 @@ def _encode_string(value: str) -> bytes:
     return _UINT.pack(len(encoded)) + encoded
 
 
-def _read_sigproc_header(fp: BinaryIO, filepath: Path) -> dict[str, int | float | str]:
-    header: dict[str, int | float | str] = {}
+def _read_sigproc_header(fp: BinaryIO, filepath: Path) -> dict[str, Any]:
+    header: dict[str, Any] = {}
+    unknown: list[tuple[str, bytes]] = []
     try:
         key = _read_string(fp)
     except (struct.error, UnicodeDecodeError, ValueError) as exc:
@@ -518,12 +538,16 @@ def _read_sigproc_header(fp: BinaryIO, filepath: Path) -> dict[str, int | float 
             )
             raise NotImplementedError(msg)
         if key not in SIGPROC_SCHEMA:
-            # Unknown key: warn and attempt best-effort skip.
+            # Unknown key: warn and attempt best-effort skip, keeping the raw bytes.
             logger.warning(
                 f"{filepath}: Unknown header key {key} at offset {fp.tell()} — "
                 f"attempting skip.",
             )
+            value_start = fp.tell()
             _skip_unknown_key(fp, filepath)
+            value_end = fp.tell()
+            fp.seek(value_start)
+            unknown.append((key, fp.read(value_end - value_start)))
             continue
 
         field = SIGPROC_SCHEMA[key]
@@ -539,6 +563,7 @@ def _read_sigproc_header(fp: BinaryIO, filepath: Path) -> dict[str, int | float 
             )
             raise OSError(msg) from exc
     header["hdrlen"] = fp.tell()
+    header["unknown_keys"] = tuple(unknown)
     return header
 
 
@@ -654,34 +679,81 @@ def _read_string(fp: BinaryIO) -> str:
     return data.decode("utf-8", errors="strict")
 
 
-def _skip_unknown_key(fp: BinaryIO, filepath: Path) -> None:
-    """Attempt to skip an unknown key's value by probing candidate sizes.
+_PLAUSIBLE_KEY = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
+_MAX_STRING_LEN = 4096
+_MAX_UNKNOWN_KEYS = 64
 
-    Strategy: save position, try each candidate Struct size, attempt
-    to read the *next* token as a valid string. If it looks like a
-    plausible sigproc key (known key or HEADER_END), commit; otherwise
-    restore and try the next size. If nothing works, raise OSError.
+
+def _value_candidates(fp: BinaryIO, start: int) -> list[int]:
+    """Return the end offsets of the value that may start at ``start``, in probe order.
+
+    Candidates are a 4-, 8- or 1-byte number, then a length-prefixed string. Only
+    candidates that fit inside the file are returned.
     """
-    unknown_skip_structs = (_UINT, _DOUBLE, _BYTE)
-    start = fp.tell()
-    for candidate in unknown_skip_structs:
-        fp.seek(start)
-        data = fp.read(candidate.size)
-        if len(data) < candidate.size:
-            continue  # EOF — try smaller
-        # Peek at what would be the next key
-        peek_start = fp.tell()
+    fp.seek(0, 2)
+    size = fp.tell()
+    ends = [
+        start + fmt.size for fmt in (_UINT, _DOUBLE, _BYTE) if start + fmt.size <= size
+    ]
+    fp.seek(start)
+    raw_len = fp.read(_UINT.size)
+    if len(raw_len) == _UINT.size:
+        strlen = _UINT.unpack(raw_len)[0]
+        if 1 <= strlen <= _MAX_STRING_LEN and start + _UINT.size + strlen <= size:
+            ends.append(start + _UINT.size + strlen)
+    return ends
+
+
+def _header_reaches_end(fp: BinaryIO, pos: int, depth: int = 0) -> bool:
+    """Return True if the header tokens from ``pos`` parse as far as HEADER_END.
+
+    Known keys are read with their schema width. Unknown keys are accepted only with a
+    plausible name, and their value candidates are tried recursively. A
+    ``FREQUENCY_START`` block is accepted as a boundary, because the reader rejects it
+    with a clear error when it reaches it.
+    """
+    if depth > _MAX_UNKNOWN_KEYS:
+        return False
+    while True:
+        fp.seek(pos)
         try:
-            next_key = _read_string(fp)
+            key = _read_string(fp)
         except (struct.error, UnicodeDecodeError, ValueError):
+            return False
+        pos = fp.tell()
+        if key in ("HEADER_END", "FREQUENCY_START"):
+            return True
+        if key in SIGPROC_SCHEMA:
+            field = SIGPROC_SCHEMA[key]
+            try:
+                if field.fmt is None:
+                    _read_string(fp)
+                else:
+                    _read_numeric(fp, field.fmt)
+            except (struct.error, UnicodeDecodeError, ValueError):
+                return False
+            pos = fp.tell()
             continue
-        if next_key in SIGPROC_SCHEMA or next_key == "HEADER_END":
-            # Looks valid — rewind to peek_start so the main loop reads it
-            fp.seek(peek_start)
-            logger.debug(
-                f"Skipped unknown key value ({candidate.size} bytes) - next key "
-                f"is {next_key}."
-            )
+        if not _PLAUSIBLE_KEY.match(key):
+            return False
+        return any(
+            _header_reaches_end(fp, end, depth + 1)
+            for end in _value_candidates(fp, pos)
+        )
+
+
+def _skip_unknown_key(fp: BinaryIO, filepath: Path) -> None:
+    """Skip an unknown key's value and leave the file at the next key.
+
+    Each value candidate is tried in order. A candidate is committed only when the
+    rest of the header, read from its end, reaches ``HEADER_END``. If none does,
+    raise OSError.
+    """
+    start = fp.tell()
+    for end in _value_candidates(fp, start):
+        if _header_reaches_end(fp, end):
+            fp.seek(end)
+            logger.debug(f"Skipped unknown header key value at offset {start}.")
             return
     msg = (
         f"{filepath}: Cannot determine size of unknown header key value "

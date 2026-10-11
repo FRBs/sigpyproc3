@@ -12,7 +12,7 @@ are not implemented. Use :mod:`~sigpyproc.simulation.furby` for FRBs.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import attrs
 import numpy as np
@@ -171,14 +171,12 @@ def fake_filterbank(
 
     if outfile is None:
         outfile = header.filename
-    header = header.new_header(
-        {
-            "filename": outfile,
-            "rawdatafile": outfile,
-            "dm": params.dm,
-            "period": params.period or 0.0,
-        },
-    )
+    updates: dict[str, Any] = {"filename": outfile, "rawdatafile": outfile}
+    if params.dm:
+        updates["dm"] = params.dm
+    if params.period:
+        updates["period"] = params.period
+    header = header.new_header(updates)
     rng = np.random.default_rng(seed)
     delays = np.atleast_1d(
         header.get_dmdelays(params.dm, in_samples=False),

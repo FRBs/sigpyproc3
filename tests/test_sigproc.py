@@ -757,3 +757,97 @@ class TestStreamInfo:
         )
         stream_info = sigproc.StreamInfo(entries=[file_info1, file_info2])
         assert stream_info.check_contiguity() is False
+
+
+def _core_sigproc_fields(**extra: object) -> dict:
+    fields: dict = {
+        "data_type": 1,
+        "telescope_id": 0,
+        "machine_id": 0,
+        "source_name": "test_src",
+        "src_raj": 0.0,
+        "src_dej": 0.0,
+        "tstart": 60000.0,
+        "tsamp": 6.4e-5,
+        "nbits": 8,
+        "fch1": 1500.0,
+        "foff": -0.1,
+        "nchans": 4,
+        "nifs": 1,
+    }
+    fields.update(extra)
+    return fields
+
+
+def _write_sigproc(path: Path, nsamples: int, tstart: float, **extra: object) -> str:
+    fields = _core_sigproc_fields(tstart=tstart, **extra)
+    path.write_bytes(sigproc.encode_header(fields) + bytes(4 * nsamples))
+    return str(path)
+
+
+class TestHeaderRobustness:
+    def test_unknown_key_bytes_roundtrip(self, tmp_path: Path) -> None:
+        raw = struct.pack("<I", 999)
+        path = _write_sigproc(
+            tmp_path / "in.fil",
+            nsamples=16,
+            tstart=60000.0,
+            unknown_keys=(("mystery", raw),),
+        )
+        parsed = sigproc.parse_header(path)
+        assert parsed["unknown_keys"] == (("mystery", raw),)
+        encoded = sigproc.encode_header(parsed)
+        assert encoded.endswith(
+            sigproc._encode_string("mystery")
+            + raw
+            + sigproc._encode_string("HEADER_END")
+        )
+        reparsed_path = tmp_path / "again.fil"
+        reparsed_path.write_bytes(encoded + bytes(4 * 16))
+        assert sigproc.parse_header(reparsed_path)["unknown_keys"] == (
+            ("mystery", raw),
+        )
+
+    def test_unknown_key_values_are_not_encoded_from_plain_dict(self) -> None:
+        encoded = sigproc.encode_header({"nchans": 4, "mystery": 1})
+        assert sigproc._encode_string("mystery") not in encoded
+
+    def test_match_header_absent_on_both_sides(self) -> None:
+        header1 = {"fch1": 1500.0, "filename": "a.fil"}
+        header2 = {"fch1": 1500.0, "filename": "b.fil"}
+        sigproc.match_header(header1, header2)
+
+    def test_match_header_key_present_only_in_one(self) -> None:
+        header1 = {"fch1": 1500.0, "barycentric": 1, "filename": "a.fil"}
+        header2 = {"fch1": 1500.0, "filename": "b.fil"}
+        with pytest.raises(ValueError, match="barycentric"):
+            sigproc.match_header(header1, header2)
+
+    def test_match_header_ignores_nsamples(self) -> None:
+        header1 = {"fch1": 1500.0, "nsamples": 16, "filename": "a.fil"}
+        header2 = {"fch1": 1500.0, "nsamples": 8, "filename": "b.fil"}
+        sigproc.match_header(header1, header2)
+
+    def test_multi_file_different_lengths_is_contiguous(self, tmp_path: Path) -> None:
+        tsamp = 6.4e-5
+        first = _write_sigproc(tmp_path / "one.fil", nsamples=16, tstart=60000.0)
+        second_tstart = 60000.0 + 16 * tsamp / 86400
+        second = _write_sigproc(
+            tmp_path / "two.fil",
+            nsamples=8,
+            tstart=second_tstart,
+        )
+        header, sinfo = sigproc.parse_header_multi([first, second])
+        assert header["nsamples"] == 24
+        assert len(sinfo.entries) == 2
+
+    def test_multi_file_with_absent_optional_key(self, tmp_path: Path) -> None:
+        first = _write_sigproc(
+            tmp_path / "one.fil",
+            nsamples=16,
+            tstart=60000.0,
+            barycentric=1,
+        )
+        second = _write_sigproc(tmp_path / "two.fil", nsamples=16, tstart=60000.1)
+        with pytest.raises(ValueError, match="barycentric"):
+            sigproc.parse_header_multi([first, second], check_contiguity=False)

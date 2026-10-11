@@ -303,6 +303,45 @@ class TestDigifilDriver:
         got = FilReader(out).read_block(0, hdr.nsamples).data.T
         np.testing.assert_array_equal(got, expected.astype(np.uint8))
 
+    def test_output_header_adds_no_optional_keys(
+        self,
+        filfile_8bit_1: str,
+        tmpdir: str,
+    ) -> None:
+        out = digifil(
+            filfile_8bit_1,
+            _out(tmpdir, "meta.fil"),
+            DigifilConfig(nbits=8, rescale_seconds=0),
+        )
+        optional = {
+            "barycentric",
+            "pulsarcentric",
+            "signed",
+            "refdm",
+            "period",
+            "az_start",
+            "za_start",
+            "ibeam",
+            "nbeams",
+            "rawdatafile",
+        }
+        src_keys = set(sigproc.parse_header(filfile_8bit_1)) & optional
+        out_keys = set(sigproc.parse_header(out)) & optional
+        assert out_keys <= src_keys
+
+    def test_output_keeps_existing_rawdatafile(
+        self,
+        filfile_8bit_1: str,
+        tmpdir: str,
+    ) -> None:
+        out = digifil(
+            filfile_8bit_1,
+            _out(tmpdir, "rawname.fil"),
+            DigifilConfig(nbits=8, rescale_seconds=0),
+        )
+        src_name = sigproc.parse_header(filfile_8bit_1).get("rawdatafile")
+        assert sigproc.parse_header(out).get("rawdatafile") == src_name
+
     def test_positive_foff_is_flipped(self, filfile_8bit_1: str, tmpdir: str) -> None:
         src = FilReader(filfile_8bit_1).header
         raw = FilReader(filfile_8bit_1).read_block(0, src.nsamples).data

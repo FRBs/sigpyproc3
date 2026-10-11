@@ -375,6 +375,9 @@ def pad_centre(array: np.ndarray, target_length: int) -> np.ndarray:
     )
 
 
+logger = get_logger(__name__)
+
+
 def horizon_angles(
     telescope: str,
     coord: SkyCoord,
@@ -404,6 +407,11 @@ def horizon_angles(
         site = EarthLocation.of_site(telescope.lower())
     except KeyError:
         return None
+    except OSError as exc:
+        logger.warning(
+            f"Could not look up site {telescope!r} for azimuth and zenith: {exc}"
+        )
+        return None
     x, y, z = (float(c.to_value(units.m)) for c in (site.x, site.y, site.z))
     lat = np.arctan2(z, np.hypot(x, y))
     lon = np.arctan2(y, x)
@@ -421,6 +429,7 @@ def horizon_angles(
         Angle(float(np.degrees(az) % 360.0) * units.deg),
         Angle(float(90.0 - np.degrees(alt)) * units.deg),
     )
+
 
 def _validate_freqs(
     instance: FrequencyChannels,  # noqa: ARG001
