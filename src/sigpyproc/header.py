@@ -810,10 +810,7 @@ class Header:
             if attr == "signed":
                 value = int(value)
                 if value:
-                    _LOG.warning(
-                        "signed=1 is rejected by readers that predate it "
-                        "(dspsr < 2011)."
-                    )
+                    _LOG.warning("signed=1 is rejected by some readers")
             values[key] = value
         return values
 

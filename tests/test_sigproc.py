@@ -593,7 +593,7 @@ class TestSigproc:
 
     @pytest.mark.parametrize(
         ("key", "newval"),
-        [("nchans", 2000), ("fch1", 4000.5), ("source_name", "new_source")],
+        [("ibeam", 2), ("fch1", 4000.5), ("source_name", "new_source")],
     )
     def test_edit_header(
         self,
@@ -607,18 +607,28 @@ class TestSigproc:
         header = sigproc.parse_header(tmpfile)
         assert header[key] == newval
 
-    def test_edit_header_source_name_truncated_to_original_length(
+    def test_edit_header_refuses_long_source_name(
         self, filfile_8bit_1: str, tmpfile: str
     ) -> None:
-        """source_name edits are padded/truncated to preserve header size."""
+        """Names are never truncated: a longer value is refused and the file kept."""
         shutil.copyfile(filfile_8bit_1, tmpfile)
         original = sigproc.parse_header(tmpfile)
         original_len = len(original["source_name"])
-        long_name = "X" * (original_len + 20)
-        sigproc.edit_header(tmpfile, "source_name", long_name)
+        before_bytes = Path(tmpfile).read_bytes()
+        with pytest.raises(ValueError, match="has room for"):
+            sigproc.edit_header(tmpfile, "source_name", "X" * (original_len + 20))
+        assert Path(tmpfile).read_bytes() == before_bytes
+
+    def test_edit_header_pads_shorter_source_name(
+        self, filfile_8bit_1: str, tmpfile: str
+    ) -> None:
+        """Shorter names are padded so the header size is unchanged."""
+        shutil.copyfile(filfile_8bit_1, tmpfile)
+        original = sigproc.parse_header(tmpfile)
+        sigproc.edit_header(tmpfile, "source_name", "A")
         header = sigproc.parse_header(tmpfile)
-        # Must be same byte length as before — header size is invariant
-        assert len(header["source_name"]) == original_len
+        assert len(header["source_name"]) == len(original["source_name"])
+        assert header["source_name"].startswith("A")
         assert header["hdrlen"] == original["hdrlen"]
 
     def test_edit_header_invalid(
@@ -627,14 +637,110 @@ class TestSigproc:
         tmpfile: str,
     ) -> None:
         shutil.copyfile(filfile_8bit_1, tmpfile)
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="not a valid sigproc key"):
             sigproc.edit_header(tmpfile, "invalid", 0)
-        with pytest.raises((TypeError, struct.error)):
-            sigproc.edit_header(tmpfile, "nchans", "not_a_number")
-        with pytest.raises(ValueError):
-            sigproc.edit_header(tmpfile, "nchans", None)  # type: ignore [arg-type]
+        with pytest.raises(ValueError, match="needs a whole number"):
+            sigproc.edit_header(tmpfile, "ibeam", "not_a_number")
+        with pytest.raises(ValueError, match="needs a value"):
+            sigproc.edit_header(tmpfile, "ibeam", None)  # type: ignore [arg-type]
         with pytest.raises(ValueError, match="non-ASCII characters"):
             sigproc.edit_header(tmpfile, "source_name", "Ångström")
+
+    @pytest.mark.parametrize(
+        ("key", "value", "match"),
+        [
+            ("nbits", 3, "cannot be changed in place"),
+            ("nchans", 8, "cannot be changed in place"),
+            ("nifs", 1, "cannot be changed in place"),
+            ("ibeam", -1, "must be between"),
+            ("ibeam", 2.5, "whole number"),
+            ("fch1", float("nan"), "must be finite"),
+            ("fch1", "abc", "needs a number"),
+            ("tsamp", 0, "greater than 0"),
+            ("src_raj", 250000.0, "right ascension"),
+            ("src_raj", 126000.0, "right ascension"),
+            ("src_dej", 900100.0, "declination"),
+            ("az_start", 400.0, "between 0 and 360"),
+            ("za_start", 200.0, "between 0 and 180"),
+            ("data_type", 99, "one of"),
+            ("rawdatafile", "", "cannot be empty"),
+        ],
+    )
+    def test_edit_header_rejects_bad_values(
+        self,
+        filfile_8bit_1: str,
+        tmpfile: str,
+        key: str,
+        value: float | str,
+        match: str,
+    ) -> None:
+        shutil.copyfile(filfile_8bit_1, tmpfile)
+        before_bytes = Path(tmpfile).read_bytes()
+        with pytest.raises(ValueError, match=match):
+            sigproc.edit_header(tmpfile, key, value)
+        assert Path(tmpfile).read_bytes() == before_bytes
+
+    def test_edit_header_refuses_absent_key(self, tmpdir: str) -> None:
+        path = Path(tmpdir) / "min.fil"
+        payload = _minimal_payload(SigprocBuilder(), nchans=4, nbits=8).build()
+        path.write_bytes(payload + bytes(16))
+        with pytest.raises(ValueError, match="cannot add keys"):
+            sigproc.edit_header(path, "barycentric", 1)
+
+    def test_edit_flag_must_be_zero_or_one(self, tmpdir: str) -> None:
+        path = Path(tmpdir) / "flag.fil"
+        fields = {
+            "data_type": 1,
+            "source_name": "T",
+            "tstart": 60000.0,
+            "tsamp": 1e-3,
+            "nbits": 8,
+            "fch1": 1400.0,
+            "foff": -1.0,
+            "nchans": 4,
+            "nifs": 1,
+            "barycentric": 0,
+        }
+        path.write_bytes(sigproc.encode_header(fields) + bytes(16))
+        before_bytes = path.read_bytes()
+        with pytest.raises(ValueError, match="0 or 1"):
+            sigproc.edit_header(path, "barycentric", 2)
+        assert path.read_bytes() == before_bytes
+        sigproc.edit_header(path, "barycentric", 1)
+        assert sigproc.parse_header(path)["barycentric"] == 1
+
+    def test_edit_headers_is_all_or_nothing(
+        self, filfile_8bit_1: str, tmpfile: str
+    ) -> None:
+        shutil.copyfile(filfile_8bit_1, tmpfile)
+        before_bytes = Path(tmpfile).read_bytes()
+        with pytest.raises(ValueError):
+            sigproc.edit_headers(tmpfile, {"ibeam": 3, "src_raj": 250000.0})
+        assert Path(tmpfile).read_bytes() == before_bytes
+
+    def test_edit_headers_applies_all_updates(
+        self, filfile_8bit_1: str, tmpfile: str
+    ) -> None:
+        shutil.copyfile(filfile_8bit_1, tmpfile)
+        sigproc.edit_headers(tmpfile, {"ibeam": "3", "fch1": "1400.5"})
+        header = sigproc.parse_header(tmpfile)
+        assert header["ibeam"] == 3
+        assert header["fch1"] == 1400.5
+
+    def test_edit_keeps_declared_nsamples(
+        self, filfile_8bit_1: str, tmpfile: str
+    ) -> None:
+        """An unrelated edit keeps a declared nsamples instead of the computed one."""
+        payload = Path(filfile_8bit_1).read_bytes()
+        hdrlen = sigproc.parse_header(filfile_8bit_1)["hdrlen"]
+        header = sigproc.encode_header(
+            {**sigproc.parse_header(filfile_8bit_1), "nsamples": 10**6},
+            allow_nsamples_overwrite=True,
+        )
+        Path(tmpfile).write_bytes(header + payload[hdrlen:])
+        declared_before = sigproc._read_raw_header(Path(tmpfile))["nsamples"]
+        sigproc.edit_header(tmpfile, "source_name", "ABC")
+        assert sigproc._read_raw_header(Path(tmpfile))["nsamples"] == declared_before
 
     def test_match_header_pass(self, filfile_8bit_1: str, filfile_8bit_2: str) -> None:
         header1 = sigproc.parse_header(filfile_8bit_1)

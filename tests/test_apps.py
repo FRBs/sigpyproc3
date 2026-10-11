@@ -21,6 +21,7 @@ from sigpyproc.apps import (
     spp_zerodm,
 )
 from sigpyproc.header import Header
+from sigpyproc.io import sigproc
 from sigpyproc.readers import FilReader
 from sigpyproc.timeseries import TimeSeries
 
@@ -90,8 +91,102 @@ class TestSppHeader:
         after = Header.from_sigproc(tmpfile).source
         assert after == before
 
+    def test_update_numeric_values_from_cli(
+        self, filfile_8bit_1: str, tmpfile: str
+    ) -> None:
+        shutil.copy(filfile_8bit_1, tmpfile)
+        runner = CliRunner()
+        result = runner.invoke(
+            spp_header.main,
+            ["update", tmpfile, "-i", "fch1", "1400.5", "-i", "ibeam", "3"],
+        )
+        assert result.exit_code == 0, result.output
+        header = Header.from_sigproc(tmpfile)
+        assert header.fch1 == 1400.5
+        assert header.ibeam == 3
 
-class TestSppExtract:
+    @pytest.mark.parametrize(
+        ("args", "exit_code", "message"),
+        [
+            (["-i", "nosuchkey", "1"], 2, "not a SIGPROC header key"),
+            (["-i", "nbits", "3"], 1, "cannot be changed in place"),
+            (["-i", "ibeam", "abc"], 1, "needs a whole number"),
+            (["-i", "src_raj", "250000"], 1, "right ascension"),
+            (["-i", "source_name", "X" * 200], 1, "has room for"),
+            (["-i", "rawdatafile", ""], 1, "cannot be empty"),
+            (["-i", "ibeam", "1", "-i", "ibeam", "2"], 2, "more than once"),
+        ],
+    )
+    def test_update_rejects_bad_input(
+        self,
+        filfile_8bit_1: str,
+        tmpfile: str,
+        args: list[str],
+        exit_code: int,
+        message: str,
+    ) -> None:
+        shutil.copy(filfile_8bit_1, tmpfile)
+        before = Path(tmpfile).read_bytes()
+        runner = CliRunner()
+        result = runner.invoke(spp_header.main, ["update", tmpfile, *args])
+        assert result.exit_code == exit_code
+        assert message in result.output
+        assert "Traceback" not in result.output
+        assert Path(tmpfile).read_bytes() == before
+
+    def test_update_multiple_is_all_or_nothing(
+        self, filfile_8bit_1: str, tmpfile: str
+    ) -> None:
+        shutil.copy(filfile_8bit_1, tmpfile)
+        before = Path(tmpfile).read_bytes()
+        runner = CliRunner()
+        result = runner.invoke(
+            spp_header.main,
+            ["update", tmpfile, "-i", "ibeam", "5", "-i", "src_dej", "900100"],
+        )
+        assert result.exit_code == 1
+        assert Path(tmpfile).read_bytes() == before
+
+    def test_update_refuses_key_missing_from_file(self, tmpdir: str) -> None:
+        path = Path(tmpdir) / "min.fil"
+        payload = sigproc.encode_header(
+            {
+                "data_type": 1,
+                "source_name": "T",
+                "tstart": 60000.0,
+                "tsamp": 1e-3,
+                "nbits": 8,
+                "fch1": 1400.0,
+                "foff": -1.0,
+                "nchans": 4,
+                "nifs": 1,
+            }
+        )
+        path.write_bytes(payload + bytes(16))
+        runner = CliRunner()
+        result = runner.invoke(
+            spp_header.main, ["update", str(path), "-i", "nbeams", "2"]
+        )
+        assert result.exit_code == 1
+        assert "cannot add keys" in result.output
+
+    def test_get_unknown_key_is_clean_error(self, filfile_8bit_1: str) -> None:
+        runner = CliRunner()
+        result = runner.invoke(
+            spp_header.main, ["get", filfile_8bit_1, "-k", "to_string"]
+        )
+        assert result.exit_code == 2
+        assert "Unknown header key 'to_string'" in result.output
+        assert "Traceback" not in result.output
+
+    def test_print_non_sigproc_is_clean_error(self, tmpdir: str) -> None:
+        path = Path(tmpdir) / "bad.fil"
+        path.write_bytes(b"not a sigproc file at all")
+        runner = CliRunner()
+        result = runner.invoke(spp_header.main, ["print", str(path)])
+        assert result.exit_code == 1
+        assert "Traceback" not in result.output
+
     def test_samples(self, filfile_8bit_1: str, tmpfile: str) -> None:
         nsamples = 10
         runner = CliRunner()

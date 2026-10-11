@@ -68,3 +68,19 @@ rewritten Sigproc file keeps its own angles, and an angle absent from it is not 
 - Otherwise the ID comes from the name. An unknown name writes 0 and logs a warning.
 - A file without the ID gets 0 (see rule 2 under rewriting).
 - Changing `telescope` or `backend` clears the stored ID, so the new name is used.
+
+## Editing a file in place
+
+`spp_header update` and `sigproc.edit_headers` change keys without changing the header
+size. The rules are:
+
+- A string keeps its stored length. A shorter value is padded with spaces, and a longer
+  one is refused. Names are never truncated.
+- A key absent from the file cannot be added.
+- `nbits`, `nchans` and `nifs` cannot be changed in place, because they set how the
+  samples are stored.
+- A declared `nsamples` is kept unless it is edited.
+- Every value is checked, and the new header is read back, before the file is changed.
+  Any failure leaves the file as it was.
+
+See {doc}`tutorials/header` for examples.
