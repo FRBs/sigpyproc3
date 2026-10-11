@@ -14,18 +14,4 @@ try:
 except PackageNotFoundError:
     __version__ = "0+unknown"
 
-__getattr__, __dir__, __all__ = lazy.attach(
-    __name__,
-    submodules=["apps", "core", "io", "kernels", "simulation", "viz"],
-    submod_attrs={
-        "header": ["Header"],
-        "readers": ["FilReader", "PFITSReader", "PulseTrainReader"],
-        "base": ["Filterbank"],
-        "block": ["BaseBlock", "FilterbankBlock", "DMTBlock"],
-        "timeseries": ["TimeSeries"],
-        "fourierseries": ["FourierSeries", "PowerSpectrum"],
-        "foldedcube": ["FoldedData", "Profile"],
-        "core.candidates": ["CandidateTable"],
-        "core.dispersion": ["DMPlan"],
-    },
-)
+__getattr__, __dir__, __all__ = lazy.attach_stub(__name__, __file__)

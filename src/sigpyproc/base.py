@@ -125,12 +125,12 @@ class Filterbank(ABC):
     @abstractmethod
     def read_plan(
         self,
-        *,
         gulp: int = 16384,
         start: int = 0,
         nsamps: int | None = None,
         skipback: int = 0,
         description: str | None = None,
+        *,
         quiet: bool = False,
         allocator: Callable[[int], Buffer] | None = None,
     ) -> Iterator[tuple[int, int, np.ndarray]]:
@@ -1279,7 +1279,7 @@ class Filterbank(ABC):
                 nbands,
                 ii * (gulp - max_delay),
             )
-        fold_ar /= count_ar
+        np.divide(fold_ar, count_ar, out=fold_ar, where=count_ar != 0)
         fold_ar = fold_ar.reshape(nints, nbands, nbins)
         return FoldedData(fold_ar, self.header.new_header(), period, dm, accel)
 

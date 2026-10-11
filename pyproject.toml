@@ -90,7 +90,7 @@ spp_digifil = "sigpyproc.apps.spp_digifil:main"
 
 
 [tool.ruff]
-include = ["pyproject.toml", "src/**/*.py", "tests/**/*.py", "docs/**/*.py"]
+include = ["pyproject.toml", "src/**/*.py", "src/**/*.pyi", "tests/**/*.py", "docs/**/*.py"]
 line-length = 88
 indent-width = 4
 target-version = "py312"

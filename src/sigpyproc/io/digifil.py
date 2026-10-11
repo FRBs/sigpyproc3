@@ -300,6 +300,7 @@ if TYPE_CHECKING:
     from numpy.typing import NDArray
 
     from sigpyproc.base import Filterbank
+    from sigpyproc.core.custom_types import PlanReader
 
 logger = logging.getLogger(__name__)
 
@@ -446,7 +447,11 @@ def _rechunk(
         yield np.concatenate(pending)
 
 
-def _open_reader(reader: Filterbank, start: int, nsamps: int | None) -> _Source:
+def _open_reader(
+    reader: Filterbank | PlanReader,
+    start: int,
+    nsamps: int | None,
+) -> _Source:
     """Wrap a sigproc filterbank reader (``FilReader`` or similar)."""
     hdr = reader.header
     nchan = hdr.nchans
@@ -526,7 +531,7 @@ def _open_pfits(
 
 
 def _open_source(
-    source: str | Path | Filterbank,
+    source: str | Path | Filterbank | PlanReader,
     *,
     scloffs: bool,
     start: int,
@@ -834,7 +839,7 @@ def _default_outfile(infile: str) -> str:
 
 
 def digifil(
-    source: str | Path | Filterbank,
+    source: str | Path | Filterbank | PlanReader,
     outfile: str | None = None,
     config: DigifilConfig | None = None,
     *,
@@ -849,7 +854,7 @@ def digifil(
 
     Parameters
     ----------
-    source : str | Path | Filterbank
+    source : str | Path | Filterbank | PlanReader
         Input file or reader object.
     outfile : str, optional
         Output sigproc filterbank name, by default ``<stem>.fil`` of the input.

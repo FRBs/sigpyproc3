@@ -271,7 +271,7 @@ class TimeSeries:
             1,
             0,
         )
-        fold_ar /= count_ar
+        np.divide(fold_ar, count_ar, out=fold_ar, where=count_ar != 0)
         fold_ar = fold_ar.reshape(nints, 1, nbins)
         return FoldedData(
             fold_ar,

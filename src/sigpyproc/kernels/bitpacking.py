@@ -117,14 +117,14 @@ def pack1_8_vect(
         for j in range(batch_size):
             x = array_uint64[i + j]
             x &= mask
-            x *= magic
+            x = types.uint64((int(x) * int(magic)) & 0xFFFFFFFFFFFFFFFF)
             packed[i + j] = types.uint8(x >> shift)
         i += batch_size
 
     for j in range(i, nwords):
         x = array_uint64[j]
         x &= mask
-        x *= magic
+        x = types.uint64((int(x) * int(magic)) & 0xFFFFFFFFFFFFFFFF)
         packed[j] = types.uint8(x >> shift)
 
 
