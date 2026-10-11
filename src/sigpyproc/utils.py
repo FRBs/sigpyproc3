@@ -13,8 +13,9 @@ from typing import TYPE_CHECKING
 import attrs
 import numpy as np
 from astropy import units
+from astropy.coordinates import Angle, EarthLocation, SkyCoord
 from astropy.stats import gaussian_fwhm_to_sigma
-from rich.logging import RichHandler
+from astropy.time import Time
 
 if TYPE_CHECKING:
     import inspect
@@ -126,56 +127,6 @@ def next_multiple(x: int, y: int) -> int:
         msg = f"y={y} must be positive."
         raise ValueError(msg)
     return ((x + y - 1) // y) * y
-
-
-def get_logger(
-    name: str,
-    *,
-    level: int | str = logging.INFO,
-    quiet: bool = False,
-    log_file: str | None = None,
-) -> logging.Logger:
-    """Get a fancy configured logger.
-
-    Parameters
-    ----------
-    name : str
-        Logger name.
-    level : int or str, optional
-        Logging level, by default `logging.INFO`.
-    quiet : bool, optional
-        If True set ``level`` as `logging.WARNING`, by default False.
-    log_file : str, optional
-        Path to log file, by default None.
-
-    Returns
-    -------
-    logging.Logger
-        A logging object.
-    """
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.WARNING if quiet else level)
-    logformat = "- %(name)s - %(message)s"
-    formatter = logging.Formatter(fmt=logformat)
-    if not logger.hasHandlers():
-        handler = RichHandler(
-            show_path=False,
-            rich_tracebacks=True,
-            log_time_format="%Y-%m-%d %H:%M:%S",
-        )
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
-    if log_file:
-        log_path = validate_path(log_file, writable=True)
-        if not any(
-            isinstance(hndlr, logging.FileHandler)
-            and hndlr.baseFilename == log_path.as_posix()
-            for hndlr in logger.handlers
-        ):
-            file_handler = logging.FileHandler(log_path)
-            file_handler.setFormatter(formatter)
-            logger.addHandler(file_handler)
-    return logger
 
 
 def get_callerfunc(stack: list[inspect.FrameInfo]) -> str:
@@ -370,6 +321,62 @@ def pad_centre(array: np.ndarray, target_length: int) -> np.ndarray:
         array,
         pad_width=(pad_width, *[(0, 0)] * (array.ndim - 1)),
         mode="constant",
+    )
+
+
+logger = logging.getLogger(__name__)
+
+
+def horizon_angles(
+    telescope: str,
+    coord: SkyCoord,
+    tstart: float,
+) -> tuple[Angle, Angle] | None:
+    """Return the source azimuth and zenith angle at the start of an observation.
+
+    The angles follow dspsr: the geocentric latitude and longitude of the telescope
+    site, the catalogue (J2000) position of the source, and the mean sidereal time at
+    ``tstart``. Refraction is ignored.
+
+    Parameters
+    ----------
+    telescope : str
+        Telescope name, looked up as an astropy site (for example ``Parkes``).
+    coord : SkyCoord
+        Source position.
+    tstart : float
+        Start of the observation as an MJD.
+
+    Returns
+    -------
+    tuple[Angle, Angle] | None
+        Azimuth (east of north) and zenith angle, or None if the site is unknown.
+    """
+    try:
+        site = EarthLocation.of_site(telescope.lower())
+    except KeyError:
+        return None
+    except OSError as exc:
+        logger.warning(
+            f"Could not look up site {telescope!r} for azimuth and zenith: {exc}"
+        )
+        return None
+    x, y, z = (float(c.to_value(units.m)) for c in (site.x, site.y, site.z))
+    lat = np.arctan2(z, np.hypot(x, y))
+    lon = np.arctan2(y, x)
+    ra = coord.ra.radian
+    dec = coord.dec.radian
+    gmst = Time(tstart, format="mjd", scale="utc").sidereal_time("mean", "greenwich")
+    hour_angle = gmst.radian + lon - ra
+    sin_alt = np.sin(lat) * np.sin(dec) + np.cos(lat) * np.cos(dec) * np.cos(hour_angle)
+    alt = np.arcsin(sin_alt)
+    az = np.arctan2(
+        -np.cos(dec) * np.sin(hour_angle),
+        np.sin(dec) * np.cos(lat) - np.cos(dec) * np.sin(lat) * np.cos(hour_angle),
+    )
+    return (
+        Angle(float(np.degrees(az) % 360.0) * units.deg),
+        Angle(float(90.0 - np.degrees(alt)) * units.deg),
     )
 
 

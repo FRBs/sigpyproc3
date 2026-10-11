@@ -7,6 +7,7 @@ from rich import print as rprint
 from rich.pretty import pprint
 from rich.table import Table
 
+from sigpyproc.apps._logging import logging_options, setup_cli_logging
 from sigpyproc.header import Header
 from sigpyproc.io import sigproc
 from sigpyproc.utils import detect_file_type
@@ -22,11 +23,13 @@ file_readers: dict[str, Callable] = {
 }
 
 
+@logging_options
 @click.group(
     context_settings={"help_option_names": ["-h", "--help"], "show_default": True},
 )
-def main() -> None:
+def main(verbose: int, *, quiet: bool) -> None:
     """Print or edit filterbank headers."""
+    setup_cli_logging(verbose, quiet=quiet)
 
 
 @main.command("print")
@@ -46,13 +49,16 @@ def main() -> None:
 )
 def print_header(filename: str | Path, file_type: str, *, long: bool = False) -> None:
     """Print the header information."""
-    if file_type == "auto":
-        file_type = detect_file_type(filename)
-    reader = file_readers.get(file_type)
-    if reader is None:
-        msg = f"Unsupported file format: {file_type}"
-        raise ValueError(msg)
-    header = reader(filename)
+    try:
+        if file_type == "auto":
+            file_type = detect_file_type(filename)
+        reader = file_readers.get(file_type)
+        if reader is None:
+            msg = f"Unsupported file format: {file_type}"
+            raise click.UsageError(msg)
+        header = reader(filename)
+    except (OSError, ValueError, NotImplementedError) as exc:
+        raise click.ClickException(str(exc)) from exc
     if long:
         pprint(header)
     else:
@@ -84,13 +90,18 @@ def get(filfile: str | None, key: str | None, *, keys_help: bool = False) -> Non
     if filfile is None or key is None:
         msg = "Provide FILFILE and -k/--key (or --keys-help)"
         raise click.UsageError(msg)
-    header = Header.from_sigproc(filfile)
     try:
-        value = getattr(header, key)
-    except AttributeError:
-        hdr = sigproc.parse_header(filfile)
-        value = hdr[key]
-    click.echo(f"{key} = {value}")
+        header = Header.from_sigproc(filfile)
+        values = header.to_dict()
+        if key not in values:
+            values = {**sigproc.parse_header(filfile), **values}
+    except (OSError, ValueError, NotImplementedError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    if key not in values:
+        valid = ", ".join(sorted(values))
+        msg = f"Unknown header key '{key}'. Valid keys: {valid}"
+        raise click.UsageError(msg)
+    click.echo(f"{key} = {values[key]}")
 
 
 @main.command()
@@ -99,9 +110,10 @@ def get(filfile: str | None, key: str | None, *, keys_help: bool = False) -> Non
     "-i",
     "--item",
     required=True,
+    multiple=True,
     nargs=2,
     type=click.Tuple([str, str]),
-    help="(key, value) to update in header",
+    help="(key, value) to update in header; repeat for more keys",
 )
 @click.option(
     "--dry-run",
@@ -109,24 +121,54 @@ def get(filfile: str | None, key: str | None, *, keys_help: bool = False) -> Non
     default=False,
     help="Show before/after values without writing",
 )
-def update(filfile: str, item: tuple[str, str], *, dry_run: bool = False) -> None:
-    """Update a SIGPROC header key in place."""
-    key, value = item
-    if dry_run:
-        before, after = sigproc.prepare_header_edit(filfile, key, value)
-        table = Table(title="Header update preview")
-        table.add_column("Before", overflow="fold")
-        table.add_column("After", overflow="fold")
-        keys = [k for k in sigproc.SIGPROC_SCHEMA if k in before]
-        if key not in keys:
-            keys.append(key)
-        for name in keys:
-            table.add_row(
-                f"{name} = {before.get(name, '')}", f"{name} = {after.get(name, '')}"
+def update(filfile: str, item: tuple[tuple[str, str], ...], *, dry_run: bool) -> None:
+    """Update SIGPROC header keys in place.
+
+    All values are checked first. If any check fails, the file is not changed.
+    Header size never changes: a shorter string is padded with spaces, a longer one
+    is refused, and keys absent from the file cannot be added.
+    """
+    updates: dict[str, str] = {}
+    for key, value in item:
+        if key not in sigproc.SIGPROC_SCHEMA:
+            msg = (
+                f"'{key}' is not a SIGPROC header key. See: spp_header get --keys-help"
             )
-        rprint(table)
-        return
-    sigproc.edit_header(filfile, key, value)
+            raise click.BadParameter(msg, param_hint="--item")
+        if key in updates:
+            msg = f"'{key}' is given more than once."
+            raise click.BadParameter(msg, param_hint="--item")
+        updates[key] = value
+    try:
+        if dry_run:
+            before, after = sigproc.prepare_header_edits(filfile, updates)
+            _print_edit_preview(before, after, list(updates))
+        else:
+            sigproc.edit_headers(filfile, updates)
+    except (OSError, ValueError, NotImplementedError) as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
+def _print_edit_preview(
+    before: dict[str, object],
+    after: dict[str, object],
+    updated: list[str],
+) -> None:
+    table = Table(title="Header update preview")
+    table.add_column("Key", overflow="fold")
+    table.add_column("Before", overflow="fold")
+    table.add_column("After", overflow="fold")
+    keys = [k for k in sigproc.SIGPROC_SCHEMA if k in before]
+    keys += [k for k in updated if k not in keys]
+    for name in keys:
+        style = "bold" if name in updated else None
+        table.add_row(
+            name,
+            str(before.get(name, "")),
+            str(after.get(name, "")),
+            style=style,
+        )
+    rprint(table)
 
 
 if __name__ == "__main__":

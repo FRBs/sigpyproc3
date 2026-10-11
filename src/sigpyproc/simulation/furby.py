@@ -12,17 +12,20 @@ from typing import TYPE_CHECKING
 import attrs
 import h5py
 import numpy as np
-from matplotlib import pyplot as plt
 from numpy.polynomial import polynomial
 
 from sigpyproc import utils
 from sigpyproc.block import FilterbankBlock
-from sigpyproc.core import kernels
 from sigpyproc.core.filters import MatchedFilter
 from sigpyproc.header import Header
+from sigpyproc.kernels.dedispersion import disperse_block
+from sigpyproc.kernels.filterbank import downsample_1d_mean
+from sigpyproc.kernels.simulation import simulate_ism
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+    from matplotlib.figure import Figure
 
     from sigpyproc.core.custom_types import SpecSimulMethods
 
@@ -176,7 +179,7 @@ class Furby:
                 stats_group.attrs[key] = val
         return filepath.as_posix()
 
-    def plot(self, figsize: tuple[int, int] = (12, 6)) -> plt.Figure:
+    def plot(self, figsize: tuple[int, int] = (12, 6)) -> Figure:
         """Plot the Furby simulated FRB signal.
 
         Parameters
@@ -328,7 +331,7 @@ class FurbyGenerator:
         stats = self._compute_stats(ts_os)
 
         # Apply dispersion and downsample
-        data_disp = kernels.disperse_block(
+        data_disp = disperse_block(
             data_dedisp_os,
             delays_os,
             nsamps_disp_os,
@@ -363,7 +366,7 @@ class FurbyGenerator:
             int(self.params.tau0 / self.tsamp_os)
             * (self.hdr_os.chan_freqs / self.hdr_os.fcenter) ** self.params.scatt_idx
         )
-        return kernels.simulate_ism(
+        return simulate_ism(
             signal,
             spec,
             dm_smear,
@@ -378,9 +381,7 @@ class FurbyGenerator:
             np.sum(ts_os) / np.max(ts_os) * self.tsamp_os,
         )
 
-        ts = (
-            kernels.downsample_1d_mean(ts_os, self.params.os_fact) * self.params.os_fact
-        )
+        ts = downsample_1d_mean(ts_os, self.params.os_fact) * self.params.os_fact
         noise_ts = self.params.noise * np.sqrt(self.hdr.nchans)
 
         nbins_max = min(len(ts), len(ts[ts > 0]))
@@ -515,7 +516,7 @@ class SpectralStructure:
         self,
         spec: np.ndarray | None = None,
         figsize: tuple[int, int] = (8, 6),
-    ) -> plt.Figure:
+    ) -> Figure:
         """Plot the generated spectral structure.
 
         Parameters
@@ -530,6 +531,8 @@ class SpectralStructure:
         Figure
             Matplotlib axes object containing the plot.
         """
+        from matplotlib import pyplot as plt
+
         if spec is None:
             spec = self.generate()
         fig, ax = plt.subplots(figsize=figsize)

@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from sigpyproc.core import rfi, stats
-from sigpyproc.core.dmplan import DMPlan
+from sigpyproc.core.dispersion import DMPlan
 from sigpyproc.foldedcube import FoldedData
 from sigpyproc.readers import FilReader
 from sigpyproc.timeseries import TimeSeries
@@ -198,17 +198,15 @@ class TestFilterbank:
         assert abs(data.mean() - 7.5) < 1.0
         assert data.std() > 0.5
 
-    def test_requantize_remove_bandpass(
+    def test_requantize_removes_bandpass(
         self, filfile_8bit_1: str, tmpfile: str
     ) -> None:
         fil = FilReader(filfile_8bit_1)
-        outfile = fil.requantize(
-            nbits_out=8,
-            outfile_name=tmpfile,
-            remove_bandpass=True,
-        )
-        new_fil = FilReader(outfile)
-        np.testing.assert_equal(new_fil.header.nbits, 8)
+        outfile = fil.requantize(nbits_out=8, outfile_name=tmpfile)
+        data = FilReader(outfile).read_block(0, fil.header.nsamples).data
+        chan_means = data.astype(np.float64).mean(axis=1)
+        assert abs(chan_means.mean() - 127.5) < 2.0
+        assert chan_means.std() < 2.0
 
     def test_zap_times(self, filfile_8bit_1: str, tmpfile: str) -> None:
         fil = FilReader(filfile_8bit_1)

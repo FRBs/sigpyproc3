@@ -306,3 +306,4 @@ $RECYCLE.BIN/
 
 # Local files
 uv.lock
+tmp_files/

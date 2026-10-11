@@ -5,6 +5,7 @@ This module contains the Header class for handling observation metadata.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -14,13 +15,195 @@ from astropy import units
 from astropy.coordinates import Angle, SkyCoord
 from astropy.time import Time, TimeDelta
 
-from sigpyproc import params, utils
-from sigpyproc.io import fbh5, pfits, sigproc
+from sigpyproc import utils
+from sigpyproc.core import dispersion
+from sigpyproc.io import fbh5, params, pfits, sigproc
 from sigpyproc.io.bits import BitsInfo
 from sigpyproc.io.fileio import FileWriter
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+
+    from bidict import bidict
+
+
+logger = logging.getLogger(__name__)
+
+# Header attributes and the Sigproc keys they are read from and written as. An
+# attribute is written only when it is in ``Header.known_keys``.
+_WRITTEN_KEYS: dict[str, str] = {
+    "dm": "refdm",
+    "period": "period",
+    "signed": "signed",
+    "ibeam": "ibeam",
+    "nbeams": "nbeams",
+    "rawdatafile": "rawdatafile",
+    "azimuth": "az_start",
+    "zenith": "za_start",
+}
+
+_ATTR_SOURCE_KEYS: dict[str, tuple[str, ...]] = {
+    "telescope": ("telescope_id",),
+    "backend": ("machine_id",),
+    "source": ("source_name",),
+    "coord": ("src_raj", "src_dej"),
+    **{attr: (key,) for attr, key in _WRITTEN_KEYS.items()},
+}
+
+_FRAME_FLAGS = ("barycentric", "pulsarcentric")
+_FRAMES = ("topocentric", *_FRAME_FLAGS)
+
+# Attribute values that mean "not set". An attribute equal to its default is not
+# written unless it is in ``known_keys``.
+_DEFAULTS: dict[str, Any] = {
+    "source": "Fake",
+    "dm": 0,
+    "period": 0,
+    "signed": False,
+    "ibeam": 0,
+    "nbeams": 1,
+    "rawdatafile": "",
+}
+
+
+def _is_default(attr: str, value: object) -> bool:
+    """Return True if ``value`` is the default of optional attribute ``attr``."""
+    if isinstance(value, SkyCoord):
+        return value.ra.deg == 0 and value.dec.deg == 0
+    if isinstance(value, Angle):
+        return value.deg == 0
+    return value == _DEFAULTS[attr]
+
+
+def _default_known_keys(header: Header) -> frozenset[str]:
+    """Return the attributes that differ from their defaults, for code-built headers."""
+    known = {
+        attr
+        for attr in (*_DEFAULTS, "coord", "azimuth", "zenith")
+        if not _is_default(attr, getattr(header, attr))
+    }
+    return frozenset(known)
+
+
+def _name_from_id(table: bidict[str, int], code: int) -> str:
+    return table.inv.get(code, "unknown")
+
+
+def _sigproc_values(header: dict[str, Any]) -> dict[str, Any]:
+    """Convert a parsed Sigproc header into ``Header`` attribute values.
+
+    Only keys present in the file are set, so absent keys keep the ``Header``
+    defaults and are not treated as known.
+    """
+    values = dict(header)
+    values["data_type"] = params.data_types[header.get("data_type", 1)]
+    values["foff"] = header.get("foff", 0)
+    if "telescope_id" in header:
+        values["telescope"] = _name_from_id(
+            sigproc.telescope_ids, header["telescope_id"]
+        )
+        values["sigproc_telescope_id"] = header["telescope_id"]
+    if "machine_id" in header:
+        values["backend"] = _name_from_id(sigproc.machine_ids, header["machine_id"])
+        values["sigproc_machine_id"] = header["machine_id"]
+    if "source_name" in header:
+        values["source"] = header["source_name"]
+    if "src_raj" in header and "src_dej" in header:
+        values["coord"] = sigproc.parse_radec(header["src_raj"], header["src_dej"])
+        values["sigproc_src_raj"] = float(header["src_raj"])
+        values["sigproc_src_dej"] = float(header["src_dej"])
+    if "refdm" in header:
+        values["dm"] = header["refdm"]
+    if "signed" in header:
+        values["signed"] = bool(header["signed"])
+    if "az_start" in header:
+        values["azimuth"] = Angle(header["az_start"] * units.deg)
+    if "za_start" in header:
+        values["zenith"] = Angle(header["za_start"] * units.deg)
+    return values
+
+
+def _known_from_sigproc(header: dict[str, Any]) -> frozenset[str]:
+    """Return the attributes whose Sigproc keys are physically present in the file."""
+    known = {
+        attr
+        for attr, keys in _ATTR_SOURCE_KEYS.items()
+        if all(key in header for key in keys)
+    }
+    known.update(flag for flag in _FRAME_FLAGS if flag in header)
+    return frozenset(known)
+
+
+def _frame_from_sigproc(header: dict[str, Any]) -> str | None:
+    """Return the frame recorded by the barycentric/pulsarcentric flags, if any.
+
+    Barycentric wins when both flags are set. Returns None when neither flag is
+    present, meaning the frame is unknown.
+    """
+    if header.get("barycentric"):
+        return "barycentric"
+    if header.get("pulsarcentric"):
+        return "pulsarcentric"
+    if any(flag in header for flag in _FRAME_FLAGS):
+        return "topocentric"
+    return None
+
+
+def _infer_horizon(values: dict[str, Any], known: frozenset[str]) -> frozenset[str]:
+    """Infer azimuth and zenith for attributes the source does not record.
+
+    Inference needs a known telescope, a known source position and ``tstart``. Angles
+    already in ``known`` are never replaced.
+
+    Returns
+    -------
+    frozenset[str]
+        The angle attributes that were inferred and stored in ``values``.
+    """
+    if not {"telescope", "coord"} <= known or "tstart" not in values:
+        return frozenset()
+    angles = utils.horizon_angles(
+        values["telescope"], values["coord"], values["tstart"]
+    )
+    if angles is None:
+        return frozenset()
+    inferred = set()
+    for attr, angle in zip(("azimuth", "zenith"), angles, strict=True):
+        if attr not in known:
+            values[attr] = angle
+            inferred.add(attr)
+    return frozenset(inferred)
+
+
+def _sigproc_kwargs(
+    cls: type[Header],
+    header: dict[str, Any],
+    *,
+    first_write: bool,
+) -> dict[str, Any]:
+    """Return ``Header`` keyword arguments for a parsed Sigproc-style header.
+
+    Parameters
+    ----------
+    cls : type[Header]
+        Class the arguments are for.
+    header : dict
+        Parsed Sigproc header.
+    first_write : bool
+        If True, inferred angles become known and are written to new files. If False
+        (a Sigproc file being rewritten) they are only available for use.
+    """
+    known = _known_from_sigproc(header)
+    values = _sigproc_values(header)
+    inferred = _infer_horizon(values, known)
+    if first_write:
+        known |= inferred
+    values["known_keys"] = known
+    values["frame"] = _frame_from_sigproc(header)
+    values["frame_flags"] = frozenset(flag for flag in _FRAME_FLAGS if header.get(flag))
+    return {
+        key: value for key, value in values.items() if key in attrs.fields_dict(cls)
+    }
 
 
 @attrs.frozen(auto_attribs=True, kw_only=True)
@@ -62,11 +245,14 @@ class Header:
     source : str, optional
         Source name, by default "Fake".
     frame : str, optional
-        Reference frame, by default "topocentric".
+        Reference frame (``"topocentric"``, ``"barycentric"`` or ``"pulsarcentric"``).
+        None means the source does not say, by default None. Code that needs a frame
+        uses ``effective_frame``, which treats None as topocentric. A None frame is
+        never written to a Sigproc file.
     ibeam : int, optional
         Telescope beam number, by default 0.
     nbeams : int, optional
-        Number of beams, by default 0.
+        Number of beams, by default 1.
     dm : float, optional
         Reference Dispersion Measure, by default 0.
     period : float, optional
@@ -77,6 +263,20 @@ class Header:
         Whether the data is signed, by default False.
     rawdatafile : str, optional
         Name of the original raw data file, by default "".
+    known_keys : frozenset of str, optional
+        Attributes whose value is a fact for this header: read from the source,
+        set explicitly, or inferred from complete inputs. Only these are written to
+        Sigproc files. By default, attributes that differ from their defaults are
+        known.
+    sigproc_telescope_id, sigproc_machine_id : int, optional
+        Numeric Sigproc IDs as read from a file. They are written back unchanged, even
+        when the name is not in the Sigproc table. By default None, so the ID comes
+        from the name.
+    frame_flags : frozenset of str, optional
+        Frame flags (``"barycentric"``, ``"pulsarcentric"``) that are set to 1.
+    unknown_keys : tuple of (str, bytes), optional
+        Sigproc keys not recognised by this package, kept with their raw value bytes
+        so they survive a rewrite, by default empty.
     stream_info : :class:`~sigpyproc.io.sigproc.StreamInfo`, optional
         File stream information, by default `sigproc.StreamInfo()`.
 
@@ -126,14 +326,27 @@ class Header:
     telescope: str = "Fake"
     backend: str = "FAKE"
     source: str = "Fake"
-    frame: str = "topocentric"
+    sigproc_telescope_id: int | None = None
+    sigproc_machine_id: int | None = None
+    sigproc_src_raj: float | None = None
+    sigproc_src_dej: float | None = None
+    frame: str | None = None
+    frame_flags: frozenset[str] = attrs.field(factory=frozenset, converter=frozenset)
     ibeam: int = 0
-    nbeams: int = 0
+    nbeams: int = 1
     dm: float = 0
     period: float = 0
     accel: float = 0
     signed: bool = False
     rawdatafile: str = ""
+    known_keys: frozenset[str] = attrs.field(
+        default=attrs.Factory(_default_known_keys, takes_self=True),
+        converter=frozenset,
+    )
+    unknown_keys: tuple[tuple[str, bytes], ...] = attrs.field(
+        factory=tuple,
+        converter=tuple,
+    )
 
     stream_info: sigproc.StreamInfo = attrs.field(default=sigproc.StreamInfo())
 
@@ -163,23 +376,48 @@ class Header:
     def telescope_id(self) -> int:
         """Telescope id in Sigproc format.
 
+        Returns the ID read from the file if there is one, otherwise the ID for
+        ``telescope``, or 0 if the name is not in the Sigproc table.
+
         Returns
         -------
         int
             Sigproc telescope id.
         """
+        if self.sigproc_telescope_id is not None:
+            return self.sigproc_telescope_id
         return sigproc.telescope_ids.get(self.telescope, 0)
 
     @property
     def machine_id(self) -> int:
         """Machine id in Sigproc format.
 
+        Returns the ID read from the file if there is one, otherwise the ID for
+        ``backend``, or 0 if the name is not in the Sigproc table.
+
         Returns
         -------
         int
             Sigproc machine id.
         """
+        if self.sigproc_machine_id is not None:
+            return self.sigproc_machine_id
         return sigproc.machine_ids.get(self.backend, 0)
+
+    @property
+    def effective_frame(self) -> str:
+        """Reference frame used for calculations.
+
+        Returns
+        -------
+        str
+            ``frame``, or ``"topocentric"`` when the frame is unknown.
+        """
+        return self.frame or "topocentric"
+
+    def _tag(self, text: str, attr: str) -> str:
+        """Append ``(derived)`` to ``text`` when ``attr`` is not a known fact."""
+        return text if attr in self.known_keys else f"{text} (derived)"
 
     @property
     def bandwidth(self) -> float:
@@ -379,7 +617,7 @@ class Header:
             msg = "ref_freq must be a string or a number"
             raise TypeError(msg)
 
-        return params.compute_dmdelays(
+        return dispersion.compute_dmdelays(
             self.chan_freqs,
             dm,
             self.tsamp,
@@ -410,7 +648,7 @@ class Header:
             If dm is a scalar, returns a 1D array of smearing. If dm is an array,
             returns a 2D array with shape ``(len(dm), len(freqs))``.
         """
-        return params.compute_dmsmearing(
+        return dispersion.compute_dmsmearing(
             self.chan_freqs,
             dm,
             self.tsamp,
@@ -432,11 +670,39 @@ class Header:
         Header
             A new instance of the header with updated values.
         """
-        new = attrs.asdict(self)
+        new = attrs.asdict(self, recurse=False)
+        known = set(self.known_keys or ())
         if update_dict is not None:
-            new.update(update_dict)
+            update = {
+                key: value
+                for key, value in update_dict.items()
+                if not (key == "frame" and value is None)
+            }
+            if "frame" in update and update["frame"] not in _FRAMES:
+                msg = f"frame must be one of {_FRAMES}, got {update['frame']!r}."
+                raise ValueError(msg)
+            if "frame" in update:
+                update.setdefault(
+                    "frame_flags",
+                    frozenset(f for f in (update["frame"],) if f in _FRAME_FLAGS),
+                )
+            if "telescope" in update:
+                update.setdefault("sigproc_telescope_id", None)
+            if "backend" in update:
+                update.setdefault("sigproc_machine_id", None)
+            if "coord" in update:
+                update.setdefault("sigproc_src_raj", None)
+                update.setdefault("sigproc_src_dej", None)
+            if "rawdatafile" in update and not update["rawdatafile"]:
+                msg = (
+                    "rawdatafile cannot be empty; a zero-length string is not readable."
+                )
+                raise ValueError(msg)
+            new.update(update)
+            known.update(key for key in update if key in _ATTR_SOURCE_KEYS)
+        new["known_keys"] = frozenset(known)
         new_checked = {
-            key: value for key, value in new.items() if key in attrs.asdict(self)
+            key: value for key, value in new.items() if key in attrs.fields_dict(Header)
         }
         return Header(**new_checked)
 
@@ -483,28 +749,87 @@ class Header:
     def to_sigproc(self) -> dict:
         """Get header dictionary in Sigproc format.
 
+        Core keys are always included. Optional keys are included only when they are
+        in ``known_keys``, so values the header does not know are not written. Frame
+        flags are written from the source flags and from an explicit ``frame``.
+        Unrecognised Sigproc keys read from a file are carried in ``unknown_keys``.
+
         Returns
         -------
         dict
             Sigproc formatted header values.
         """
-        header = self.to_dict()
-        sig_header = {
-            key: value for key, value in header.items() if key in sigproc.SIGPROC_SCHEMA
+        if (
+            self.sigproc_telescope_id is None
+            and self.telescope not in sigproc.telescope_ids
+        ):
+            logger.warning(
+                f"Telescope {self.telescope!r} has no Sigproc id; "
+                "writing telescope_id 0."
+            )
+        if self.sigproc_machine_id is None and self.backend not in sigproc.machine_ids:
+            logger.warning(
+                f"Backend {self.backend!r} has no Sigproc id; writing machine_id 0."
+            )
+        sig_header: dict[str, Any] = {
+            "data_type": params.data_types.inverse[self.data_type],
+            "telescope_id": self.telescope_id,
+            "machine_id": self.machine_id,
+            "tstart": self.tstart,
+            "tsamp": self.tsamp,
+            "nbits": self.nbits,
+            "nsamples": self.nsamples,
+            "fch1": self.fch1,
+            "foff": self.foff,
+            "nchans": self.nchans,
+            "nifs": self.nifs,
+            "unknown_keys": self.unknown_keys,
         }
-        hdr_update = {
-            "data_type": params.data_types.inverse[sig_header["data_type"]],
-            "pulsarcentric": 1 if self.frame == "pulsarcentric" else 0,
-            "barycentric": 1 if self.frame == "barycentric" else 0,
-            "source_name": self.source,
-            "refdm": self.dm,
-            "src_dej": float(self.dec.replace(":", "")),
-            "src_raj": float(self.ra.replace(":", "")),
-            "za_start": self.zenith.deg,
-            "az_start": self.azimuth.deg,
-        }
-        sig_header.update(hdr_update)
+        if "source" in self.known_keys and self.source:
+            sig_header["source_name"] = self.source
+        if "coord" in self.known_keys:
+            if self.sigproc_src_raj is not None and self.sigproc_src_dej is not None:
+                sig_header["src_raj"] = self.sigproc_src_raj
+                sig_header["src_dej"] = self.sigproc_src_dej
+            else:
+                sig_header["src_raj"] = float(self.ra.replace(":", ""))
+                sig_header["src_dej"] = float(self.dec.replace(":", ""))
+        sig_header.update(self._optional_sigproc_values())
+        sig_header.update(self._frame_sigproc_flags())
         return sig_header
+
+    def _optional_sigproc_values(self) -> dict[str, Any]:
+        """Return the optional keys whose attributes are in ``known_keys``."""
+        values: dict[str, Any] = {}
+        for attr, key in _WRITTEN_KEYS.items():
+            if attr not in self.known_keys:
+                continue
+            value = getattr(self, attr)
+            if isinstance(value, Angle):
+                value = value.deg
+            if attr == "rawdatafile" and not value:
+                continue
+            if attr == "signed":
+                value = int(value)
+                if value:
+                    logger.warning("signed=1 is rejected by some readers")
+            values[key] = value
+        return values
+
+    def _frame_sigproc_flags(self) -> dict[str, int]:
+        """Return the frame flags to write.
+
+        A flag is written if the source recorded it, with the value the source gave.
+        An explicit barycentric or pulsarcentric frame sets that flag to 1.
+        """
+        flags = {
+            flag: int(flag in self.frame_flags)
+            for flag in _FRAME_FLAGS
+            if flag in self.known_keys
+        }
+        if self.frame in _FRAME_FLAGS:
+            flags[self.frame] = 1
+        return flags
 
     def to_string(self) -> str:
         """Get a string representation of the header.
@@ -516,6 +841,8 @@ class Header:
         """
         hdr = []
         temp = "{0:<33}: {1}"
+        frame = self.effective_frame
+        frame_text = frame if self.frame is not None else f"{frame} (derived)"
         hdr.extend(
             [
                 temp.format("Data file", self.filename),
@@ -527,14 +854,18 @@ class Header:
                     "Data size (bytes)",
                     self.stream_info.get_combined("datalen"),
                 ),
-                temp.format("Data type", f"{self.data_type} ({self.frame})"),
-                temp.format("Telescope", self.telescope),
-                temp.format("Datataking Machine", self.backend),
-                temp.format("Source Name", self.source),
-                temp.format("Source RA (J2000)", self.ra),
-                temp.format("Source DEC (J2000)", self.dec),
-                temp.format("Start AZ (deg)", self.azimuth.deg),
-                temp.format("Start ZA (deg)", self.zenith.deg),
+                temp.format("Data type", f"{self.data_type} ({frame_text})"),
+                temp.format("Telescope", self._tag(self.telescope, "telescope")),
+                temp.format("Datataking Machine", self._tag(self.backend, "backend")),
+                temp.format("Source Name", self._tag(self.source, "source")),
+                temp.format("Source RA (J2000)", self._tag(self.ra, "coord")),
+                temp.format("Source DEC (J2000)", self._tag(self.dec, "coord")),
+                temp.format(
+                    "Start AZ (deg)", self._tag(f"{self.azimuth.deg}", "azimuth")
+                ),
+                temp.format(
+                    "Start ZA (deg)", self._tag(f"{self.zenith.deg}", "zenith")
+                ),
             ],
         )
         if self.data_type == "filterbank":
@@ -543,20 +874,22 @@ class Header:
                     temp.format("Frequency of channel 1 (MHz)", self.fch1),
                     temp.format("Channel bandwidth      (MHz)", self.foff),
                     temp.format("Number of channels", self.nchans),
-                    temp.format("Number of beams", self.nbeams),
-                    temp.format("Beam number", self.ibeam),
+                    temp.format(
+                        "Number of beams", self._tag(str(self.nbeams), "nbeams")
+                    ),
+                    temp.format("Beam number", self._tag(str(self.ibeam), "ibeam")),
                 ],
             )
         elif self.data_type == "time series":
             hdr.extend(
                 [
-                    temp.format("Reference DM (pc/cc)", self.dm),
+                    temp.format("Reference DM (pc/cc)", self._tag(str(self.dm), "dm")),
                     temp.format("Reference frequency    (MHz)", self.fch1),
                     temp.format("Number of channels", self.nchans),
                 ],
             )
         print_dur, print_unit = utils.duration_string(self.tobs).split()
-        signedness = "SIGNED" if self.signed else "UNSIGNED"
+        signedness = self._tag("SIGNED" if self.signed else "UNSIGNED", "signed")
         hdr.extend(
             [
                 temp.format("Signedness of 8-bit numbers", signedness),
@@ -636,7 +969,7 @@ class Header:
         inf_dict = self.to_dict()
         # Central freq of low channel (Mhz)
         inf_dict["freq_low"] = self.fbottom + 0.5 * abs(self.foff)
-        inf_dict["barycentric"] = 0
+        inf_dict["barycentric"] = 1 if self.frame == "barycentric" else 0
         inf_dict["observer"] = "Robotic overlords"
         inf_dict["analyser"] = "sigpyproc"
         inf = [
@@ -669,14 +1002,25 @@ class Header:
             lines = fp.readlines()
 
         for line in lines:
-            desc = line.split("=")[0].strip()
-            val = line.split("=")[-1].strip()
-            if desc not in list(params.presto_inf.keys()):
+            desc, _, val = line.rpartition("=")
+            desc = desc.strip()
+            if desc in params.PRESTO_BARYCENTRIC_ALIASES:
+                desc = params.PRESTO_BARYCENTRIC_LABEL
+            if desc not in params.presto_inf:
                 continue
             key, keytype, _keyformat = params.presto_inf[desc]
-            header[key] = keytype(val)
+            header[key] = keytype(val.strip())
 
-        hdr_update = {
+        known = {
+            attr
+            for attr in ("telescope", "backend", "source", "dm", "barycentric")
+            if attr in header
+        } | {"coord"}
+        frame = None
+        if "barycentric" in header:
+            frame = "barycentric" if header["barycentric"] else "topocentric"
+        values: dict[str, Any] = {
+            **header,
             "filename": header["basename"],
             "data_type": "time series",
             "fch1": header["freq_low"] + header["foff"] * header["nchans"],
@@ -688,10 +1032,16 @@ class Header:
                 header["dec"],
                 unit=(units.hourangle, units.deg),
             ),
+            "frame": frame,
+            "frame_flags": frozenset({"barycentric"})
+            if header.get("barycentric")
+            else frozenset(),
         }
-        header.update(hdr_update)
+        known_frozen = frozenset(known)
+        known_frozen |= _infer_horizon(values, known_frozen)
+        values["known_keys"] = known_frozen
         header_check = {
-            key: value for key, value in header.items() if key in attrs.fields_dict(cls)
+            key: value for key, value in values.items() if key in attrs.fields_dict(cls)
         }
         return cls(**header_check)
 
@@ -720,31 +1070,7 @@ class Header:
             filenames,
             check_contiguity=check_contiguity,
         )
-        frame = "pulsarcentric" if header.get("pulsarcentric") else "topocentric"
-        frame = "barycentric" if header.get("barycentric") else "topocentric"
-        hdr_update = {
-            "data_type": params.data_types[header.get("data_type", 1)],
-            "telescope": sigproc.telescope_ids.inv.get(
-                header.get("telescope_id", 0),
-                "Fake",
-            ),
-            "backend": sigproc.machine_ids.inv.get(header.get("machine_id", 0), "FAKE"),
-            "source": header.get("source_name", "Fake"),
-            "dm": header.get("refdm", 0),
-            "foff": header.get("foff", 0),
-            "coord": sigproc.parse_radec(
-                header.get("src_raj", 0),
-                header.get("src_dej", 0),
-            ),
-            "azimuth": Angle(header.get("az_start", 0) * units.deg),
-            "zenith": Angle(header.get("za_start", 0) * units.deg),
-            "frame": frame,
-        }
-        header.update(hdr_update)
-        header_check = {
-            key: value for key, value in header.items() if key in attrs.fields_dict(cls)
-        }
-        return cls(**header_check, stream_info=sinfo)
+        return cls(**_sigproc_kwargs(cls, header, first_write=False), stream_info=sinfo)
 
     @classmethod
     def from_pfits(cls, filename: str) -> Header:
@@ -763,8 +1089,7 @@ class Header:
         primary_hdr = pfits.PrimaryHdr(filename)
         subint_hdr = pfits.SubintHdr(filename)
 
-        header: dict[str, Any] = {}
-        hdr_update = {
+        values: dict[str, Any] = {
             "filename": filename,
             "data_type": "filterbank",
             "nchans": subint_hdr.nchans,
@@ -778,10 +1103,20 @@ class Header:
             "telescope": primary_hdr.telescope,
             "backend": primary_hdr.backend.name,
             "source": primary_hdr.source,
+            "rawdatafile": Path(filename).name,
         }
-        header.update(hdr_update)
+        known = {"coord", "telescope", "backend", "source", "rawdatafile"}
+        if "IBEAM" in primary_hdr.header:
+            values["ibeam"] = primary_hdr.ibeam
+            known.add("ibeam")
+        if "NBEAM" in primary_hdr.header:
+            values["nbeams"] = int(primary_hdr.header["NBEAM"])
+            known.add("nbeams")
+        known_frozen = frozenset(known)
+        known_frozen |= _infer_horizon(values, known_frozen)
+        values["known_keys"] = known_frozen
         header_check = {
-            key: value for key, value in header.items() if key in attrs.fields_dict(cls)
+            key: value for key, value in values.items() if key in attrs.fields_dict(cls)
         }
         return cls(**header_check)
 
@@ -800,28 +1135,4 @@ class Header:
             Observational metadata.
         """
         header = fbh5.parse_header(filename)
-        frame = "pulsarcentric" if header.get("pulsarcentric") else "topocentric"
-        frame = "barycentric" if header.get("barycentric") else "topocentric"
-        hdr_update = {
-            "data_type": params.data_types[header.get("data_type", 1)],
-            "telescope": sigproc.telescope_ids.inv.get(
-                header.get("telescope_id", 0),
-                "Fake",
-            ),
-            "backend": sigproc.machine_ids.inv.get(header.get("machine_id", 0), "FAKE"),
-            "source": header.get("source_name", "Fake"),
-            "dm": header.get("refdm", 0),
-            "foff": header.get("foff", 0),
-            "coord": sigproc.parse_radec(
-                header.get("src_raj", 0),
-                header.get("src_dej", 0),
-            ),
-            "azimuth": Angle(header.get("az_start", 0) * units.deg),
-            "zenith": Angle(header.get("za_start", 0) * units.deg),
-            "frame": frame,
-        }
-        header.update(hdr_update)
-        header_check = {
-            key: value for key, value in header.items() if key in attrs.fields_dict(cls)
-        }
-        return cls(**header_check)
+        return cls(**_sigproc_kwargs(cls, header, first_write=True))

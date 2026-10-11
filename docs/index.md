@@ -105,4 +105,5 @@ changes
 
 tutorials/quickstart
 tutorials/search
+tutorials/header
 ```

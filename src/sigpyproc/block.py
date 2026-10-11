@@ -12,7 +12,8 @@ from typing import TYPE_CHECKING, Self
 
 import numpy as np
 
-from sigpyproc.core import kernels, stats
+from sigpyproc import kernels
+from sigpyproc.core import stats
 from sigpyproc.header import Header
 from sigpyproc.timeseries import TimeSeries
 

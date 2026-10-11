@@ -498,7 +498,7 @@ class TestParseHeaderInvalid:
         self, tmpfile: str, monkeypatch: pytest.MonkeyPatch, builder: SigprocBuilder
     ) -> None:
         """Make datalen < 0 branch: mock filelen to be smaller than hdrlen."""
-        import sigpyproc.io.sigproc as _mod  # noqa: PLC0415
+        import sigpyproc.io.sigproc as _mod
 
         nchans, nbits = 4, 8
         payload = _minimal_payload(builder, nchans=nchans, nbits=nbits).build()
@@ -593,7 +593,7 @@ class TestSigproc:
 
     @pytest.mark.parametrize(
         ("key", "newval"),
-        [("nchans", 2000), ("fch1", 4000.5), ("source_name", "new_source")],
+        [("ibeam", 2), ("fch1", 4000.5), ("source_name", "new_source")],
     )
     def test_edit_header(
         self,
@@ -607,18 +607,28 @@ class TestSigproc:
         header = sigproc.parse_header(tmpfile)
         assert header[key] == newval
 
-    def test_edit_header_source_name_truncated_to_original_length(
+    def test_edit_header_refuses_long_source_name(
         self, filfile_8bit_1: str, tmpfile: str
     ) -> None:
-        """source_name edits are padded/truncated to preserve header size."""
+        """Names are never truncated: a longer value is refused and the file kept."""
         shutil.copyfile(filfile_8bit_1, tmpfile)
         original = sigproc.parse_header(tmpfile)
         original_len = len(original["source_name"])
-        long_name = "X" * (original_len + 20)
-        sigproc.edit_header(tmpfile, "source_name", long_name)
+        before_bytes = Path(tmpfile).read_bytes()
+        with pytest.raises(ValueError, match="has room for"):
+            sigproc.edit_header(tmpfile, "source_name", "X" * (original_len + 20))
+        assert Path(tmpfile).read_bytes() == before_bytes
+
+    def test_edit_header_pads_shorter_source_name(
+        self, filfile_8bit_1: str, tmpfile: str
+    ) -> None:
+        """Shorter names are padded so the header size is unchanged."""
+        shutil.copyfile(filfile_8bit_1, tmpfile)
+        original = sigproc.parse_header(tmpfile)
+        sigproc.edit_header(tmpfile, "source_name", "A")
         header = sigproc.parse_header(tmpfile)
-        # Must be same byte length as before — header size is invariant
-        assert len(header["source_name"]) == original_len
+        assert len(header["source_name"]) == len(original["source_name"])
+        assert header["source_name"].startswith("A")
         assert header["hdrlen"] == original["hdrlen"]
 
     def test_edit_header_invalid(
@@ -627,14 +637,110 @@ class TestSigproc:
         tmpfile: str,
     ) -> None:
         shutil.copyfile(filfile_8bit_1, tmpfile)
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="not a valid sigproc key"):
             sigproc.edit_header(tmpfile, "invalid", 0)
-        with pytest.raises((TypeError, struct.error)):
-            sigproc.edit_header(tmpfile, "nchans", "not_a_number")
-        with pytest.raises(ValueError):
-            sigproc.edit_header(tmpfile, "nchans", None)  # type: ignore [arg-type]
+        with pytest.raises(ValueError, match="needs a whole number"):
+            sigproc.edit_header(tmpfile, "ibeam", "not_a_number")
+        with pytest.raises(ValueError, match="needs a value"):
+            sigproc.edit_header(tmpfile, "ibeam", None)  # type: ignore [arg-type]
         with pytest.raises(ValueError, match="non-ASCII characters"):
             sigproc.edit_header(tmpfile, "source_name", "Ångström")
+
+    @pytest.mark.parametrize(
+        ("key", "value", "match"),
+        [
+            ("nbits", 3, "cannot be changed in place"),
+            ("nchans", 8, "cannot be changed in place"),
+            ("nifs", 1, "cannot be changed in place"),
+            ("ibeam", -1, "must be between"),
+            ("ibeam", 2.5, "whole number"),
+            ("fch1", float("nan"), "must be finite"),
+            ("fch1", "abc", "needs a number"),
+            ("tsamp", 0, "greater than 0"),
+            ("src_raj", 250000.0, "right ascension"),
+            ("src_raj", 126000.0, "right ascension"),
+            ("src_dej", 900100.0, "declination"),
+            ("az_start", 400.0, "between 0 and 360"),
+            ("za_start", 200.0, "between 0 and 180"),
+            ("data_type", 99, "one of"),
+            ("rawdatafile", "", "cannot be empty"),
+        ],
+    )
+    def test_edit_header_rejects_bad_values(
+        self,
+        filfile_8bit_1: str,
+        tmpfile: str,
+        key: str,
+        value: float | str,
+        match: str,
+    ) -> None:
+        shutil.copyfile(filfile_8bit_1, tmpfile)
+        before_bytes = Path(tmpfile).read_bytes()
+        with pytest.raises(ValueError, match=match):
+            sigproc.edit_header(tmpfile, key, value)
+        assert Path(tmpfile).read_bytes() == before_bytes
+
+    def test_edit_header_refuses_absent_key(self, tmpdir: str) -> None:
+        path = Path(tmpdir) / "min.fil"
+        payload = _minimal_payload(SigprocBuilder(), nchans=4, nbits=8).build()
+        path.write_bytes(payload + bytes(16))
+        with pytest.raises(ValueError, match="cannot add keys"):
+            sigproc.edit_header(path, "barycentric", 1)
+
+    def test_edit_flag_must_be_zero_or_one(self, tmpdir: str) -> None:
+        path = Path(tmpdir) / "flag.fil"
+        fields = {
+            "data_type": 1,
+            "source_name": "T",
+            "tstart": 60000.0,
+            "tsamp": 1e-3,
+            "nbits": 8,
+            "fch1": 1400.0,
+            "foff": -1.0,
+            "nchans": 4,
+            "nifs": 1,
+            "barycentric": 0,
+        }
+        path.write_bytes(sigproc.encode_header(fields) + bytes(16))
+        before_bytes = path.read_bytes()
+        with pytest.raises(ValueError, match="0 or 1"):
+            sigproc.edit_header(path, "barycentric", 2)
+        assert path.read_bytes() == before_bytes
+        sigproc.edit_header(path, "barycentric", 1)
+        assert sigproc.parse_header(path)["barycentric"] == 1
+
+    def test_edit_headers_is_all_or_nothing(
+        self, filfile_8bit_1: str, tmpfile: str
+    ) -> None:
+        shutil.copyfile(filfile_8bit_1, tmpfile)
+        before_bytes = Path(tmpfile).read_bytes()
+        with pytest.raises(ValueError):
+            sigproc.edit_headers(tmpfile, {"ibeam": 3, "src_raj": 250000.0})
+        assert Path(tmpfile).read_bytes() == before_bytes
+
+    def test_edit_headers_applies_all_updates(
+        self, filfile_8bit_1: str, tmpfile: str
+    ) -> None:
+        shutil.copyfile(filfile_8bit_1, tmpfile)
+        sigproc.edit_headers(tmpfile, {"ibeam": "3", "fch1": "1400.5"})
+        header = sigproc.parse_header(tmpfile)
+        assert header["ibeam"] == 3
+        assert header["fch1"] == 1400.5
+
+    def test_edit_keeps_declared_nsamples(
+        self, filfile_8bit_1: str, tmpfile: str
+    ) -> None:
+        """An unrelated edit keeps a declared nsamples instead of the computed one."""
+        payload = Path(filfile_8bit_1).read_bytes()
+        hdrlen = sigproc.parse_header(filfile_8bit_1)["hdrlen"]
+        header = sigproc.encode_header(
+            {**sigproc.parse_header(filfile_8bit_1), "nsamples": 10**6},
+            allow_nsamples_overwrite=True,
+        )
+        Path(tmpfile).write_bytes(header + payload[hdrlen:])
+        declared_before = sigproc._read_raw_header(Path(tmpfile))["nsamples"]
+        sigproc.edit_header(tmpfile, "source_name", "ABC")
+        assert sigproc._read_raw_header(Path(tmpfile))["nsamples"] == declared_before
 
     def test_match_header_pass(self, filfile_8bit_1: str, filfile_8bit_2: str) -> None:
         header1 = sigproc.parse_header(filfile_8bit_1)
@@ -757,3 +863,97 @@ class TestStreamInfo:
         )
         stream_info = sigproc.StreamInfo(entries=[file_info1, file_info2])
         assert stream_info.check_contiguity() is False
+
+
+def _core_sigproc_fields(**extra: object) -> dict:
+    fields: dict = {
+        "data_type": 1,
+        "telescope_id": 0,
+        "machine_id": 0,
+        "source_name": "test_src",
+        "src_raj": 0.0,
+        "src_dej": 0.0,
+        "tstart": 60000.0,
+        "tsamp": 6.4e-5,
+        "nbits": 8,
+        "fch1": 1500.0,
+        "foff": -0.1,
+        "nchans": 4,
+        "nifs": 1,
+    }
+    fields.update(extra)
+    return fields
+
+
+def _write_sigproc(path: Path, nsamples: int, tstart: float, **extra: object) -> str:
+    fields = _core_sigproc_fields(tstart=tstart, **extra)
+    path.write_bytes(sigproc.encode_header(fields) + bytes(4 * nsamples))
+    return str(path)
+
+
+class TestHeaderRobustness:
+    def test_unknown_key_bytes_roundtrip(self, tmp_path: Path) -> None:
+        raw = struct.pack("<I", 999)
+        path = _write_sigproc(
+            tmp_path / "in.fil",
+            nsamples=16,
+            tstart=60000.0,
+            unknown_keys=(("mystery", raw),),
+        )
+        parsed = sigproc.parse_header(path)
+        assert parsed["unknown_keys"] == (("mystery", raw),)
+        encoded = sigproc.encode_header(parsed)
+        assert encoded.endswith(
+            sigproc._encode_string("mystery")
+            + raw
+            + sigproc._encode_string("HEADER_END")
+        )
+        reparsed_path = tmp_path / "again.fil"
+        reparsed_path.write_bytes(encoded + bytes(4 * 16))
+        assert sigproc.parse_header(reparsed_path)["unknown_keys"] == (
+            ("mystery", raw),
+        )
+
+    def test_unknown_key_values_are_not_encoded_from_plain_dict(self) -> None:
+        encoded = sigproc.encode_header({"nchans": 4, "mystery": 1})
+        assert sigproc._encode_string("mystery") not in encoded
+
+    def test_match_header_absent_on_both_sides(self) -> None:
+        header1 = {"fch1": 1500.0, "filename": "a.fil"}
+        header2 = {"fch1": 1500.0, "filename": "b.fil"}
+        sigproc.match_header(header1, header2)
+
+    def test_match_header_key_present_only_in_one(self) -> None:
+        header1 = {"fch1": 1500.0, "barycentric": 1, "filename": "a.fil"}
+        header2 = {"fch1": 1500.0, "filename": "b.fil"}
+        with pytest.raises(ValueError, match="barycentric"):
+            sigproc.match_header(header1, header2)
+
+    def test_match_header_ignores_nsamples(self) -> None:
+        header1 = {"fch1": 1500.0, "nsamples": 16, "filename": "a.fil"}
+        header2 = {"fch1": 1500.0, "nsamples": 8, "filename": "b.fil"}
+        sigproc.match_header(header1, header2)
+
+    def test_multi_file_different_lengths_is_contiguous(self, tmp_path: Path) -> None:
+        tsamp = 6.4e-5
+        first = _write_sigproc(tmp_path / "one.fil", nsamples=16, tstart=60000.0)
+        second_tstart = 60000.0 + 16 * tsamp / 86400
+        second = _write_sigproc(
+            tmp_path / "two.fil",
+            nsamples=8,
+            tstart=second_tstart,
+        )
+        header, sinfo = sigproc.parse_header_multi([first, second])
+        assert header["nsamples"] == 24
+        assert len(sinfo.entries) == 2
+
+    def test_multi_file_with_absent_optional_key(self, tmp_path: Path) -> None:
+        first = _write_sigproc(
+            tmp_path / "one.fil",
+            nsamples=16,
+            tstart=60000.0,
+            barycentric=1,
+        )
+        second = _write_sigproc(tmp_path / "two.fil", nsamples=16, tstart=60000.1)
+        with pytest.raises(ValueError, match="barycentric"):
+            sigproc.parse_header_multi([first, second], check_contiguity=False)

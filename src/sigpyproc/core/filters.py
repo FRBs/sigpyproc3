@@ -13,16 +13,17 @@ from typing import TYPE_CHECKING, Literal
 import attrs
 import numpy as np
 from astropy.stats import gaussian_fwhm_to_sigma
-from matplotlib import pyplot as plt
 from numba import typed
 
-from sigpyproc.core import kernels
 from sigpyproc.core.stats import (
     ZScoreResult,
     estimate_zscore,
 )
+from sigpyproc.kernels.fourier import convolve_templates, normalize_template
 
 if TYPE_CHECKING:
+    from matplotlib.figure import Figure
+
     from sigpyproc.core.custom_types import LocMethods, MatchFilterMethods, ScaleMethods
 
 
@@ -254,7 +255,7 @@ class MatchedFilter:
         self,
         figsize: tuple[float, float] = (12, 6),
         dpi: int = 100,
-    ) -> plt.Figure:
+    ) -> Figure:
         """Plot the pulse template.
 
         Parameters
@@ -269,6 +270,8 @@ class MatchedFilter:
         Figure
             Matplotlib figure object.
         """
+        from matplotlib import pyplot as plt
+
         title = (
             f"Matched Filter Result (Temp Kind: {self.temp_kind}, "
             f"Best width: {self.best_temp.width:.2f}, "
@@ -325,7 +328,7 @@ class MatchedFilter:
     def _compute(self) -> None:
         temp_kernels = typed.List([temp.data for temp in self.temp_bank])
         ref_bins = typed.List([temp.ref_bin for temp in self.temp_bank])
-        self._convs = kernels.convolve_templates(
+        self._convs = convolve_templates(
             self.zscores.data,
             temp_kernels,
             ref_bins,
@@ -445,7 +448,7 @@ class Template:
             Profile model for the pulse template.
         """
         padded = np.pad(self.data, (0, nbins - self.data.size))
-        padded_norm = kernels.normalize_template(padded)
+        padded_norm = normalize_template(padded)
         return np.roll(padded_norm, peak_bin - self.ref_bin)
 
     def get_on_pulse(self, peak_bin: int, nbins: int) -> tuple[int, int]:
@@ -477,7 +480,7 @@ class Template:
         self,
         figsize: tuple[float, float] = (10, 5),
         dpi: int = 100,
-    ) -> plt.Figure:
+    ) -> Figure:
         """Plot the pulse template.
 
         Parameters
@@ -492,6 +495,8 @@ class Template:
         Figure
             Matplotlib figure object.
         """
+        from matplotlib import pyplot as plt
+
         fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
         ax.bar(range(self.data.size), self.data, ec="k", fc="#a6cee3")
         ax.axvline(self.ref_bin, ls="--", lw=2, color="k", label="Ref Bin")

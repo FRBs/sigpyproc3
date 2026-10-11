@@ -7,7 +7,7 @@ The public search methods live on the data objects:
 :meth:`~sigpyproc.fourierseries.PowerSpectrum.find_peaks`. They validate
 their arguments and do the object-level work (downsampling, resampling,
 folding), then call the functions here. Each function returns a
-:class:`~sigpyproc.candidates.CandidateTable`.
+:class:`~sigpyproc.core.candidates.CandidateTable`.
 """
 
 from __future__ import annotations
@@ -17,8 +17,9 @@ from typing import TYPE_CHECKING
 import numpy as np
 from numba import typed
 
-from sigpyproc.candidates import CandidateTable
-from sigpyproc.core import kernels, stats
+from sigpyproc import kernels
+from sigpyproc.core import stats
+from sigpyproc.core.candidates import CandidateTable
 from sigpyproc.core.filters import MatchedFilter, Template
 
 if TYPE_CHECKING:
@@ -227,7 +228,7 @@ def ffa_search(
 
     For every integer trial period ``P`` (in bins) between ``pmin`` and
     ``pmax``, the series is reshaped to ``(nsamp // P, P)`` and folded with
-    the FFA tree in :func:`~sigpyproc.core.kernels.ffa_stage`. The robust
+    the FFA tree in :func:`~sigpyproc.kernels.folding.ffa_stage`. The robust
     SNR of each output profile is computed and the best one is kept.
 
     The input is capped at ``FFA_MAX_NSAMP`` samples. One candidate is kept

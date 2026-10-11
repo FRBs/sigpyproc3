@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import rich_click as click
 
+from sigpyproc.apps._logging import logging_options, setup_cli_logging
 from sigpyproc.simulation.pulsar import PulsarParams, fake_filterbank, make_header
 
 if TYPE_CHECKING:
@@ -97,11 +98,13 @@ def _write(
     click.echo(path)
 
 
+@logging_options
 @click.group(
     context_settings={"help_option_names": ["-h", "--help"], "show_default": True},
 )
-def main() -> None:
+def main(verbose: int, *, quiet: bool) -> None:
     """Generate fake filterbank data (noise | pulsar | pulse)."""
+    setup_cli_logging(verbose, quiet=quiet)
 
 
 @main.command()

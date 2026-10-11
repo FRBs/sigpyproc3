@@ -4,9 +4,11 @@ from typing import Literal
 
 import rich_click as click
 
-from sigpyproc.combine import merge_filterbanks
+from sigpyproc.apps._logging import logging_options, setup_cli_logging
+from sigpyproc.io.combine import merge_filterbanks
 
 
+@logging_options
 @click.command(
     context_settings={"help_option_names": ["-h", "--help"], "show_default": True},
 )
@@ -33,12 +35,16 @@ from sigpyproc.combine import merge_filterbanks
     help="Output filename",
 )
 def main(
+    verbose: int,
     filfiles: tuple[str, ...],
     axis: Literal["auto", "time", "freq"],
     gulp: int,
     outfile: str,
+    *,
+    quiet: bool,
 ) -> None:
     """Merge filterbanks in time or frequency."""
+    setup_cli_logging(verbose, quiet=quiet)
     path = merge_filterbanks(filfiles, outfile, axis=axis, gulp=gulp)
     click.echo(path)
 

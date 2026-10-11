@@ -10,8 +10,6 @@ from typing import TYPE_CHECKING, Any, ClassVar
 import attrs
 import numpy as np
 
-from sigpyproc.core import kernels
-
 if TYPE_CHECKING:
     from numpy.typing import NDArray
 
@@ -65,8 +63,9 @@ def unpack(
     elif unpacked.size != array.size * bitfact:
         msg = f"Unpacking array must be {bitfact} x input size, got {unpacked.size}"
         raise ValueError(msg)
-    unpack_func = getattr(kernels, f"unpack{nbits:d}_8_{bitorder_str}")
-    unpack_func(array, unpacked)
+    from sigpyproc.kernels.bitpacking import unpack_array
+
+    unpack_array(array, nbits, unpacked, bitorder_str)
     return unpacked
 
 
@@ -119,8 +118,9 @@ def pack(
     elif packed.size != array.size // bitfact:
         msg = f"packing array must be input size // {bitfact}, got {packed.size}"
         raise ValueError(msg)
-    pack_func = getattr(kernels, f"pack{nbits:d}_8_{bitorder_str}")
-    pack_func(array, packed)
+    from sigpyproc.kernels.bitpacking import pack_array
+
+    pack_array(array, nbits, packed, bitorder_str)
     return packed
 
 
@@ -174,8 +174,8 @@ class BitsInfo:
     }
     default_bitorder: ClassVar[dict[int, str]] = {
         1: "little",
-        2: "big",
-        4: "big",
+        2: "little",
+        4: "little",
         8: "invalid",
         16: "invalid",
         32: "invalid",

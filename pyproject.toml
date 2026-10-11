@@ -41,6 +41,7 @@ dependencies = [
     "rich-click",
     "rocket-fft",
     "bidict",
+    "lazy-loader",
 ]
 
 [project.urls]
@@ -85,11 +86,11 @@ spp_dedisperse = "sigpyproc.apps.spp_dedisperse:main"
 spp_fold = "sigpyproc.apps.spp_fold:main"
 spp_fake = "sigpyproc.apps.spp_fake:main"
 spp_search = "sigpyproc.apps.spp_search:main"
+spp_digifil = "sigpyproc.apps.spp_digifil:main"
 
 
 [tool.ruff]
-include = ["pyproject.toml", "src/**/*.py", "tests/**/*.py", "docs/**/*.py"]
-exclude = ["src/sigpyproc/apps/spp_digifil.py"]
+include = ["pyproject.toml", "src/**/*.py", "src/**/*.pyi", "tests/**/*.py", "docs/**/*.py"]
 line-length = 88
 indent-width = 4
 target-version = "py312"
@@ -100,14 +101,16 @@ indent-style = "space"
 
 [tool.ruff.lint]
 select = ["ALL"]
-ignore = ["COM812", "CPY001", "D1", "D301", "PLR2004", "G004"]
+ignore = ["COM812", "CPY001", "D1", "D301", "PLR2004", "G004", "PLC0415"]
 
 [tool.ruff.lint.per-file-ignores]
-"src/sigpyproc/core/kernels.py" = ["ARG001"]
+"src/sigpyproc/kernels/**.py" = ["ARG001"]
 "src/sigpyproc/timeseries.py" = ["ANN401"] # numpy.pad kwargs depend on mode
 "src/sigpyproc/apps/spp_fake.py" = ["PLR0913", "PLR0917"]
+"src/sigpyproc/apps/spp_digifil.py" = ["PLR0913"]
 "tests/**/*.py" = ["S101", "FBT", "PLR2004", "PT011", "SLF001"]
 "docs/**" = ["INP001", "ARG001", "ANN401"]
+"bench/**" = ["INP001", "S603"]
 
 [tool.ruff.lint.pylint]
 max-args = 15
@@ -120,7 +123,7 @@ python-version = "3.12"
 
 [tool.ty.src]
 include = ["src"]
-exclude = ["tests", "src/sigpyproc/apps/spp_digifil.py"]
+exclude = ["tests"]
 
 [tool.ty.rules]
 not-iterable = "ignore" # For Numba prange
@@ -132,15 +135,16 @@ include = ["tests/test_stats.py"]
 invalid-argument-type = "ignore"
 
 [[tool.ty.overrides]]
-include = ["src/sigpyproc/core/kernels.py"]
+include = ["src/sigpyproc/kernels/*.py"]
 
 [tool.ty.overrides.rules]
 no-matching-overload = "ignore" # numba Dispatcher.py_func is not modelled by ty
 
-[tool.pytest]
+[tool.pytest.ini_options]
 minversion = "9.0"
 addopts = ["-ra", "-q"]
 testpaths = ["tests"]
+pythonpath = ["src"]
 
 [tool.coverage.paths]
 source = ["src/"]

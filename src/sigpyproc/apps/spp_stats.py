@@ -5,9 +5,11 @@ from pathlib import Path
 
 import rich_click as click
 
+from sigpyproc.apps._logging import logging_options, setup_cli_logging
 from sigpyproc.readers import FilReader
 
 
+@logging_options
 @click.command(
     context_settings={"help_option_names": ["-h", "--help"], "show_default": True},
 )
@@ -26,8 +28,11 @@ from sigpyproc.readers import FilReader
     default=None,
     help="Write CSV (chan, freq_mhz, mean, std, skew, kurtosis, min, max)",
 )
-def main(filfile: str, gulp: int, outfile: str | None) -> None:
+def main(
+    verbose: int, filfile: str, gulp: int, outfile: str | None, *, quiet: bool
+) -> None:
     """Print per-channel statistics for a filterbank."""
+    setup_cli_logging(verbose, quiet=quiet)
     fil = FilReader(filfile)
     fil.compute_stats(gulp=gulp)
     stats = fil.chan_stats

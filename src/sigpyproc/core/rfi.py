@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING
 import attrs
 import h5py
 import numpy as np
-from matplotlib import pyplot as plt
 
 from sigpyproc.core import stats
 from sigpyproc.header import Header
@@ -19,6 +18,7 @@ from sigpyproc.viz.styles import PlotTable
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
+    from matplotlib.figure import Figure
     from numpy.typing import NDArray
 
     from sigpyproc.core.custom_types import MaskMethods
@@ -308,7 +308,7 @@ class RFIMask:
         self,
         figsize: tuple[float, float] = (12, 6.5),
         dpi: int = 100,
-    ) -> plt.Figure:
+    ) -> Figure:
         """Plot the mask.
 
         Parameters
@@ -323,6 +323,8 @@ class RFIMask:
         Figure
             Matplotlib figure object.
         """
+        from matplotlib import pyplot as plt
+
         mask_colors = {
             "stats": "#ff7f7f",
             "user": "#e377c2",

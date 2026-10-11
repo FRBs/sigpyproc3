@@ -10,8 +10,8 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from sigpyproc import timeseries
-from sigpyproc.core import algorithms, kernels
+from sigpyproc import kernels, timeseries
+from sigpyproc.core import algorithms
 from sigpyproc.foldedcube import Profile
 from sigpyproc.header import Header
 from sigpyproc.utils import validate_path
@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
     from numpy.typing import ArrayLike, NDArray
 
-    from sigpyproc.candidates import CandidateTable
+    from sigpyproc.core.candidates import CandidateTable
 
 
 class PowerSpectrum:

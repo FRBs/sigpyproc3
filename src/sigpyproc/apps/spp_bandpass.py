@@ -4,9 +4,11 @@ from pathlib import Path
 
 import rich_click as click
 
+from sigpyproc.apps._logging import logging_options, setup_cli_logging
 from sigpyproc.readers import FilReader
 
 
+@logging_options
 @click.command(
     context_settings={"help_option_names": ["-h", "--help"], "show_default": True},
 )
@@ -25,8 +27,11 @@ from sigpyproc.readers import FilReader
     default=None,
     help="Write CSV (freq_mhz, mean)",
 )
-def main(filfile: str, gulp: int, outfile: str | None) -> None:
+def main(
+    verbose: int, filfile: str, gulp: int, outfile: str | None, *, quiet: bool
+) -> None:
     """Compute the mean bandpass of a filterbank."""
+    setup_cli_logging(verbose, quiet=quiet)
     fil = FilReader(filfile)
     bpass = fil.bandpass(method="mean", gulp=gulp)
     freqs = fil.header.chan_freqs

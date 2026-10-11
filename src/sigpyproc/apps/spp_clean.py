@@ -6,17 +6,20 @@ from typing import TYPE_CHECKING
 import numpy as np
 import rich_click as click
 
+from sigpyproc.apps._logging import logging_options, setup_cli_logging
 from sigpyproc.readers import FilReader
 
 if TYPE_CHECKING:
     from sigpyproc.core.custom_types import MaskMethods
 
 
+@logging_options
 @click.group(
     context_settings={"help_option_names": ["-h", "--help"], "show_default": True},
 )
-def main() -> None:
+def main(verbose: int, *, quiet: bool) -> None:
     """Clean RFI, mask channels, or samples in filterbank data."""
+    setup_cli_logging(verbose, quiet=quiet)
 
 
 @main.command()
