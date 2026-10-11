@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from sigpyproc.core import algorithms
-from sigpyproc.core.dmplan import DMPlan
+from sigpyproc.core.dispersion import DMPlan
 from sigpyproc.header import Header
 from sigpyproc.readers import FilReader
 from sigpyproc.timeseries import TimeSeries

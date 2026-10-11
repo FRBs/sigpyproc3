@@ -19,7 +19,7 @@ from astropy import units
 from astropy.coordinates import SkyCoord
 from bidict import bidict
 
-from sigpyproc import params
+from sigpyproc.io import params
 from sigpyproc.utils import validate_path
 
 if TYPE_CHECKING:

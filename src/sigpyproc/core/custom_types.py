@@ -1,8 +1,10 @@
+"""Custom type aliases for sigpyproc."""
+
 from typing import Literal
 
-FilterMethods = Literal["median", "mean"]
-LocMethods = Literal["median", "mean"]
-ScaleMethods = Literal[
+type FilterMethods = Literal["median", "mean"]
+type LocMethods = Literal["median", "mean"]
+type ScaleMethods = Literal[
     "std",
     "iqr",
     "mad",
@@ -13,8 +15,8 @@ ScaleMethods = Literal[
     "sn",
     "gapper",
 ]
-MaskMethods = Literal["iqrm", "mad"]
-SpecSimulMethods = Literal[
+type MaskMethods = Literal["iqrm", "mad"]
+type SpecSimulMethods = Literal[
     "flat",
     "power_law",
     "smooth_envelope",
@@ -24,4 +26,4 @@ SpecSimulMethods = Literal[
     "gaussian_blobs",
     "random",
 ]
-MatchFilterMethods = Literal["boxcar", "gaussian", "lorentzian"]
+type MatchFilterMethods = Literal["boxcar", "gaussian", "lorentzian"]

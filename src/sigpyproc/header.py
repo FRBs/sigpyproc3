@@ -15,8 +15,9 @@ from astropy import units
 from astropy.coordinates import Angle, SkyCoord
 from astropy.time import Time, TimeDelta
 
-from sigpyproc import params, utils
-from sigpyproc.io import fbh5, pfits, sigproc
+from sigpyproc import utils
+from sigpyproc.core import dispersion
+from sigpyproc.io import fbh5, params, pfits, sigproc
 from sigpyproc.io.bits import BitsInfo
 from sigpyproc.io.fileio import FileWriter
 
@@ -616,7 +617,7 @@ class Header:
             msg = "ref_freq must be a string or a number"
             raise TypeError(msg)
 
-        return params.compute_dmdelays(
+        return dispersion.compute_dmdelays(
             self.chan_freqs,
             dm,
             self.tsamp,
@@ -647,7 +648,7 @@ class Header:
             If dm is a scalar, returns a 1D array of smearing. If dm is an array,
             returns a 2D array with shape ``(len(dm), len(freqs))``.
         """
-        return params.compute_dmsmearing(
+        return dispersion.compute_dmsmearing(
             self.chan_freqs,
             dm,
             self.tsamp,

@@ -498,7 +498,7 @@ class TestParseHeaderInvalid:
         self, tmpfile: str, monkeypatch: pytest.MonkeyPatch, builder: SigprocBuilder
     ) -> None:
         """Make datalen < 0 branch: mock filelen to be smaller than hdrlen."""
-        import sigpyproc.io.sigproc as _mod  # noqa: PLC0415
+        import sigpyproc.io.sigproc as _mod
 
         nchans, nbits = 4, 8
         payload = _minimal_payload(builder, nchans=nchans, nbits=nbits).build()

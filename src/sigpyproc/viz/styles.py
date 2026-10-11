@@ -8,7 +8,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, ClassVar
 
 import attrs
-import seaborn as sns
 
 if TYPE_CHECKING:
     from matplotlib import pyplot as plt
@@ -68,6 +67,8 @@ def set_seaborn(
         "text.latex.preamble": r"\usepackage{amsmath, amssymb}",
     }
     rc.update(rc_kwargs)
+    import seaborn as sns
+
     sns.set_theme(
         context="paper",
         style="ticks",

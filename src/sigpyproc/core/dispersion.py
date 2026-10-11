@@ -1,4 +1,8 @@
-"""Levin/Cordes-style DM trial tables."""
+"""Dispersion related parameters, delays, and trial planning.
+
+This module contains ISM dispersion delay and smearing calculations, dispersion
+constants, and trial dispersion measure tables (DMPlan).
+"""
 
 from __future__ import annotations
 
@@ -6,12 +10,99 @@ from typing import TYPE_CHECKING
 
 import attrs
 import numpy as np
+from astropy import constants, units
 
 if TYPE_CHECKING:
+    from numpy.typing import ArrayLike, NDArray
+
     from sigpyproc.header import Header
+
+DM_CONSTANT_LK = 4.148808e3  # L&K Handbook of Pulsar Astronomy
+DM_CONSTANT_MT = 1 / 0.000241  # TEMPO2 Manchester & Taylor (1972)
+DM_CONSTANT_SI = (
+    (constants.e.esu**2 / (2 * np.pi * constants.m_e * constants.c)).to(  # ty: ignore[unresolved-attribute]
+        units.s * units.MHz**2 * units.cm**3 / units.pc,
+    )
+).value  # Precise SI constants
 
 K_SIGPROC = 8.3
 """Dispersion smearing constant used by SIGPROC ``getDMtable.C`` (µs, MHz, GHz)."""
+
+
+def compute_dmdelays(
+    freqs: ArrayLike,
+    dm: float | ArrayLike,
+    tsamp: float,
+    ref_freq: float,
+    *,
+    in_samples: bool = True,
+) -> NDArray[np.int32 | np.float32]:
+    """Compute ISM dispersion delays for given DM value(s).
+
+    Parameters
+    ----------
+    freqs : ArrayLike
+        Frequencies of each channel.
+    dm : float | ArrayLike
+        Dispersion measure(s) to calculate delays for.
+    tsamp : float
+        Sampling time of the data.
+    ref_freq : float
+        Reference frequency to calculate delays from.
+    in_samples : bool, optional
+        Flag to return delays as numbers of samples, by default True.
+
+    Returns
+    -------
+    NDArray[int32 | float32]
+        Dispersion delays at middle of each channel with respect to reference frequency.
+
+        If dm is a scalar, returns a 1D array of delays. If dm is an array,
+        returns a 2D array with shape ``(len(dm), len(freqs))``.
+    """
+    freqs = np.atleast_1d(freqs).astype(np.float32)
+    dm = np.atleast_1d(dm)[:, np.newaxis].astype(np.float32)
+    delays = dm * DM_CONSTANT_LK * ((freqs**-2) - (ref_freq**-2))
+    if in_samples:
+        delays = (delays / tsamp).round().astype(np.int32)
+    return delays.squeeze()
+
+
+def compute_dmsmearing(
+    freqs: ArrayLike,
+    dm: float | ArrayLike,
+    tsamp: float,
+    *,
+    in_samples: bool = True,
+) -> NDArray[np.int32 | np.float32]:
+    """Compute ISM smearing due to finite bandwidth for given DM value(s).
+
+    Parameters
+    ----------
+    freqs : ArrayLike
+        Frequencies of each channel.
+    dm : float | ArrayLike
+        Dispersion measure(s) to calculate smearing for.
+    tsamp : float
+        Sampling time of the data.
+    in_samples : bool, optional
+        Flag to return smearing as numbers of samples, by default True.
+
+    Returns
+    -------
+    NDArray[int32 | float32]
+        DM smearing in the frequency channels due to finite bandwidth.
+
+        If dm is a scalar, returns a 1D array of smearing. If dm is an array,
+        returns a 2D array with shape ``(len(dm), len(freqs))``.
+    """
+    freqs = np.atleast_1d(freqs).astype(np.float32)
+    dm = np.atleast_1d(dm)[:, np.newaxis].astype(np.float32)
+    foff = float(np.abs(freqs[1] - freqs[0]))
+    smearing = 2 * DM_CONSTANT_LK * foff * dm / freqs**3
+    if in_samples:
+        smearing = (smearing / tsamp).round().astype(np.int32)
+    return smearing.squeeze()
 
 
 @attrs.define(auto_attribs=True, slots=True)

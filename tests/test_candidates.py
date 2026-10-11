@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from astropy.table import QTable
 
-from sigpyproc.candidates import CANDIDATE_NAMES, CandidateTable
+from sigpyproc.core.candidates import CANDIDATE_NAMES, CandidateTable
 
 
 def _row(

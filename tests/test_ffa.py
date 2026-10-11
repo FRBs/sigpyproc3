@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from sigpyproc.core import kernels
+from sigpyproc import kernels
 from sigpyproc.header import Header
 from sigpyproc.timeseries import TimeSeries
 

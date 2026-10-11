@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import rich_click as click
 
-from sigpyproc.core.dmplan import DMPlan
 from sigpyproc.apps._logging import logging_options, setup_cli_logging
+from sigpyproc.core.dispersion import DMPlan
 from sigpyproc.readers import FilReader
 
 
@@ -11,9 +11,9 @@ from sigpyproc.readers import FilReader
 @click.group(
     context_settings={"help_option_names": ["-h", "--help"], "show_default": True},
 )
-def main(verbose: int, quiet: bool) -> None:
+def main(verbose: int, *, quiet: bool) -> None:
     """Dedisperse filterbank data (tim | subband | tree | plan)."""
-    setup_cli_logging(verbose, quiet)
+    setup_cli_logging(verbose, quiet=quiet)
 
 
 def _parse_ref_freq(value: str) -> str | float:

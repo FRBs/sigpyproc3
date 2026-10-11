@@ -6,7 +6,7 @@ from pathlib import Path
 import rich_click as click
 
 from sigpyproc.apps._logging import logging_options, setup_cli_logging
-from sigpyproc.candidates import CandidateTable
+from sigpyproc.core.candidates import CandidateTable
 from sigpyproc.timeseries import TimeSeries
 
 
@@ -14,9 +14,9 @@ from sigpyproc.timeseries import TimeSeries
 @click.group(
     context_settings={"help_option_names": ["-h", "--help"], "show_default": True},
 )
-def main(verbose: int, quiet: bool) -> None:
+def main(verbose: int, *, quiet: bool) -> None:
     """Search a time series (fft | pulses | ffa | cluster)."""
-    setup_cli_logging(verbose, quiet)
+    setup_cli_logging(verbose, quiet=quiet)
 
 
 def _write_cands(

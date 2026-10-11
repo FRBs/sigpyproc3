@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from sigpyproc import params
+from sigpyproc.core import dispersion
 from sigpyproc.core.filters import MatchedFilter
 from sigpyproc.header import Header
 
@@ -332,7 +332,7 @@ class FoldedData:
             np.arange(self.nsubbands, dtype=np.float64) * chan_width + self.header.fch1
         )
         tsamp = self.period / self.nbins
-        drifts = params.compute_dmdelays(
+        drifts = dispersion.compute_dmdelays(
             freqs,
             delta_dm,
             tsamp,

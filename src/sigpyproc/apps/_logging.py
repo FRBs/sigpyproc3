@@ -8,12 +8,12 @@ from typing import TypeVar
 
 import rich_click as click
 
-from sigpyproc.logging import configure_logging
+from sigpyproc.core.logging import configure_logging
 
 C = TypeVar("C", bound=Callable[..., object])
 
 
-def setup_cli_logging(verbose: int, *, quiet: bool) -> None:
+def setup_cli_logging(verbose: int = 0, *, quiet: bool = False) -> None:
     """Map Click verbosity flags to :func:`sigpyproc.logging.configure_logging`."""
     if quiet:
         level = logging.WARNING

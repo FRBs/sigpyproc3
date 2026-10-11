@@ -1,34 +1,297 @@
 """Sigproc filterbank conversion and redigitisation.
 
-This is the streaming driver for the numerics in :mod:`sigpyproc.core.digifil`. It
-accepts PSRFITS files, sigproc filterbank files, or any sigproc reader object, and
+This is the streaming driver for filterbank digifil operations. It accepts
+PSRFITS files, sigproc filterbank files, or any sigproc reader object, and
 reproduces dspsr's ``digifil`` pipeline.
 """
 
 from __future__ import annotations
 
 import logging
+import math
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import attrs
 import numpy as np
 
-from sigpyproc.core.digifil import (
-    Rescaler,
-    digitiser_params,
-    dspsr_block_samples,
-    float_rows,
-    fscrunch,
-    polarisation_means,
-    pscrunch_intensity,
-    quantise_rows,
-    tscrunch,
-)
 from sigpyproc.header import Header
 from sigpyproc.io import sigproc
 from sigpyproc.io.fileio import FileWriter
 from sigpyproc.io.pfits import PFITSFile
+from sigpyproc.kernels.digitizer import (
+    accumulate_stats,
+    apply_scale_offset,
+    fscrunch,
+    pscrunch_intensity,
+    quantise,
+    quantise_packed,
+    tscrunch,
+)
+
+# Digitiser mean per output bit depth (SigProcDigitizer.C) and the sigma used
+# for the 4, 8 and 16-bit scale (dspsr uses 6 sigma for all of these).
+DIGI_MEAN: dict[int, float] = {1: 0.5, 2: 1.5, 4: 7.5, 8: 127.5, 16: 32768.0}
+DIGI_SIGMA = 6.0
+
+
+def digitiser_params(
+    nbit: int,
+    *,
+    rescale_on: bool,
+    scale_in: float,
+    scale_fac: float,
+) -> tuple[np.float32, np.float32]:
+    """Return the digitiser ``(mean, scale)`` as dspsr's ``SigProcDigitizer``.
+
+    Parameters
+    ----------
+    nbit : int
+        Output bits per sample (1, 2, 4, 8 or 16).
+    rescale_on : bool
+        Whether the data were rescaled to unit variance first. Without rescaling
+        the nbit-dependent mean and scale are not applied.
+    scale_in : float
+        Scale factor already carried by the data.
+    scale_fac : float
+        Additional user scale factor (``-s``).
+
+    Returns
+    -------
+    tuple[float32, float32]
+        Digitiser mean and scale.
+    """
+    if not rescale_on:
+        mean = 0.0
+        scale = 1.0
+    elif nbit in {4, 8, 16}:
+        mean = DIGI_MEAN[nbit]
+        scale = mean / DIGI_SIGMA
+    else:
+        mean = DIGI_MEAN[nbit]
+        scale = 1.0
+    scale = scale / (scale_in * scale_fac)
+    return np.float32(mean), np.float32(scale)
+
+
+def polarisation_means(npol_out: int, nbit: int, *, rescale_on: bool) -> np.ndarray:
+    """Return the digitiser mean for each output polarisation.
+
+    Without rescaling, dspsr adds the bit-depth mean to polarisations 2 and 3 (the
+    cross terms, which are signed) so that the unsigned output fits; the others use
+    zero. With rescaling every polarisation uses the bit-depth mean.
+
+    Parameters
+    ----------
+    npol_out : int
+        Number of output polarisations.
+    nbit : int
+        Output bits per sample.
+    rescale_on : bool
+        Whether the data were rescaled to unit variance first.
+
+    Returns
+    -------
+    NDArray[float32]
+        One mean per output polarisation.
+    """
+    table_mean = np.float32(DIGI_MEAN[nbit])
+    if rescale_on:
+        return np.full(npol_out, table_mean, dtype=np.float32)
+    means = np.zeros(npol_out, dtype=np.float32)
+    means[2:] = table_mean
+    return means
+
+
+def quantise_rows(
+    rows: np.ndarray,
+    nbit: int,
+    *,
+    flip: bool,
+    means: np.ndarray,
+    scale: np.float32,
+) -> np.ndarray:
+    """Quantise rows of data to the sigproc sample format.
+
+    Parameters
+    ----------
+    rows : NDArray[float32]
+        Data with shape ``(nrow, nchan)`` in input channel order.
+    nbit : int
+        Output bits per sample: 1, 2, 4, 8 or 16.
+    flip : bool
+        Reverse the channel order in the output.
+    means : NDArray[float32]
+        Digitiser mean for each row.
+    scale : float32
+        Digitiser scale.
+
+    Returns
+    -------
+    NDArray
+        Packed ``uint8`` array for 1, 2 and 4-bit output, ``uint8`` for 8-bit and
+        little-endian ``uint16`` for 16-bit output, each in row-major order.
+    """
+    rows = np.ascontiguousarray(rows, dtype=np.float32)
+    digi_max = (1 << nbit) - 1
+    if nbit in {1, 2, 4}:
+        packed = np.zeros(rows.size // (8 // nbit), dtype=np.uint8)
+        quantise_packed(rows, flip, means, scale, digi_max, nbit, packed)
+        return packed
+    out_dtype = np.dtype("<u2") if nbit == 16 else np.dtype(np.uint8)
+    out = np.empty(rows.shape, dtype=out_dtype)
+    quantise(rows, flip, means, scale, digi_max, out)
+    return out
+
+
+def float_rows(rows: np.ndarray, *, flip: bool, scale_in: float) -> np.ndarray:
+    """Convert rows to little-endian float32 sigproc samples (``-b -32``).
+
+    Parameters
+    ----------
+    rows : NDArray[float32]
+        Data with shape ``(nrow, nchan)`` in input channel order.
+    flip : bool
+        Reverse the channel order in the output.
+    scale_in : float
+        Scale factor carried by the data, divided out as in dspsr.
+
+    Returns
+    -------
+    NDArray[float32]
+        Little-endian float32 array with output channel order.
+    """
+    out = rows[:, ::-1] if flip else rows
+    return (out / np.float32(scale_in)).astype("<f4", copy=False)
+
+
+def dspsr_block_samples(
+    nbit_in: int,
+    npol: int,
+    nchan: int,
+    *,
+    copies: int,
+    resolution: int,
+    max_ram_bytes: float,
+) -> int:
+    """Return the input block length dspsr uses for rescaling.
+
+    dspsr sizes its input blocks from a RAM limit (``-U``, default 256 MB):
+    ``floor(max_ram / nbyte_dat)`` samples, where ``nbyte_dat`` is the input sample
+    size plus four bytes per float copy, and rounds the result up to the format
+    resolution (whole PSRFITS subints, or a multiple of four samples for sigproc).
+
+    Parameters
+    ----------
+    nbit_in : int
+        Input bits per sample.
+    npol : int
+        Number of input polarisations.
+    nchan : int
+        Number of input channels.
+    copies : int
+        Number of float time-series buffers in the pipeline.
+    resolution : int
+        Format resolution in samples.
+    max_ram_bytes : float
+        RAM limit in bytes.
+
+    Returns
+    -------
+    int
+        Block length in input samples.
+    """
+    nbyte_dat = (nbit_in / 8 + 4 * copies) * npol * nchan
+    nblock = math.floor(max_ram_bytes / nbyte_dat)
+    resolution = max(1, resolution)
+    return max(resolution, math.ceil(nblock / resolution) * resolution)
+
+
+class Rescaler:
+    """Rescale a stream to zero mean and unit variance, as dspsr ``Rescale``.
+
+    Statistics are accumulated per column over the samples of an interval of
+    ``nsample`` samples, which may span several input blocks. At the end of each
+    block during the first interval the statistics are computed from the samples so
+    far (dspsr behaviour), so block boundaries affect the first interval. Each
+    block is rescaled with the most recent offsets and scales.
+
+    Parameters
+    ----------
+    ncol : int
+        Number of independent columns (channels, or polarisation-channels).
+    nsample : int
+        Number of samples per statistics interval.
+    constant : bool
+        Freeze the offset and scale after the first complete interval.
+    """
+
+    def __init__(self, ncol: int, nsample: int, *, constant: bool) -> None:
+        self.nsample = nsample
+        self.constant = constant
+        self.first_integration = True
+        self.isample = 0
+        self.sums = np.zeros(ncol, dtype=np.float64)
+        self.sumsq = np.zeros(ncol, dtype=np.float64)
+        self.offset = np.zeros(ncol, dtype=np.float32)
+        self.scale = np.ones(ncol, dtype=np.float32)
+
+    def _compute(self) -> None:
+        nval_recip = 1.0 / self.isample
+        mean = self.sums * nval_recip
+        meansq = self.sumsq * nval_recip
+        variance = meansq - mean * mean
+        positive = variance > 0
+        safe = np.where(positive, variance, 1.0)
+        self.offset = (-mean).astype(np.float32)
+        self.scale = np.where(positive, 1.0 / np.sqrt(safe), 1.0).astype(np.float32)
+
+    def process(self, data: np.ndarray) -> np.ndarray:
+        """Rescale one block of ``(nsamp, ncol)`` data.
+
+        Parameters
+        ----------
+        data : NDArray[float32]
+            Block data.
+
+        Returns
+        -------
+        NDArray[float32]
+            Rescaled block.
+        """
+        nsamp = data.shape[0]
+        out = np.empty_like(data)
+        if nsamp == 0:
+            return out
+        if self.constant and not self.first_integration:
+            apply_scale_offset(data, self.offset, self.scale, out)
+            return out
+
+        start = 0
+        while start < nsamp:
+            step = min(nsamp - start, self.nsample - self.isample)
+            end = start + step
+
+            if self.first_integration or not self.constant:
+                accumulate_stats(data[start:end], self.sums, self.sumsq)
+                self.isample += step
+
+            if self.isample == self.nsample or (
+                self.first_integration and end == nsamp
+            ):
+                self._compute()
+                if self.isample == self.nsample:
+                    self.first_integration = False
+                    self.isample = 0
+                    self.sums[:] = 0
+                    self.sumsq[:] = 0
+
+            if self.constant and not self.first_integration:
+                end = nsamp
+            apply_scale_offset(data[start:end], self.offset, self.scale, out[start:end])
+            start = end
+        return out
+
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator
@@ -274,11 +537,11 @@ def _open_source(
         path = str(source)
         if Path(path).suffix.lower() in PFITS_SUFFIXES:
             return _open_pfits(path, scloffs=scloffs, start=start, nsamps=nsamps)
-        from sigpyproc.readers import FilReader  # noqa: PLC0415
+        from sigpyproc.readers import FilReader
 
         return _open_reader(FilReader(path), start, nsamps)
 
-    from sigpyproc.readers import PFITSReader  # noqa: PLC0415
+    from sigpyproc.readers import PFITSReader
 
     if isinstance(source, PFITSReader):
         return _open_pfits(source.filename, scloffs=scloffs, start=start, nsamps=nsamps)

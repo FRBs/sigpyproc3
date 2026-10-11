@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from sigpyproc.core import rfi, stats
-from sigpyproc.core.dmplan import DMPlan
+from sigpyproc.core.dispersion import DMPlan
 from sigpyproc.foldedcube import FoldedData
 from sigpyproc.readers import FilReader
 from sigpyproc.timeseries import TimeSeries

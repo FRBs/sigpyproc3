@@ -7,25 +7,25 @@ import pytest
 from click.testing import CliRunner
 
 from sigpyproc.apps.spp_digifil import main as digifil_cli
-from sigpyproc.core.digifil import (
+from sigpyproc.io import sigproc
+from sigpyproc.io.digifil import (
+    MEGABYTE,
+    DigifilConfig,
     Rescaler,
-    apply_scale_offset,
+    _rechunk,
+    default_gulp,
+    digifil,
     dspsr_block_samples,
+)
+from sigpyproc.io.fileio import FileWriter
+from sigpyproc.kernels.digitizer import (
+    apply_scale_offset,
     fscrunch,
     pscrunch_intensity,
     quantise,
     quantise_packed,
     tscrunch,
 )
-from sigpyproc.digifil import (
-    MEGABYTE,
-    DigifilConfig,
-    _rechunk,
-    default_gulp,
-    digifil,
-)
-from sigpyproc.io import sigproc
-from sigpyproc.io.fileio import FileWriter
 from sigpyproc.readers import FilReader
 
 NCHAN_8BIT = 832

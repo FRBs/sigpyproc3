@@ -12,7 +12,7 @@ import bottleneck as bn
 import numpy as np
 from astropy import stats as astrostats
 
-from sigpyproc.core import kernels
+from sigpyproc import kernels
 from sigpyproc.utils import apply_along_axes
 
 if TYPE_CHECKING:

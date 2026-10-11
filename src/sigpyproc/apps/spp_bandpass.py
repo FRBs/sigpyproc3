@@ -28,10 +28,10 @@ from sigpyproc.readers import FilReader
     help="Write CSV (freq_mhz, mean)",
 )
 def main(
-    verbose: int, quiet: bool, filfile: str, gulp: int, outfile: str | None
+    verbose: int, filfile: str, gulp: int, outfile: str | None, *, quiet: bool
 ) -> None:
     """Compute the mean bandpass of a filterbank."""
-    setup_cli_logging(verbose, quiet)
+    setup_cli_logging(verbose, quiet=quiet)
     fil = FilReader(filfile)
     bpass = fil.bandpass(method="mean", gulp=gulp)
     freqs = fil.header.chan_freqs

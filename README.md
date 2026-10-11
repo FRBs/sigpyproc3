@@ -6,6 +6,7 @@
 [![License](https://img.shields.io/github/license/FRBs/sigpyproc3)](https://github.com/FRBs/sigpyproc3/blob/main/LICENSE)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![SPEC 0 — Minimum Supported Dependencies](https://img.shields.io/badge/SPEC-0-green?labelColor=%23004811&color=%235CA038)](https://scientific-python.org/specs/spec-0000/)
+[![SPEC 1 — Lazy Loading in Python Libraries](https://img.shields.io/badge/SPEC-1-green?labelColor=%23004811&color=%235CA038)](https://scientific-python.org/specs/spec-0001/)
 
 `sigpyproc` is a pulsar and FRB data analysis library for python. It provides an OOP approach to pulsar data handling through the use of
 objects representing different data types (e.g. [SIGPROC filterbank](http://sigproc.sourceforge.net),
@@ -33,8 +34,7 @@ branch of this repo, or install the last released version 0.5.5.
 ## Usage
 
 ```python
-from sigpyproc.readers import FilReader, PFITSReader
-from sigpyproc.timeseries import TimeSeries
+from sigpyproc import FilReader, PFITSReader, TimeSeries
 
 fil = FilReader("tutorial.fil")
 fits = PFITSReader("tutorial.fits")

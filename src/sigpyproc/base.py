@@ -13,11 +13,11 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from sigpyproc.core import kernels
+from sigpyproc import kernels
 from sigpyproc.core.rfi import RFIMask, zap_block
 from sigpyproc.core.stats import ChannelStats
-from sigpyproc.digifil import DigifilConfig, digifil
 from sigpyproc.foldedcube import FoldedData
+from sigpyproc.io.digifil import DigifilConfig, digifil
 from sigpyproc.timeseries import TimeSeries
 
 if TYPE_CHECKING:
@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 
     from sigpyproc.block import FilterbankBlock
     from sigpyproc.core.custom_types import MaskMethods
-    from sigpyproc.core.dmplan import DMPlan
+    from sigpyproc.core.dispersion import DMPlan
     from sigpyproc.header import Header
 
     class PlanKwargs(TypedDict):
@@ -985,7 +985,7 @@ class Filterbank(ABC):
         variance over ``rescale_seconds`` (which subtracts the mean bandpass, per
         channel, over each interval) and digitised to ``nbits_out``. Sub-byte output
         is packed least-significant-bit first, as dspsr does. See
-        :func:`sigpyproc.digifil.digifil` for the full pipeline.
+        :func:`sigpyproc.io.digifil.digifil` for the full pipeline.
 
         Parameters
         ----------
@@ -999,7 +999,8 @@ class Filterbank(ABC):
             bandpass; 0 keeps the data unscaled, by default 10.
         gulp : int, optional
             Input samples per block. The rescale depends on block boundaries, so by
-            default this is dspsr's block (see :func:`sigpyproc.digifil.default_gulp`).
+            default this is dspsr's block (see
+            :func:`sigpyproc.io.digifil.default_gulp`).
         start : int, optional
             Start sample, by default 0.
         nsamps : int, optional

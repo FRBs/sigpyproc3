@@ -35,7 +35,6 @@ from sigpyproc.readers import FilReader
 )
 def main(
     verbose: int,
-    quiet: bool,
     filfile: str,
     period: float,
     dm: float,
@@ -45,9 +44,11 @@ def main(
     nbands: int,
     gulp: int,
     outfile: str | None,
+    *,
+    quiet: bool,
 ) -> None:
     """Fold a filterbank at a period and DM."""
-    setup_cli_logging(verbose, quiet)
+    setup_cli_logging(verbose, quiet=quiet)
     fil = FilReader(filfile)
     cube = fil.fold(
         period,

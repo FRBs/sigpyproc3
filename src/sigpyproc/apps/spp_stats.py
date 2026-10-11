@@ -29,10 +29,10 @@ from sigpyproc.readers import FilReader
     help="Write CSV (chan, freq_mhz, mean, std, skew, kurtosis, min, max)",
 )
 def main(
-    verbose: int, quiet: bool, filfile: str, gulp: int, outfile: str | None
+    verbose: int, filfile: str, gulp: int, outfile: str | None, *, quiet: bool
 ) -> None:
     """Print per-channel statistics for a filterbank."""
-    setup_cli_logging(verbose, quiet)
+    setup_cli_logging(verbose, quiet=quiet)
     fil = FilReader(filfile)
     fil.compute_stats(gulp=gulp)
     stats = fil.chan_stats

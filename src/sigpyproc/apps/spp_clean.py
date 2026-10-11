@@ -17,9 +17,9 @@ if TYPE_CHECKING:
 @click.group(
     context_settings={"help_option_names": ["-h", "--help"], "show_default": True},
 )
-def main(verbose: int, quiet: bool) -> None:
+def main(verbose: int, *, quiet: bool) -> None:
     """Clean RFI, mask channels, or samples in filterbank data."""
-    setup_cli_logging(verbose, quiet)
+    setup_cli_logging(verbose, quiet=quiet)
 
 
 @main.command()

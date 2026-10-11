@@ -11,9 +11,9 @@ from sigpyproc.readers import FilReader
 @click.group(
     context_settings={"help_option_names": ["-h", "--help"], "show_default": True},
 )
-def main(verbose: int, quiet: bool) -> None:
+def main(verbose: int, *, quiet: bool) -> None:
     """Extract samples, channels, or bands from a filterbank."""
-    setup_cli_logging(verbose, quiet)
+    setup_cli_logging(verbose, quiet=quiet)
 
 
 @main.command()

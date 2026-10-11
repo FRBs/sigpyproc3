@@ -1,12 +1,15 @@
 Unreleased
 ++++++++++
 
-- Adds ``spp_digifil`` and ``sigpyproc.digifil`` to convert PSRFITS or filterbank data to N-bit (or float) filterbank following dspsr ``digifil``.
+- Adds ``spp_digifil`` and ``sigpyproc.io.digifil`` to convert PSRFITS or filterbank data to N-bit (or float) filterbank following dspsr ``digifil``.
 - Fixes ``PFITSReader.read_plan``, which read ``nsamps`` samples per block and ran past the end of the file.
 - Sub-byte (2- and 4-bit) sigproc data are now read and written least-significant-bit first, as dspsr does.
-- Replaced ``sigpyproc.io.rescale.Rescale`` with ``sigpyproc.core.digifil``.
+- Replaced ``sigpyproc.io.rescale.Rescale`` with ``sigpyproc.io.digifil``.
 - Removes the ``remove_bandpass`` option of ``requantize``.
 - Robust Header reading and writing.
+- Adopts Scientific Python SPEC 1 (`lazy-loader`) for ``sigpyproc.kernels`` and public API exports.
+- Decomposes monolithic kernels into focused submodules.
+- Adds PEP 561 ``py.typed`` marker.
 
 
 1.2.0 (2024-05-04)

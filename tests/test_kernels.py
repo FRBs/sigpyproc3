@@ -3,7 +3,7 @@ import pytest
 from numba import typed
 from scipy import signal, stats
 
-from sigpyproc.core import kernels
+from sigpyproc import kernels
 
 
 class TestKernelsPackUnpack:

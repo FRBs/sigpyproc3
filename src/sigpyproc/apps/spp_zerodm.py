@@ -26,10 +26,10 @@ from sigpyproc.readers import FilReader
     help="Output filename",
 )
 def main(
-    verbose: int, quiet: bool, filfile: str, gulp: int, outfile: str | None
+    verbose: int, filfile: str, gulp: int, outfile: str | None, *, quiet: bool
 ) -> None:
     """Subtract the channel-weighted zero-DM (Eatough / PRESTO)."""
-    setup_cli_logging(verbose, quiet)
+    setup_cli_logging(verbose, quiet=quiet)
     fil = FilReader(filfile)
     path = fil.remove_zerodm(outfile_name=outfile, gulp=gulp)
     click.echo(path)

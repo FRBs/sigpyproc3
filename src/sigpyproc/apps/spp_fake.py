@@ -102,9 +102,9 @@ def _write(
 @click.group(
     context_settings={"help_option_names": ["-h", "--help"], "show_default": True},
 )
-def main(verbose: int, quiet: bool) -> None:
+def main(verbose: int, *, quiet: bool) -> None:
     """Generate fake filterbank data (noise | pulsar | pulse)."""
-    setup_cli_logging(verbose, quiet)
+    setup_cli_logging(verbose, quiet=quiet)
 
 
 @main.command()

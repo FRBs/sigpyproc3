@@ -9,9 +9,9 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 
-from sigpyproc import fourierseries
-from sigpyproc.candidates import CandidateTable
-from sigpyproc.core import algorithms, kernels, stats
+from sigpyproc import fourierseries, kernels
+from sigpyproc.core import algorithms, stats
+from sigpyproc.core.candidates import CandidateTable
 from sigpyproc.foldedcube import FoldedData
 from sigpyproc.header import Header
 from sigpyproc.utils import validate_path

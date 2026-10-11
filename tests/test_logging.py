@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 from rich.logging import RichHandler
 
-from sigpyproc.logging import LOG, configure_logging
+from sigpyproc.core.logging import LOG, configure_logging
 
 
 @pytest.fixture(autouse=True)

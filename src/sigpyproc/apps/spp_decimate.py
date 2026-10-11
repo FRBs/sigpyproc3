@@ -31,15 +31,16 @@ from sigpyproc.readers import FilReader
 )
 def main(
     verbose: int,
-    quiet: bool,
     filfile: str,
     tfactor: int,
     ffactor: int,
     gulp: int,
     outfile: str | None,
+    *,
+    quiet: bool,
 ) -> None:
     """Downsample a filterbank in time and/or frequency."""
-    setup_cli_logging(verbose, quiet)
+    setup_cli_logging(verbose, quiet=quiet)
     fil = FilReader(filfile)
     path = fil.downsample(tfactor, ffactor, outfile_name=outfile, gulp=gulp)
     click.echo(path)
