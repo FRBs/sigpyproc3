@@ -18,7 +18,7 @@ import numpy as np
 from sigpyproc.header import Header
 from sigpyproc.io import sigproc
 from sigpyproc.io.fileio import FileWriter
-from sigpyproc.io.pfits import PFITSFile
+from sigpyproc.io.pfits import PFITSFile, SubintHdr
 from sigpyproc.kernels.digitizer import (
     accumulate_stats,
     apply_scale_offset,
@@ -338,8 +338,9 @@ class DigifilConfig:
     scloffs : bool, optional
         Denormalise PSRFITS data with DAT_SCL and DAT_OFFS, by default False.
     npol : int, optional
-        Output polarisations as in dspsr ``-d``: 1 forms PP+QQ intensity from
-        multi-pol input; 2 or 4 keep all input polarisations, by default 1.
+        dspsr ``-d`` code. Only 1 is supported: form Stokes I (``P0 + P1`` for
+        two feeds, or the first product for intensity and Stokes input).
+        2, 3 and 4 are rejected because the filterbank output is one IF.
     poln_select : int, optional
         Output only this input polarisation (dspsr ``-P``), -1 keeps all,
         by default -1.
@@ -360,8 +361,15 @@ class DigifilConfig:
         if self.nbits not in VALID_NBITS:
             msg = f"nbits must be one of {VALID_NBITS}, got {self.nbits}"
             raise ValueError(msg)
-        if self.npol not in {1, 2, 4}:
-            msg = f"npol must be 1, 2 or 4, got {self.npol}"
+        if self.npol != 1:
+            if self.npol in {2, 3, 4}:
+                msg = (
+                    f"digifil -d {self.npol} is not supported; output is Stokes I "
+                    "only (-d 1). -d 2 keeps PP,QQ, -d 3 writes (PP+QQ)^2 and "
+                    "-d 4 keeps PP,QQ,PQ,QP"
+                )
+                raise NotImplementedError(msg)
+            msg = f"npol must be 1, got {self.npol}"
             raise ValueError(msg)
         if self.poln_select < -1:
             msg = (
@@ -396,6 +404,12 @@ class _Source:
     nsamples: int
     blocks: Callable[..., Iterator[NDArray[np.float32]]]
     """Yield ``(nsamp, npol, nchan)`` blocks of about ``gulp`` samples."""
+    poln_type: str = ""
+    """SUBINT ``POL_TYPE`` for PSRFITS inputs; empty for sigproc filterbank."""
+    poln_state: str = ""
+    """Derived polarisation layout for PSRFITS; empty for sigproc filterbank."""
+    pre_reduced: bool = False
+    """Blocks are already one Stokes-I product, shape ``(nsamp, 1, nchan)``."""
 
 
 def _as_mhz(value: float | Quantity) -> float:
@@ -482,8 +496,40 @@ def _open_reader(
     )
 
 
+def _validate_pfits_polarisation(sub: SubintHdr) -> str:
+    """Return the polarisation layout, raising if ``POL_TYPE`` is unknown.
+
+    ``IQUV`` is Stokes: ``-d 1`` copies product 0, which is already Stokes I.
+    """
+    return sub.poln_state
+
+
+def _detected_pol(sub: SubintHdr, config: DigifilConfig) -> int:
+    """Return the product to decode: ``-1`` sums the first two feeds."""
+    if config.poln_select >= sub.npol:
+        msg = (
+            f"poln_select={config.poln_select} out of range for "
+            f"{sub.npol}-polarisation input"
+        )
+        raise ValueError(msg)
+    if config.poln_select >= 0:
+        return config.poln_select
+    state = sub.poln_state
+    if sub.npol > 1 and state in {"PPQQ", "Coherence"}:
+        return -1
+    if sub.npol == 1 or state in {"Stokes", "Intensity"}:
+        return 0
+    msg = f"digifil cannot form Stokes I for PSRFITS poln_state={state!r}"
+    raise NotImplementedError(msg)
+
+
 def _open_pfits(
-    filename: str, *, scloffs: bool, start: int, nsamps: int | None
+    filename: str,
+    *,
+    scloffs: bool,
+    start: int,
+    nsamps: int | None,
+    config: DigifilConfig,
 ) -> _Source:
     """Open a PSRFITS file, reading whole SUBINT rows with DAT_SCL/DAT_OFFS if asked."""
     hdr = Header.from_pfits(filename)
@@ -492,23 +538,28 @@ def _open_pfits(
     )
     with PFITSFile(filename) as fits:
         sub = fits.sub_hdr
+        poln_state = _validate_pfits_polarisation(sub)
         npol = sub.npol
-        if npol > 1 and sub.poln_state == "Stokes":
-            msg = "digifil does not support Stokes PSRFITS input"
-            raise NotImplementedError(msg)
         nchan = sub.nchans
         subint_samples = sub.subint_samples
         nsubint = sub.nsubint
         nbit = sub.nbits
+        poln_type = sub.poln_type
+        detected_pol = _detected_pol(sub, config)
     total = hdr.nsamples - start if nsamps is None else nsamps
 
     def subints() -> Iterator[NDArray[np.float32]]:
         with PFITSFile(filename) as fits:
             for isub in range(nsubint):
-                data = fits.read_subint(isub, scloffs=scloffs, weights=False)
+                data = fits.read_detected(
+                    isub,
+                    scloffs=scloffs,
+                    weights=False,
+                    pol=detected_pol,
+                )
                 yield np.asarray(data, dtype=np.float32).reshape(
                     subint_samples,
-                    npol,
+                    1,
                     nchan,
                 )
 
@@ -527,6 +578,9 @@ def _open_pfits(
         resolution=subint_samples,
         nsamples=total,
         blocks=blocks,
+        poln_type=poln_type,
+        poln_state=poln_state,
+        pre_reduced=True,
     )
 
 
@@ -536,12 +590,20 @@ def _open_source(
     scloffs: bool,
     start: int,
     nsamps: int | None,
+    config: DigifilConfig | None = None,
 ) -> _Source:
     """Open a filename or a reader object as a digifil source."""
+    cfg = config if config is not None else DigifilConfig()
     if isinstance(source, str | Path):
         path = str(source)
         if Path(path).suffix.lower() in PFITS_SUFFIXES:
-            return _open_pfits(path, scloffs=scloffs, start=start, nsamps=nsamps)
+            return _open_pfits(
+                path,
+                scloffs=scloffs,
+                start=start,
+                nsamps=nsamps,
+                config=cfg,
+            )
         from sigpyproc.readers import FilReader
 
         return _open_reader(FilReader(path), start, nsamps)
@@ -549,15 +611,29 @@ def _open_source(
     from sigpyproc.readers import PFITSReader
 
     if isinstance(source, PFITSReader):
-        return _open_pfits(source.filename, scloffs=scloffs, start=start, nsamps=nsamps)
+        return _open_pfits(
+            source.filename,
+            scloffs=scloffs,
+            start=start,
+            nsamps=nsamps,
+            config=cfg,
+        )
     return _open_reader(source, start, nsamps)
 
 
-def _polarisation_plan(npol_in: int, config: DigifilConfig) -> tuple[int, bool, int]:
+def _polarisation_plan(
+    npol_in: int,
+    config: DigifilConfig,
+    *,
+    poln_state: str = "",
+) -> tuple[int, bool, int]:
     """Return ``(pol_select, pscrunch, npol_out)`` for the polarisation options.
 
     ``-P`` selects one input polarisation; ``-d 1`` forms PP+QQ intensity from
     multi-pol input; otherwise all input polarisations are kept.
+
+    For PSRFITS, ``poln_state`` must reflect the file layout so pscrunch is only
+    requested when summing paired feeds (``PPQQ`` or ``Coherence``).
     """
     if config.poln_select >= npol_in:
         msg = (
@@ -567,8 +643,15 @@ def _polarisation_plan(npol_in: int, config: DigifilConfig) -> tuple[int, bool, 
         raise ValueError(msg)
     if config.poln_select >= 0:
         return config.poln_select, False, 1
-    if config.npol == 1 and npol_in > 1:
+    if npol_in > 1 and poln_state in {"PPQQ", "Coherence"}:
         return -1, True, 1
+    if npol_in > 1 and poln_state in {"Stokes", "Intensity"}:
+        return 0, False, 1
+    if npol_in > 1:
+        msg = (
+            f"digifil cannot form Stokes I for PSRFITS poln_state={poln_state!r}"
+        )
+        raise NotImplementedError(msg)
     return -1, False, npol_in
 
 
@@ -594,11 +677,19 @@ class _Digifil:
         self.nchan = source.nchan
         if config.fscrunch_factor > 1:
             self.nchan = source.nchan // config.fscrunch_factor
-        self.npol_in = source.npol
-        self.pol_select, self.pscrunch, self.npol_out = _polarisation_plan(
-            source.npol,
-            config,
-        )
+        self.pfits_pol_state = source.poln_state
+        if source.pre_reduced:
+            self.npol_in = 1
+            self.pol_select = -1
+            self.pscrunch = False
+            self.npol_out = 1
+        else:
+            self.npol_in = source.npol
+            self.pol_select, self.pscrunch, self.npol_out = _polarisation_plan(
+                source.npol,
+                config,
+                poln_state=source.poln_state,
+            )
         self.tfactor = max(1, config.tscrunch_factor)
         self.rate_out = 1.0 / (source.header.tsamp * self.tfactor)
         self.flip = source.header.foff > 0
@@ -700,6 +791,12 @@ class _Digifil:
             data = self._tscrunch(data)
 
         if self.pscrunch:
+            if self.pfits_pol_state not in ("", "PPQQ", "Coherence"):
+                msg = (
+                    f"digifil pscrunch unsupported for PSRFITS poln_state="
+                    f"{self.pfits_pol_state!r}"
+                )
+                raise NotImplementedError(msg)
             data = pscrunch_intensity(data)[:, np.newaxis, :]
         else:
             data = np.ascontiguousarray(data)
@@ -825,8 +922,18 @@ def default_gulp(
         Input samples per block.
     """
     cfg = config if config is not None else DigifilConfig()
-    src = _open_source(source, scloffs=cfg.scloffs, start=start, nsamps=nsamps)
-    _, pscrunch, _ = _polarisation_plan(src.npol, cfg)
+    src = _open_source(
+        source,
+        scloffs=cfg.scloffs,
+        start=start,
+        nsamps=nsamps,
+        config=cfg,
+    )
+    _, pscrunch, _ = _polarisation_plan(
+        src.npol,
+        cfg,
+        poln_state=src.poln_state,
+    )
     return _dspsr_default_gulp(src, cfg, pscrunch=pscrunch, max_ram_mb=max_ram_mb)
 
 
@@ -876,12 +983,22 @@ def digifil(
         If the configuration is inconsistent with the input.
     """
     cfg = config if config is not None else DigifilConfig()
-    src = _open_source(source, scloffs=cfg.scloffs, start=start, nsamps=nsamps)
+    src = _open_source(
+        source,
+        scloffs=cfg.scloffs,
+        start=start,
+        nsamps=nsamps,
+        config=cfg,
+    )
     filename = src.filename
     if outfile is None:
         outfile = _default_outfile(filename)
 
-    _, pscrunch, npol_out = _polarisation_plan(src.npol, cfg)
+    _, pscrunch, npol_out = _polarisation_plan(
+        src.npol,
+        cfg,
+        poln_state=src.poln_state,
+    )
     pipeline = _Digifil(cfg, src)
     tscr = max(1, cfg.tscrunch_factor)
     hdr_out = _output_header(

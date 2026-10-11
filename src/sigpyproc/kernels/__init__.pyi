@@ -5,6 +5,7 @@ from . import filterbank as filterbank
 from . import folding as folding
 from . import fourier as fourier
 from . import moments as moments
+from . import pfits as pfits
 from . import simulation as simulation
 from .bitpacking import pack1_8_big as pack1_8_big
 from .bitpacking import pack1_8_little as pack1_8_little
@@ -80,4 +81,6 @@ from .moments import detrend_2d as detrend_2d
 from .moments import moments_dtype as moments_dtype
 from .moments import update_moments as update_moments
 from .moments import update_moments_basic as update_moments_basic
+from .pfits import decode_cube as decode_cube
+from .pfits import decode_intensity as decode_intensity
 from .simulation import simulate_ism as simulate_ism

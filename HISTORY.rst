@@ -1,6 +1,8 @@
 Unreleased
 ++++++++++
 
+- Reads search-mode PSRFITS by row, without loading the SUBINT table. Stokes I is ``P0 + P1`` for coherence and ``PPQQ`` data, and channel order follows ``DAT_FREQ``.
+- ``spp_digifil`` writes one IF. ``-d 2``, ``-d 3`` and ``-d 4`` are rejected.
 - Adds ``spp_digifil`` and ``sigpyproc.io.digifil`` to convert PSRFITS or filterbank data to N-bit (or float) filterbank following dspsr ``digifil``.
 - Fixes ``PFITSReader.read_plan``, which read ``nsamps`` samples per block and ran past the end of the file.
 - Sub-byte (2- and 4-bit) sigproc data are now read and written least-significant-bit first, as dspsr does.

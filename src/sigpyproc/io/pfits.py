@@ -1,11 +1,16 @@
-"""PSRFITS header and data reading.
+"""PSRFITS search-mode header and row reader.
 
-This module contains classes for reading PSRFITS headers and data.
+SUBINT rows are addressed from the FITS binary-table byte layout. The table is
+never materialised through ``astropy.io.fits`` ``HDU.data``, which would read
+every sub-integration, including the DATA cells, on first touch.
 """
 
 from __future__ import annotations
 
-from typing import Self
+import logging
+import re
+from pathlib import Path
+from typing import TYPE_CHECKING, Self
 
 import attrs
 import numpy as np
@@ -15,13 +20,23 @@ from astropy.io import fits
 from astropy.time import Time, TimeDelta
 
 from sigpyproc.io.bits import BitsInfo, unpack
+from sigpyproc.kernels.pfits import decode_cube, decode_intensity
 from sigpyproc.utils import FrequencyChannels
 
+if TYPE_CHECKING:
+    from typing import BinaryIO
+
+logger = logging.getLogger(__name__)
+
+# POL_TYPE values seen in search-mode files. There is no NPOL fallback:
+# an unlisted label is an error, because NPOL=4 is both coherence and Stokes.
 pol_type_to_state = {
     "XXYY": "PPQQ",
     "LLRR": "PPQQ",
     "AABB": "PPQQ",
     "STOKE": "Stokes",
+    "STOKES": "Stokes",
+    "IQUV": "Stokes",
     "XXYYCRCI": "Coherence",
     "LLRRCRCI": "Coherence",
     "AABBCRCI": "Coherence",
@@ -29,7 +44,394 @@ pol_type_to_state = {
     "AA+BB": "Intensity",
 }
 
+# Kept for callers that inspect the historical NPOL guess. Parsing does not use it.
 npol_to_state = {1: "Intensity", 2: "PPQQ", 4: "Stokes"}
+
+_STATE_NPOL = {
+    "Intensity": frozenset({1}),
+    "PPQQ": frozenset({2}),
+    "Coherence": frozenset({4}),
+    "Stokes": frozenset({1, 4}),
+}
+
+_TFORM_RE = re.compile(r"(\d*)([A-Za-z])(.*)")
+_TFORM_SIZE = {
+    "L": 1,
+    "B": 1,
+    "A": 1,
+    "I": 2,
+    "J": 4,
+    "K": 8,
+    "E": 4,
+    "D": 8,
+}
+_NUMERIC_CODES = frozenset({"B", "I", "J", "K", "E", "D"})
+_DTYPE_OF = {"B": "u1", "I": "i2", "J": "i4", "K": "i8", "E": "f4", "D": "f8"}
+_FREQ_ATOL_MHZ = 1e-4
+_CHAN_BW_ATOL_MHZ = 1e-3
+_SCALAR_COLUMNS = frozenset(
+    {"INDEXVAL", "TSUBINT", "OFFS_SUB", "AUX_DM", "AUX_RM", "TEL_AZ", "TEL_ZEN"},
+)
+
+
+def polarisation_state(pol_type: str, npol: int) -> str:
+    """Return the feed layout for a search-mode ``POL_TYPE``.
+
+    Parameters
+    ----------
+    pol_type : str
+        SUBINT ``POL_TYPE`` card.
+    npol : int
+        ``NPOL`` of the DATA column.
+
+    Returns
+    -------
+    str
+        ``Intensity``, ``PPQQ``, ``Coherence`` or ``Stokes``.
+
+    Raises
+    ------
+    ValueError
+        If ``pol_type`` is unknown or ``npol`` cannot carry that layout.
+    """
+    key = pol_type.strip()
+    state = pol_type_to_state.get(key)
+    if state is None:
+        msg = f"Unsupported PSRFITS polarisation POL_TYPE={pol_type!r} with NPOL={npol}"
+        raise ValueError(msg)
+    allowed = _STATE_NPOL[state]
+    if npol not in allowed:
+        msg = (
+            f"PSRFITS POL_TYPE={pol_type!r} ({state}) is inconsistent with NPOL={npol}"
+        )
+        raise ValueError(msg)
+    return state
+
+
+def _parse_tform(tform: str) -> tuple[int, str, int]:
+    """Return ``(repeat, type_code, element_nbytes)`` for a binary TFORM."""
+    match = _TFORM_RE.fullmatch(tform.strip())
+    if match is None:
+        msg = f"Cannot parse TFORM {tform!r}"
+        raise ValueError(msg)
+    repeat_text, code, rest = match.groups()
+    code = code.upper()
+    if code in {"P", "Q"} or rest.upper().startswith(("P", "Q")):
+        msg = f"Variable-length TFORM {tform!r} is not supported"
+        raise ValueError(msg)
+    if code not in _TFORM_SIZE:
+        msg = f"Unsupported TFORM {tform!r}"
+        raise ValueError(msg)
+    repeat = int(repeat_text) if repeat_text else 1
+    return repeat, code, _TFORM_SIZE[code]
+
+
+def _parse_tdim(text: str) -> tuple[int, ...]:
+    body = text.strip()
+    if body.startswith("(") and body.endswith(")"):
+        body = body[1:-1]
+    if not body:
+        msg = f"Empty TDIM {text!r}"
+        raise ValueError(msg)
+    return tuple(int(part) for part in body.split(","))
+
+
+def _column_spans(header: fits.Header) -> dict[str, tuple[int, int, str]]:
+    """Return ``name -> (byte_offset, nbytes, tform)`` and check ``NAXIS1``."""
+    spans: dict[str, tuple[int, int, str]] = {}
+    offset = 0
+    nfields = int(header["TFIELDS"])
+    for index in range(1, nfields + 1):
+        name = str(header[f"TTYPE{index}"]).strip()
+        tform = str(header[f"TFORM{index}"]).strip()
+        repeat, _code, elem = _parse_tform(tform)
+        nbytes = repeat * elem
+        spans[name] = (offset, nbytes, tform)
+        offset += nbytes
+    naxis1 = int(header["NAXIS1"])
+    if offset != naxis1:
+        msg = f"SUBINT column widths sum to {offset} bytes, NAXIS1 is {naxis1}"
+        raise ValueError(msg)
+    return spans
+
+
+def _view_numeric(buf: np.ndarray, code: str) -> np.ndarray:
+    """Interpret a big-endian FITS column buffer as a native 1-d array."""
+    dtype = np.dtype(_DTYPE_OF[code]).newbyteorder(">")
+    count = buf.size // dtype.itemsize
+    view = np.ndarray(count, dtype=dtype, buffer=np.ascontiguousarray(buf))
+    return view.astype(dtype.newbyteorder("="), copy=False)
+
+
+def _assign_axes(
+    shape: tuple[int, ...],
+    n_time: int,
+    n_pol: int,
+    n_chan: int,
+) -> tuple[int, int, int]:
+    """Return axis indices ``(time, pol, chan)`` for a C-order element cube.
+
+    The standard order ``(time, pol, chan)`` wins when several axes share a
+    length. Any other shape must match exactly one permutation.
+    """
+    if len(shape) != 3:
+        msg = f"DATA TDIM has {len(shape)} axes {shape}, expected 3"
+        raise ValueError(msg)
+    wanted = (n_time, n_pol, n_chan)
+    if shape == wanted:
+        return (0, 1, 2)
+    perms = ((0, 1, 2), (0, 2, 1), (1, 0, 2), (1, 2, 0), (2, 0, 1), (2, 1, 0))
+    options = [
+        perm
+        for perm in perms
+        if (shape[perm[0]], shape[perm[1]], shape[perm[2]]) == wanted
+    ]
+    if len(options) != 1:
+        msg = (
+            f"DATA shape {shape} does not match "
+            f"time={n_time}, pol={n_pol}, chan={n_chan}"
+        )
+        raise ValueError(msg)
+    return options[0]
+
+
+def arrange_data_bytes(
+    raw: np.ndarray,
+    tdim: tuple[int, ...],
+    *,
+    nbits: int,
+    nsblk: int,
+    npol: int,
+    nchan: int,
+) -> np.ndarray:
+    """Reorder one DATA cell to ``(nsblk, npol, stride)`` ``uint8``.
+
+    ``stride`` is ``nchan`` for 8-bit, ``2 * nchan`` for 16-bit and
+    ``nchan * nbits / 8`` for packed samples. ``tdim`` is the Fortran TDIM.
+    """
+    element_count = int(np.prod(tdim))
+    if element_count == 0 or raw.size % element_count != 0:
+        msg = f"DATA has {raw.size} bytes and TDIM {tdim}"
+        raise ValueError(msg)
+    elem_size = raw.size // element_count
+    cshape = tuple(reversed(tdim))
+    if nbits < 8:
+        time_len = nsblk // (8 // nbits)
+        expected = 1
+    elif nbits == 16:
+        time_len = nsblk
+        expected = 2
+    else:
+        time_len = nsblk
+        expected = 1
+    if elem_size != expected:
+        msg = (
+            f"{nbits}-bit DATA element size is {elem_size}, "
+            f"expected {expected} byte(s)"
+        )
+        raise ValueError(msg)
+    time_ax, pol_ax, chan_ax = _assign_axes(cshape, time_len, npol, nchan)
+    owned = np.ascontiguousarray(raw)
+    if elem_size == 1:
+        cube = owned.reshape(cshape)
+        ordered = np.ascontiguousarray(np.transpose(cube, (time_ax, pol_ax, chan_ax)))
+        stride = (nchan * nbits) // 8 if nbits < 8 else nchan
+        return ordered.reshape(nsblk, npol, stride)
+    dtype = np.dtype(f">i{elem_size}")
+    samples = np.ndarray(cshape, dtype=dtype, buffer=owned)
+    ordered = np.ascontiguousarray(np.transpose(samples, (time_ax, pol_ax, chan_ax)))
+    return np.ascontiguousarray(ordered.view(np.uint8)).reshape(
+        nsblk,
+        npol,
+        nchan * elem_size,
+    )
+
+
+class _SearchTable:
+    """One open search-mode PSRFITS file and its SUBINT byte layout."""
+
+    def __init__(self, filename: str) -> None:
+        self.filename = filename
+        header, sub_header, datloc, table_loaded = _read_headers(filename)
+        if header.get("FITSTYPE") != "PSRFITS":
+            msg = f"File {filename} is not a PSRFITS file."
+            raise ValueError(msg)
+        if header.get("OBS_MODE") != "SEARCH":
+            msg = f"File {filename} is not a search-mode file."
+            raise ValueError(msg)
+        if sub_header.get("EXTNAME", "SUBINT") != "SUBINT":
+            msg = f"File {filename} has no SUBINT table."
+            raise ValueError(msg)
+        self.primary_header = header
+        self.sub_header = sub_header
+        self.datloc = datloc
+        self.table_loaded = table_loaded
+        self.row_bytes = int(sub_header["NAXIS1"])
+        self.nsubint = int(sub_header["NAXIS2"])
+        self.spans = _column_spans(sub_header)
+        self.npol = int(sub_header["NPOL"])
+        self.nchan = int(sub_header["NCHAN"])
+        self.nbits = int(sub_header["NBITS"])
+        self.nsblk = int(sub_header["NSBLK"])
+        self.pol_type = str(sub_header["POL_TYPE"]).strip()
+        self.pol_state = polarisation_state(self.pol_type, self.npol)
+        self.signint = int(sub_header.get("SIGNINT", 0))
+        self.zero_off = float(sub_header.get("ZERO_OFF", 0.0))
+        if self.nbits not in {1, 2, 4, 8, 16}:
+            msg = f"Unsupported NBITS={self.nbits}"
+            raise ValueError(msg)
+        if self.nbits < 8 and (self.nchan * self.nbits) % 8 != 0:
+            msg = f"NCHAN={self.nchan} is not a whole number of {self.nbits}-bit bytes"
+            raise ValueError(msg)
+        self.tdim = self._data_tdim()
+        self._fh: BinaryIO | None = Path(filename).open("rb")  # noqa: SIM115
+        try:
+            self.freqs = self._read_freqs()
+            self.scalars = self._read_scalars()
+        except Exception:
+            self.close()
+            raise
+
+    def close(self) -> None:
+        """Release the file."""
+        handle = self._fh
+        if handle is not None:
+            handle.close()
+            self._fh = None
+
+    def row_slice(self, isub: int, column: str) -> np.ndarray:
+        """Return a copy of one column cell as ``uint8``."""
+        self._check_row(isub)
+        offset, nbytes, _tform = self.spans[column]
+        start = self.datloc + isub * self.row_bytes + offset
+        handle = self._require_file()
+        handle.seek(start)
+        buf = handle.read(nbytes)
+        if len(buf) != nbytes:
+            msg = f"SUBINT row {isub} column {column} extends past the end of the file"
+            raise ValueError(msg)
+        return np.frombuffer(buf, dtype=np.uint8).copy()
+
+    def column_array(self, isub: int, column: str) -> np.ndarray:
+        """Return one numeric column cell in native byte order."""
+        _offset, _nbytes, tform = self.spans[column]
+        _repeat, code, _elem = _parse_tform(tform)
+        if code not in _NUMERIC_CODES:
+            msg = f"Column {column} TFORM {tform} is not numeric"
+            raise ValueError(msg)
+        return _view_numeric(self.row_slice(isub, column), code)
+
+    def data_bytes(self, isub: int) -> np.ndarray:
+        """Return DATA for one row as ``(nsblk, npol, stride)`` ``uint8``."""
+        raw = self.row_slice(isub, "DATA")
+        return arrange_data_bytes(
+            raw,
+            self.tdim,
+            nbits=self.nbits,
+            nsblk=self.nsblk,
+            npol=self.npol,
+            nchan=self.nchan,
+        )
+
+    def _require_file(self) -> BinaryIO:
+        if self._fh is None:
+            msg = f"PSRFITS file {self.filename} is closed"
+            raise ValueError(msg)
+        return self._fh
+
+    def _check_row(self, isub: int) -> None:
+        if isub < 0 or isub >= self.nsubint:
+            msg = f"subint {isub} is outside 0..{self.nsubint - 1}"
+            raise IndexError(msg)
+
+    def _data_tdim(self) -> tuple[int, ...]:
+        data_index = None
+        nfields = int(self.sub_header["TFIELDS"])
+        for index in range(1, nfields + 1):
+            if str(self.sub_header[f"TTYPE{index}"]).strip() == "DATA":
+                data_index = index
+                break
+        if data_index is None:
+            msg = "SUBINT table has no DATA column"
+            raise ValueError(msg)
+        text = self.sub_header.get(f"TDIM{data_index}")
+        if text:
+            return _parse_tdim(str(text))
+        packed_time = self.nsblk * self.nbits // 8 if self.nbits < 8 else self.nsblk
+        return (self.nchan, self.npol, packed_time)
+
+    def _read_freqs(self) -> FrequencyChannels:
+        first = self._freq_row(0)
+        for isub in range(1, self.nsubint):
+            other = self._freq_row(isub)
+            if not np.allclose(first, other, rtol=0.0, atol=_FREQ_ATOL_MHZ):
+                msg = f"DAT_FREQ of subint {isub} differs from subint 0"
+                raise ValueError(msg)
+        if first.size >= 2:
+            step = np.diff(first)
+            if np.max(np.abs(step - step[0])) > _FREQ_ATOL_MHZ:
+                logger.warning(
+                    "DAT_FREQ in %s is not uniform to %s MHz",
+                    self.filename,
+                    _FREQ_ATOL_MHZ,
+                )
+            chan_bw = float(self.sub_header.get("CHAN_BW", step[0]))
+            if abs(chan_bw - float(step[0])) > _CHAN_BW_ATOL_MHZ:
+                logger.warning(
+                    "CHAN_BW=%s MHz disagrees with DAT_FREQ step %s MHz in %s",
+                    chan_bw,
+                    float(step[0]),
+                    self.filename,
+                )
+        return FrequencyChannels(first)
+
+    def _freq_row(self, isub: int) -> np.ndarray:
+        values = self.column_array(isub, "DAT_FREQ")
+        if values.size < self.nchan:
+            msg = f"DAT_FREQ has {values.size} values, NCHAN is {self.nchan}"
+            raise ValueError(msg)
+        return np.asarray(values[: self.nchan], dtype=np.float64)
+
+    def _read_scalars(self) -> dict[str, np.ndarray]:
+        scalars: dict[str, np.ndarray] = {}
+        for name, (_offset, _nbytes, tform) in self.spans.items():
+            if name not in _SCALAR_COLUMNS:
+                continue
+            _repeat, code, _elem = _parse_tform(tform)
+            if code not in _NUMERIC_CODES:
+                continue
+            rows = [
+                self.column_array(isub, name) for isub in range(self.nsubint)
+            ]
+            scalars[name] = np.stack([row.reshape(-1) for row in rows])
+        return scalars
+
+
+def _read_headers(
+    filename: str,
+) -> tuple[fits.Header, fits.Header, int, bool]:
+    with fits.open(filename, mode="readonly", memmap=True) as hdul:
+        if "SUBINT" not in hdul:
+            msg = f"File {filename} has no SUBINT table."
+            raise ValueError(msg)
+        sub = hdul["SUBINT"]
+        info = sub.fileinfo()
+        if info is None or info.get("datLoc") is None:
+            msg = f"File {filename} SUBINT extension has no data array"
+            raise ValueError(msg)
+        return (
+            hdul[0].header.copy(),
+            sub.header.copy(),
+            int(info["datLoc"]),
+            bool(sub._data_loaded),  # noqa: SLF001
+        )
+
+
+def _first_scalar(table: _SearchTable, name: str, default: float) -> float:
+    values = table.scalars.get(name)
+    if values is None or values.size == 0:
+        return default
+    return float(values.reshape(-1)[0])
 
 
 @attrs.frozen(auto_attribs=True, kw_only=True)
@@ -122,14 +524,21 @@ class PrimaryHdr:
     """
 
     def __init__(self, filename: str) -> None:
-        header = fits.getheader(filename, extname="PRIMARY")
-        if header["FITSTYPE"] != "PSRFITS":
-            msg = f"File {filename} is not a PSRFITS file."
-            raise ValueError(msg)
-        if header["OBS_MODE"] != "SEARCH":
-            msg = f"File {filename} is not a search-mode file."
-            raise ValueError(msg)
-        self._header = header
+        table = _SearchTable(filename)
+        try:
+            self._bind(table)
+        finally:
+            table.close()
+
+    @classmethod
+    def _from_table(cls, table: _SearchTable) -> Self:
+        header = cls.__new__(cls)
+        header._bind(table)  # noqa: SLF001
+        return header
+
+    def _bind(self, table: _SearchTable) -> None:
+        self._header = table.primary_header
+        self._freqs = table.freqs
 
     @property
     def header(self) -> fits.Header:
@@ -209,12 +618,13 @@ class PrimaryHdr:
 
     @property
     def freqs(self) -> FrequencyChannels:
-        """:class:`~sigpyproc.utils.FrequencyChannels`: Frequency channels."""
-        return FrequencyChannels.from_pfits(
-            self.header["OBSFREQ"],
-            self.header["OBSBW"],
-            self.header["OBSNCHAN"],
-        )
+        """:class:`~sigpyproc.utils.FrequencyChannels`: Frequency channels.
+
+        The grid is ``DAT_FREQ`` of the first sub-integration. ``OBSFREQ`` and
+        ``OBSBW`` are not used: recorded search files often leave ``OBSBW`` at
+        zero or set it to a nominal band that is not the channel grid.
+        """
+        return self._freqs
 
     @property
     def chan_dm(self) -> float:
@@ -237,7 +647,12 @@ class PrimaryHdr:
 
     @property
     def tstart(self) -> Time:
-        """astropy.time.Time: Observation start time."""
+        """astropy.time.Time: Observation start time.
+
+        ``STT_IMJD``, ``STT_SMJD`` and ``STT_OFFS`` are the time of the first
+        sample in this file. ``NSUBOFFS`` is retained on the sub-integration
+        header and is not added here.
+        """
         return Time(
             self.header["STT_IMJD"],
             format="mjd",
@@ -286,15 +701,25 @@ class SubintHdr:
     """
 
     def __init__(self, filename: str) -> None:
-        with fits.open(filename) as hdul:
-            header = hdul["SUBINT"].header
-            sub_data = hdul["SUBINT"].data[0]
+        table = _SearchTable(filename)
+        try:
+            self._bind(table)
+        finally:
+            table.close()
 
-        if header["EXTNAME"] != "SUBINT":
-            msg = f"File {filename} has no SUBINT table."
-            raise ValueError(msg)
-        self._parse_data(sub_data)
-        self._header = header
+    @classmethod
+    def _from_table(cls, table: _SearchTable) -> Self:
+        header = cls.__new__(cls)
+        header._bind(table)  # noqa: SLF001
+        return header
+
+    def _bind(self, table: _SearchTable) -> None:
+        self._header = table.sub_header
+        self._poln_state = table.pol_state
+        self._freqs = table.freqs
+        self._sub_hdr = {
+            name: float(values.reshape(-1)[0]) for name, values in table.scalars.items()
+        }
 
     @property
     def header(self) -> fits.Header:
@@ -314,15 +739,12 @@ class SubintHdr:
     @property
     def poln_type(self) -> str:
         """str: Polarisation identifier (e.g., AABBCRCI, AA+BB)."""
-        return self.header["POL_TYPE"]
+        return str(self.header["POL_TYPE"]).strip()
 
     @property
     def poln_state(self) -> str:
         """str: Polarisation state (e.g., Coherence)."""
-        state = pol_type_to_state.get(self.poln_type)
-        if state is None:
-            state = npol_to_state[self.npol]
-        return state
+        return self._poln_state
 
     @property
     def npol(self) -> int:
@@ -351,7 +773,12 @@ class SubintHdr:
 
     @property
     def subint_offset(self) -> int:
-        """int: Subint offset for contiguous SEARCH-mode files."""
+        """int: Subint offset (``NSUBOFFS``) of a split search-mode file.
+
+        This counts sub-integrations before this file in the original
+        observation. The primary ``STT_*`` cards already give the time of the
+        first sample stored here, so ``NSUBOFFS`` is not added to ``tstart``.
+        """
         return self.header["NSUBOFFS"]
 
     @property
@@ -410,17 +837,40 @@ class SubintHdr:
     @property
     def freqs(self) -> FrequencyChannels:
         """sigpyproc.utils.FrequencyChannels: Frequency channels for first subint."""
-        return FrequencyChannels(self._sub_freqs[: self.nchans])
+        return self._freqs
 
-    def _parse_data(self, sub_data: fits.FITS_record) -> None:
-        unwanted_keys = {"DAT_WTS", "DAT_OFFS", "DAT_SCL", "DAT_FREQ", "DATA"}
-        wanted_keys = [key for key in sub_data.array.names if key not in unwanted_keys]
-        self._sub_hdr = {key: sub_data.field(key) for key in wanted_keys}
-        self._sub_freqs = sub_data.field("DAT_FREQ")
+
+def _expand_subbyte(raw: np.ndarray, nbits: int) -> np.ndarray:
+    """Expand 1-, 2- and 4-bit samples with the shared big-endian unpacker.
+
+    ``raw`` is ``(nsamp, npol, packed_chan)``. The returned array is
+    ``(nsamp, npol, nchan)`` ``uint8``. 8-bit and 16-bit rows are returned
+    unchanged. Two-bit levels are applied later; this step only splits bits.
+    """
+    if nbits >= 8:
+        return raw
+    nsamp, npol, _packed = raw.shape
+    flat = unpack(raw.reshape(-1), nbits, bitorder="big")
+    nchan = flat.size // (nsamp * npol)
+    return np.ascontiguousarray(flat).reshape(nsamp, npol, nchan)
+
+
+def _calibration_flags(
+    nbits: int,
+    *,
+    scloffs: bool,
+) -> tuple[bool, bool]:
+    """Return ``(subtract_zero, apply_scale)`` for the dspsr unpacker rules."""
+    if not scloffs:
+        return False, False
+    # 2-bit levels are already the dspsr lookup. 16-bit is a signed integer
+    # and dspsr does not subtract ZERO_OFF from it.
+    subtract_zero = nbits not in {2, 16}
+    return subtract_zero, True
 
 
 class PFITSFile:
-    """Handle a PSRFITS file.
+    """Handle a search-mode PSRFITS file.
 
     Parameters
     ----------
@@ -437,15 +887,21 @@ class PFITSFile:
 
     def __init__(self, filename: str) -> None:
         self._filename = filename
-        self._fits = fits.open(filename, mode="readonly", memmap=True)
-        self._primary_hdr = PrimaryHdr(filename)
-        self._subint_hdr = SubintHdr(filename)
+        self._table = _SearchTable(filename)
+        self._primary_hdr = PrimaryHdr._from_table(self._table)  # noqa: SLF001
+        self._subint_hdr = SubintHdr._from_table(self._table)  # noqa: SLF001
+        self._cache_key: tuple | None = None
+        self._cache_val: np.ndarray | None = None
 
     def __enter__(self) -> Self:
         return self
 
     def __exit__(self, exc_type, exc_value, traceback) -> None:  # noqa: ANN001
-        self._fits.close()
+        self.close()
+
+    def close(self) -> None:
+        """Close the file memmap."""
+        self._table.close()
 
     @property
     def filename(self) -> str:
@@ -491,6 +947,11 @@ class PFITSFile:
         """
         return BitsInfo(self.sub_hdr.nbits)
 
+    @property
+    def _table_loaded(self) -> bool:
+        """bool: whether opening the file materialised the SUBINT table."""
+        return self._table.table_loaded
+
     def read_subints(
         self,
         startsub: int,
@@ -500,7 +961,11 @@ class PFITSFile:
         scloffs: bool = True,
         weights: bool = True,
     ) -> np.ndarray:
-        """Read the given polarization format from a range of PSRFITS SUBINT table.
+        """Read Stokes I from a range of SUBINT rows.
+
+        Channel order is the ``DAT_FREQ`` order. The array is not reversed
+        when the band increases with channel number; ``header.fch1`` and
+        ``header.foff`` describe this same order.
 
         Parameters
         ----------
@@ -509,33 +974,36 @@ class PFITSFile:
         nsubs : int
             Number of subints to read from the SUBINT table.
         poln_select : int, optional
-            1=PP+QQ, 2=PP,QQ, 3=(PP+QQ)^2 4=PP,QQ,PQ,QP, by default 1.
+            Must be 1 (Stokes I). The dspsr ``-d`` codes that request more
+            than one product are not part of this reader.
         scloffs : bool, optional
-            Apply scales and offsets when unpacking data, by default False.
+            Apply ``DAT_SCL`` and ``DAT_OFFS``, by default True.
         weights : bool, optional
-            Apply weights when unpacking data, by default False.
+            Apply ``DAT_WTS``, by default True.
 
         Returns
         -------
         ndarray
-            Subint (row) data in ``float32`` if ``scloffs`` or ``weights`` applied,
-            otherwise in ``uint8`` with shape ``(nsamps, nchan)``.
+            ``float32`` array of shape ``(nsamps, nchan)``.
         """
-        data_list = []
-        for isub in range(startsub, startsub + nsubs):
-            sdata = self.read_subint_pol(
+        if startsub < 0 or nsubs < 0 or startsub + nsubs > self.sub_hdr.nsubint:
+            msg = (
+                f"subint range {startsub}:{startsub + nsubs} is outside "
+                f"0..{self.sub_hdr.nsubint}"
+            )
+            raise IndexError(msg)
+        rows = [
+            self.read_subint_pol(
                 isub,
                 poln_select=poln_select,
                 scloffs=scloffs,
                 weights=weights,
             )
-            data_list.append(sdata)
-        data = np.concatenate(data_list)
-
-        if self.sub_hdr.freqs.foff > 0:
-            data = np.fliplr(data)
-
-        return data
+            for isub in range(startsub, startsub + nsubs)
+        ]
+        if not rows:
+            return np.empty((0, self.sub_hdr.nchans), dtype=np.float32)
+        return np.concatenate(rows)
 
     def read_subint_pol(
         self,
@@ -545,52 +1013,106 @@ class PFITSFile:
         scloffs: bool = True,
         weights: bool = True,
     ) -> np.ndarray:
-        """Read the given polarization format from the PSRFITS SUBINT table.
+        """Read Stokes I from one SUBINT row.
+
+        ``PPQQ`` and ``Coherence`` form ``P0 + P1`` with no extra scale.
+        ``Intensity`` and ``Stokes`` (including ``IQUV``) return product 0,
+        which is already Stokes I. This matches dspsr ``PScrunch`` for
+        detected search data.
 
         Parameters
         ----------
         isub : int
             Index of row (subint) to read from the SUBINT table.
         poln_select : int, optional
-            Polarization index to select, by default 1.
-
-            Available options:
-
-            - 1=PP+QQ
-            - 2=PP,QQ
-            - 3=(PP+QQ)^2
-            - 4=PP,QQ,PQ,QP
+            Must be 1, Stokes I. Other dspsr ``-d`` codes are rejected.
         scloffs : bool, optional
-            Apply scales and offsets when unpacking data, by default True
+            Apply scales and offsets when unpacking data, by default True.
         weights : bool, optional
-            Apply weights when unpacking data, by default True
+            Apply weights when unpacking data, by default True.
 
         Returns
         -------
         ndarray
-            Subint (row) data in ``float32`` if ``scloffs`` or weights applied,
-            otherwise in ``uint8`` with shape ``(nsamps, nchan)``.
+            ``float32`` array of shape ``(nsamps, nchan)`` in ``DAT_FREQ`` order.
         """
-        sdata = self.read_subint(isub, scloffs=scloffs, weights=weights)
-        if self.sub_hdr.poln_state == "Coherence":
-            scale = 1.0 / np.sqrt(2.0)
-            data_shape = (self.sub_hdr.subint_samples, self.sub_hdr.nchans)
-            if poln_select == 1:
-                data = np.zeros(data_shape, dtype=np.float32)
-                data = data + (sdata[:, 0, :] + sdata[:, 1, :]) * scale
-            elif poln_select == 2:
-                data = sdata[:, 0:2, :]
-            elif poln_select == 3:
-                data = np.zeros(data_shape, dtype=np.float32)
-                data = data + (sdata[:, 0, :] + sdata[:, 1, :]) * scale
-            elif poln_select == 4:
-                data = sdata
-        elif self.sub_hdr.poln_state == "Stokes":
-            data = sdata[:, 0, :]
-        elif self.sub_hdr.poln_state == "Intensity":
-            data = sdata[:, 0, :].squeeze()
+        if poln_select != 1:
+            msg = (
+                f"poln_select={poln_select} is not supported; "
+                "the search reader returns Stokes I only (poln_select=1)"
+            )
+            raise ValueError(msg)
+        state = self.sub_hdr.poln_state
+        if state in {"Coherence", "PPQQ"}:
+            pol = -1
+        elif state in {"Stokes", "Intensity"}:
+            pol = 0
+        else:
+            msg = (
+                f"Unsupported PSRFITS polarisation state {state!r} "
+                f"(POL_TYPE={self.sub_hdr.poln_type!r})"
+            )
+            raise NotImplementedError(msg)
+        return self.read_detected(isub, scloffs=scloffs, weights=weights, pol=pol)
 
-        return data
+    def read_detected(
+        self,
+        isub: int,
+        *,
+        scloffs: bool = False,
+        weights: bool = False,
+        pol: int = -1,
+    ) -> np.ndarray:
+        """Read one detected product from a SUBINT row.
+
+        Parameters
+        ----------
+        isub : int
+            Index of the sub-integration.
+        scloffs : bool, optional
+            Apply ``DAT_SCL`` and ``DAT_OFFS``, by default False.
+        weights : bool, optional
+            Apply ``DAT_WTS``, by default False.
+        pol : int, optional
+            Polarisation index to copy. ``-1`` sums the first two products.
+
+        Returns
+        -------
+        ndarray
+            ``float32`` array of shape ``(NSBLK, NCHAN)``.
+        """
+        if pol < -1 or pol >= self.sub_hdr.npol:
+            msg = f"polarisation {pol} is outside 0..{self.sub_hdr.npol - 1}"
+            raise ValueError(msg)
+        if pol < 0 and self.sub_hdr.npol < 2:
+            msg = "Summing feeds needs NPOL >= 2"
+            raise ValueError(msg)
+        key = ("detected", isub, scloffs, weights, pol)
+        cached = self._recall(key)
+        if cached is not None:
+            return cached
+        raw, zero_off, do_zero, scales, offsets, do_scale, weight, do_weight = (
+            self._decode_inputs(isub, scloffs=scloffs, weights=weights)
+        )
+        out = np.empty(
+            (self.sub_hdr.subint_samples, self.sub_hdr.nchans),
+            dtype=np.float32,
+        )
+        decode_intensity(
+            raw,
+            self.sub_hdr.nbits,
+            self._table.signint != 0,
+            zero_off,
+            do_zero,
+            scales,
+            offsets,
+            do_scale,
+            weight,
+            do_weight,
+            pol,
+            out,
+        )
+        return self._store(key, out)
 
     def read_subint(
         self,
@@ -599,7 +1121,7 @@ class PFITSFile:
         scloffs: bool = True,
         weights: bool = True,
     ) -> np.ndarray:
-        """Read the digitised data from the PSRFITS SUBINT table.
+        """Read every polarisation product from one SUBINT row.
 
         Parameters
         ----------
@@ -613,39 +1135,37 @@ class PFITSFile:
         Returns
         -------
         ndarray
-            Subint (row) data in ``float32`` if ``scale_and_offset`` or weights applied,
-            otherwise in ``uint8`` with shape ``(nsamps, npol, nchan)``.
+            ``float32`` array of shape ``(NSBLK, NPOL, NCHAN)`` in ``DAT_FREQ``
+            order. Two-bit values are the dspsr levels ``{-2, -0.5, 0.5, 2}``.
+            ``ZERO_OFF`` is subtracted for 1-, 4- and 8-bit data only when
+            ``scloffs`` is set. 16-bit data is signed and is not shifted by
+            ``ZERO_OFF``.
         """
-        sdata = self._fits["SUBINT"].data[isub]["DATA"]
-        sdata = sdata.squeeze()
-        if self.bitsinfo.unpack:
-            data = unpack(sdata.ravel(), self.bitsinfo.nbits)
-            data = data.reshape(
-                (
-                    sdata.shape[0] * self.bitsinfo.bitfact,
-                    sdata.shape[1],
-                    sdata.shape[2],
-                ),
-            )
-        else:
-            data = np.array(sdata)
-        if data.shape != self.sub_hdr.subint_shape:
-            msg = f"DATA column ordering {data.shape} is not TPF"
-            raise ValueError(msg)
-
-        if scloffs or weights:
-            data = data.astype(np.float32, copy=False)
-        if scloffs:
-            data -= self.sub_hdr.zero_off  # This will not work for 2-bit data.
-            data = data * self.read_scales(isub) + self.read_offsets(isub)
-        if weights:
-            data *= self.read_weights(isub)
-
-        # del self._fits['SUBINT'].data  # Magic happens here # noqa: ERA001
-        return data
+        key = ("cube", isub, scloffs, weights)
+        cached = self._recall(key)
+        if cached is not None:
+            return cached
+        raw, zero_off, do_zero, scales, offsets, do_scale, weight, do_weight = (
+            self._decode_inputs(isub, scloffs=scloffs, weights=weights)
+        )
+        out = np.empty(self.sub_hdr.subint_shape, dtype=np.float32)
+        decode_cube(
+            raw,
+            self.sub_hdr.nbits,
+            self._table.signint != 0,
+            zero_off,
+            do_zero,
+            scales,
+            offsets,
+            do_scale,
+            weight,
+            do_weight,
+            out,
+        )
+        return self._store(key, out)
 
     def read_freqs(self, isub: int) -> FrequencyChannels:
-        """Read the Channel centre frequency from the PSRFITS SUBINT table.
+        """Read the channel centre frequencies from one SUBINT row.
 
         Parameters
         ----------
@@ -657,8 +1177,9 @@ class PFITSFile:
         :class:`~sigpyproc.utils.FrequencyChannels`
             Centre frequency for each channel in MHz (``NCHAN``).
         """
-        freqs = self._fits["SUBINT"].data[isub]["DAT_FREQ"]
-        return FrequencyChannels(freqs[: self.sub_hdr.nchans])
+        freqs = self._table.column_array(isub, "DAT_FREQ")
+        freqs = np.asarray(freqs[: self.sub_hdr.nchans], dtype=np.float64)
+        return FrequencyChannels(freqs)
 
     def read_weights(self, isub: int) -> np.ndarray:
         """Read channel weight (DAT_WTS) column from the SUBINT table.
@@ -666,15 +1187,15 @@ class PFITSFile:
         Parameters
         ----------
         isub : int
-            Index of row (subint) to read from the SUBINT table,
+            Index of row (subint) to read from the SUBINT table.
 
         Returns
         -------
         ndarray
             Weights for each channel in the range 0-1 (``NCHAN``).
         """
-        weights = self._fits["SUBINT"].data[isub]["DAT_WTS"]
-        return weights[: self.sub_hdr.nchans]
+        weights = self._table.column_array(isub, "DAT_WTS")
+        return np.asarray(weights[: self.sub_hdr.nchans], dtype=np.float32)
 
     def read_scales(self, isub: int) -> np.ndarray:
         """Read channel data scale factor (DAT_SCL) column from the SUBINT table.
@@ -687,11 +1208,18 @@ class PFITSFile:
         Returns
         -------
         ndarray
-            Data scale factor for each channel (``NCHAN * NPOL``).
+            Data scale factor for each channel, shape ``(NPOL, NCHAN)``,
+            channel fastest.
         """
-        scales = self._fits["SUBINT"].data[isub]["DAT_SCL"]
-        scales = scales[: self.sub_hdr.npol * self.sub_hdr.nchans]
-        return scales.reshape(self.sub_hdr.npol, self.sub_hdr.nchans)
+        scales = self._table.column_array(isub, "DAT_SCL")
+        count = self.sub_hdr.npol * self.sub_hdr.nchans
+        if scales.size < count:
+            msg = f"DAT_SCL has {scales.size} values, expected at least {count}"
+            raise ValueError(msg)
+        return np.asarray(scales[:count], dtype=np.float32).reshape(
+            self.sub_hdr.npol,
+            self.sub_hdr.nchans,
+        )
 
     def read_offsets(self, isub: int) -> np.ndarray:
         """Read channel data offset (DAT_OFFS) column from the SUBINT table.
@@ -704,8 +1232,67 @@ class PFITSFile:
         Returns
         -------
         ndarray
-            Data offset for each channel (``NCHAN * NPOL``).
+            Data offset for each channel, shape ``(NPOL, NCHAN)``,
+            channel fastest.
         """
-        offsets = self._fits["SUBINT"].data[isub]["DAT_OFFS"]
-        offsets = offsets[: self.sub_hdr.npol * self.sub_hdr.nchans]
-        return offsets.reshape(self.sub_hdr.npol, self.sub_hdr.nchans)
+        offsets = self._table.column_array(isub, "DAT_OFFS")
+        count = self.sub_hdr.npol * self.sub_hdr.nchans
+        if offsets.size < count:
+            msg = f"DAT_OFFS has {offsets.size} values, expected at least {count}"
+            raise ValueError(msg)
+        return np.asarray(offsets[:count], dtype=np.float32).reshape(
+            self.sub_hdr.npol,
+            self.sub_hdr.nchans,
+        )
+
+    def _decode_inputs(
+        self,
+        isub: int,
+        *,
+        scloffs: bool,
+        weights: bool,
+    ) -> tuple[
+        np.ndarray,
+        np.float32,
+        bool,
+        np.ndarray,
+        np.ndarray,
+        bool,
+        np.ndarray,
+        bool,
+    ]:
+        raw = _expand_subbyte(
+            np.ascontiguousarray(self._table.data_bytes(isub)),
+            self.sub_hdr.nbits,
+        )
+        do_zero, do_scale = _calibration_flags(self.sub_hdr.nbits, scloffs=scloffs)
+        if do_scale:
+            scales = np.ascontiguousarray(self.read_scales(isub), dtype=np.float32)
+            offsets = np.ascontiguousarray(self.read_offsets(isub), dtype=np.float32)
+        else:
+            scales = np.zeros((1, 1), dtype=np.float32)
+            offsets = np.zeros((1, 1), dtype=np.float32)
+        if weights:
+            weight = np.ascontiguousarray(self.read_weights(isub), dtype=np.float32)
+        else:
+            weight = np.zeros(1, dtype=np.float32)
+        return (
+            raw,
+            np.float32(self._table.zero_off),
+            do_zero,
+            scales,
+            offsets,
+            do_scale,
+            weight,
+            weights,
+        )
+
+    def _recall(self, key: tuple) -> np.ndarray | None:
+        if self._cache_key == key and self._cache_val is not None:
+            return self._cache_val
+        return None
+
+    def _store(self, key: tuple, value: np.ndarray) -> np.ndarray:
+        self._cache_key = key
+        self._cache_val = value
+        return value
