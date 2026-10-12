@@ -585,6 +585,7 @@ class Header:
         ref_freq: str | float = "fch1",
         *,
         in_samples: bool = True,
+        index: float = -2.0,
     ) -> np.ndarray:
         """Get ISM dispersion delays for given DM value(s).
 
@@ -597,6 +598,8 @@ class Header:
             Accepted inputs are "fmax", "fmin", "fcenter", "fch1" or a number in MHz.
         in_samples : bool, optional
             Flag to return delays as numbers of samples, by default True.
+        index : float, optional
+            Frequency exponent of the delay law, by default -2.
 
         Returns
         -------
@@ -623,6 +626,7 @@ class Header:
             self.tsamp,
             fch_ref,
             in_samples=in_samples,
+            index=index,
         )
 
     def get_dmsmearing(
@@ -630,6 +634,7 @@ class Header:
         dm: float | np.ndarray,
         *,
         in_samples: bool = True,
+        index: float = -2.0,
     ) -> np.ndarray:
         """Get ISM smearing for given DM value(s).
 
@@ -639,6 +644,8 @@ class Header:
             Dispersion measure(s) to calculate smearing for.
         in_samples : bool, optional
             Flag to return smearing as numbers of samples, by default True.
+        index : float, optional
+            Frequency exponent of the delay law, by default -2.
 
         Returns
         -------
@@ -653,6 +660,7 @@ class Header:
             dm,
             self.tsamp,
             in_samples=in_samples,
+            index=index,
         )
 
     def new_header(self, update_dict: dict[str, Any] | None = None) -> Header:

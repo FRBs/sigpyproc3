@@ -36,6 +36,7 @@ def compute_dmdelays(
     ref_freq: float,
     *,
     in_samples: bool = True,
+    index: float = -2.0,
 ) -> NDArray[np.int32 | np.float32]:
     """Compute ISM dispersion delays for given DM value(s).
 
@@ -51,6 +52,9 @@ def compute_dmdelays(
         Reference frequency to calculate delays from.
     in_samples : bool, optional
         Flag to return delays as numbers of samples, by default True.
+    index : float, optional
+        Exponent of frequency in the delay law, by default -2. ``-2`` is the
+        cold-plasma law and matches the historical formula exactly.
 
     Returns
     -------
@@ -60,10 +64,17 @@ def compute_dmdelays(
         If dm is a scalar, returns a 1D array of delays. If dm is an array,
         returns a 2D array with shape ``(len(dm), len(freqs))``.
     """
+    if index == 0.0:
+        msg = "dispersion index must be non-zero"
+        raise ValueError(msg)
     freqs = np.atleast_1d(np.asarray(freqs, dtype=np.float64))
     dm = np.atleast_1d(dm)[:, np.newaxis].astype(np.float64)
     ref = float(ref_freq)
-    delays = dm * DM_CONSTANT_LK * ((freqs**-2) - (ref**-2))
+    if index == -2.0:
+        phase = (freqs**-2) - (ref**-2)
+    else:
+        phase = (-2.0 / index) * (freqs**index - (ref**index))
+    delays = dm * DM_CONSTANT_LK * phase
     if in_samples:
         delays = (delays / tsamp).round().astype(np.int32)
     else:
@@ -101,6 +112,7 @@ def compute_dmsmearing(
     tsamp: float,
     *,
     in_samples: bool = True,
+    index: float = -2.0,
 ) -> NDArray[np.int32 | np.float32]:
     """Compute ISM smearing due to finite bandwidth for given DM value(s).
 
@@ -114,6 +126,9 @@ def compute_dmsmearing(
         Sampling time of the data.
     in_samples : bool, optional
         Flag to return smearing as numbers of samples, by default True.
+    index : float, optional
+        Exponent of frequency in the delay law, by default -2. Smearing is the
+        absolute derivative of that delay across one channel.
 
     Returns
     -------
@@ -123,10 +138,16 @@ def compute_dmsmearing(
         If dm is a scalar, returns a 1D array of smearing. If dm is an array,
         returns a 2D array with shape ``(len(dm), len(freqs))``.
     """
+    if index == 0.0:
+        msg = "dispersion index must be non-zero"
+        raise ValueError(msg)
     freqs = np.atleast_1d(np.asarray(freqs, dtype=np.float64))
     dm = np.atleast_1d(dm)[:, np.newaxis].astype(np.float64)
     foff = float(np.abs(freqs[1] - freqs[0])) if freqs.size > 1 else 0.0
-    smearing = 2 * DM_CONSTANT_LK * foff * dm / freqs**3
+    if index == -2.0:
+        smearing = 2 * DM_CONSTANT_LK * foff * dm / freqs**3
+    else:
+        smearing = np.abs(2 * DM_CONSTANT_LK * foff * dm * freqs ** (index - 1.0))
     if in_samples:
         smearing = (smearing / tsamp).round().astype(np.int32)
     else:

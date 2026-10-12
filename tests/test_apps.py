@@ -583,6 +583,326 @@ class TestSppFake:
         result = runner.invoke(spp_fake.main, ["pulse", "-t", "0.1"])
         assert result.exit_code != 0
 
+    def test_noise_4bit_packed_length(self, tmpdir: str) -> None:
+        out = str(Path(tmpdir) / "noise4.fil")
+        runner = CliRunner()
+        result = runner.invoke(
+            spp_fake.main,
+            [
+                "noise",
+                "-o",
+                out,
+                "--nchans",
+                "16",
+                "--nbits",
+                "4",
+                "--tsamp",
+                "0.001",
+                "--tobs",
+                "0.2",
+                "--seed",
+                "1",
+            ],
+        )
+        assert result.exit_code == 0
+        fil = FilReader(out)
+        hdrlen = fil.header.stream_info.get_combined("hdrlen")
+        datalen = Path(out).stat().st_size - hdrlen
+        assert datalen == fil.header.nsamples * fil.header.nchans // 2
+        block = fil.read_block(0, fil.header.nsamples)
+        assert block.data.min() >= 0
+        assert block.data.max() <= 15
+
+    def test_furby_two_pulses(self, tmpdir: str) -> None:
+        out = str(Path(tmpdir) / "furby.fil")
+        runner = CliRunner()
+        result = runner.invoke(
+            spp_fake.main,
+            [
+                "furby",
+                "-t",
+                "0.05",
+                "-t",
+                "0.2",
+                "-d",
+                "0",
+                "-w",
+                "0.004",
+                "-s",
+                "40",
+                "-o",
+                out,
+                "--nchans",
+                "8",
+                "--nbits",
+                "32",
+                "--tsamp",
+                "0.001",
+                "--tobs",
+                "0.4",
+                "--seed",
+                "1",
+            ],
+        )
+        assert result.exit_code == 0
+        fil = FilReader(out)
+        assert fil.header.nbits == 32
+        assert fil.header.nsamples == 400
+        assert fil.header.dm == pytest.approx(0.0)
+        assert fil.header.source == "Furby"
+        series = fil.read_block(0, fil.header.nsamples).data.sum(axis=0)
+        baseline = float(np.median(series))
+        assert series[45:56].max() > baseline + 5
+        assert series[195:206].max() > baseline + 5
+
+    def test_furby_4bit_on_pulse(self, tmpdir: str) -> None:
+        out = str(Path(tmpdir) / "furby4.fil")
+        runner = CliRunner()
+        result = runner.invoke(
+            spp_fake.main,
+            [
+                "furby",
+                "-t",
+                "0.05",
+                "-d",
+                "10",
+                "-w",
+                "0.004",
+                "-s",
+                "30",
+                "-o",
+                out,
+                "--nchans",
+                "8",
+                "--nbits",
+                "4",
+                "--tsamp",
+                "0.001",
+                "--tobs",
+                "0.4",
+                "--seed",
+                "1",
+            ],
+        )
+        assert result.exit_code == 0
+        fil = FilReader(out)
+        assert fil.header.nbits == 4
+        assert fil.header.dm == pytest.approx(10.0)
+        assert fil.header.source == "DM 10"
+        data = fil.read_block(0, fil.header.nsamples).data
+        assert data.min() >= 0
+        assert data.max() <= 15
+        series = data.sum(axis=0)
+        assert series[45:56].mean() > np.median(series)
+
+    def test_furby_catalogue_keeps_mixed_dm_at_zero(self, tmpdir: str) -> None:
+        out = str(Path(tmpdir) / "cat.fil")
+        catalogue = Path(tmpdir) / "pulses.txt"
+        catalogue.write_text("# two bursts\n0.05 0 0.004 40\n0.2 5 0.004 40\n")
+        runner = CliRunner()
+        result = runner.invoke(
+            spp_fake.main,
+            [
+                "furby",
+                "--catalogue",
+                str(catalogue),
+                "-o",
+                out,
+                "--nchans",
+                "8",
+                "--nbits",
+                "32",
+                "--tsamp",
+                "0.001",
+                "--tobs",
+                "0.4",
+                "--seed",
+                "1",
+            ],
+        )
+        assert result.exit_code == 0
+        fil = FilReader(out)
+        assert fil.header.dm == pytest.approx(0.0)
+        series = fil.read_block(0, fil.header.nsamples).data.sum(axis=0)
+        baseline = float(np.median(series))
+        assert series[45:56].max() > baseline + 5
+        assert series[195:206].max() > baseline + 5
+
+    def test_furby_requires_a_time_or_catalogue(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(spp_fake.main, ["furby", "-w", "0.004"])
+        assert result.exit_code != 0
+
+    def test_furby_rejects_time_and_catalogue(self, tmpdir: str) -> None:
+        catalogue = Path(tmpdir) / "pulses.txt"
+        catalogue.write_text("0.05 0 0.004 10\n")
+        runner = CliRunner()
+        result = runner.invoke(
+            spp_fake.main,
+            ["furby", "-t", "0.05", "-w", "0.004", "--catalogue", str(catalogue)],
+        )
+        assert result.exit_code != 0
+
+    def test_furby_warns_when_the_pulse_misses(self, tmpdir: str) -> None:
+        out = str(Path(tmpdir) / "miss.fil")
+        runner = CliRunner()
+        result = runner.invoke(
+            spp_fake.main,
+            [
+                "furby",
+                "-t",
+                "5",
+                "-w",
+                "0.001",
+                "-o",
+                out,
+                "--nchans",
+                "8",
+                "--tobs",
+                "0.05",
+                "--tsamp",
+                "0.001",
+                "--seed",
+                "1",
+            ],
+        )
+        assert result.exit_code == 0
+        text = result.output + (result.stderr or "")
+        assert "no pulse overlaps" in text
+
+    def test_inject_raises_on_pulse(self, tmpdir: str) -> None:
+        noise = str(Path(tmpdir) / "noise.fil")
+        injected = str(Path(tmpdir) / "injected.fil")
+        runner = CliRunner()
+        noise_result = runner.invoke(
+            spp_fake.main,
+            [
+                "noise",
+                "-o",
+                noise,
+                "--nchans",
+                "8",
+                "--nbits",
+                "32",
+                "--tsamp",
+                "0.001",
+                "--tobs",
+                "0.2",
+                "--seed",
+                "1",
+            ],
+        )
+        assert noise_result.exit_code == 0
+        result = runner.invoke(
+            spp_fake.main,
+            [
+                "inject",
+                noise,
+                "-o",
+                injected,
+                "-t",
+                "0.032",
+                "-w",
+                "0.008",
+                "-s",
+                "50",
+                "-d",
+                "0",
+                "--gulp",
+                "16",
+                "--seed",
+                "1",
+            ],
+        )
+        assert result.exit_code == 0
+        before = FilReader(noise)
+        after = FilReader(injected)
+        assert after.header.nsamples == before.header.nsamples
+        before_ts = before.read_block(0, before.header.nsamples).data.sum(axis=0)
+        after_ts = after.read_block(0, after.header.nsamples).data.sum(axis=0)
+        assert after_ts[24:41].sum() > before_ts[24:41].sum()
+        np.testing.assert_array_equal(before_ts[150:170], after_ts[150:170])
+
+    def test_inject_rejects_psrfits(self, fitsfile_4bit: str, tmpdir: str) -> None:
+        out = str(Path(tmpdir) / "nope.fil")
+        runner = CliRunner()
+        result = runner.invoke(
+            spp_fake.main,
+            ["inject", fitsfile_4bit, "-o", out, "-t", "0.1", "-w", "0.004"],
+        )
+        assert result.exit_code != 0
+        text = result.output + (result.stderr or "")
+        assert "sigproc" in text
+
+    def test_population_cli(self, tmpdir: str) -> None:
+        out = str(Path(tmpdir) / "pop.txt")
+        runner = CliRunner()
+        result = runner.invoke(
+            spp_fake.main,
+            [
+                "population",
+                "-n",
+                "5",
+                "-o",
+                out,
+                "--tobs",
+                "2.0",
+                "--seed",
+                "42",
+            ],
+        )
+        assert result.exit_code == 0
+        assert Path(out).is_file()
+        from sigpyproc.simulation.inject import read_pulse_catalogue
+
+        rows = read_pulse_catalogue(out)
+        assert len(rows) == 5
+
+    def test_inject_preserve_bandpass_cli(self, tmpdir: str) -> None:
+        noise = str(Path(tmpdir) / "noise_bp.fil")
+        injected = str(Path(tmpdir) / "inj_bp.fil")
+        runner = CliRunner()
+        runner.invoke(
+            spp_fake.main,
+            [
+                "noise",
+                "-o",
+                noise,
+                "--nchans",
+                "8",
+                "--nbits",
+                "32",
+                "--tsamp",
+                "0.001",
+                "--tobs",
+                "0.2",
+                "--seed",
+                "1",
+            ],
+        )
+        result = runner.invoke(
+            spp_fake.main,
+            [
+                "inject",
+                noise,
+                "-o",
+                injected,
+                "-t",
+                "0.032",
+                "-w",
+                "0.008",
+                "-s",
+                "50",
+                "-d",
+                "0",
+                "--preserve-bandpass",
+                "--seed",
+                "1",
+            ],
+        )
+        assert result.exit_code == 0
+        assert Path(injected).is_file()
+
 
 def _write_search_tim(path: Path, nsamp: int = 4096, tsamp: float = 0.001) -> Path:
     rng = np.random.default_rng(7)

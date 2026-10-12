@@ -2,9 +2,10 @@
 
 A modern counterpart of SIGPROC ``fake``: Gaussian noise, an optional
 rectangular periodic pulse, or a single dispersed pulse. Signal is added
-to unit Gaussian noise and then quantized with
-:meth:`~sigpyproc.io.bits.BitsInfo.quantize` (no running rescale), so
-injected SNR is not squashed.
+to unit Gaussian noise and digitised with the fixed dspsr scale (no
+running rescale), so injected SNR is not squashed. An optional
+:class:`~sigpyproc.simulation.inject.Injector` stamps compact furby
+profiles into the same blocks.
 
 Binary orbits, red noise, even/odd channel tests, and headerless output
 are not implemented. Use :mod:`~sigpyproc.simulation.furby` for FRBs.
@@ -19,6 +20,7 @@ import numpy as np
 
 from sigpyproc.header import Header
 from sigpyproc.io.bits import BitsInfo, check_packed_length
+from sigpyproc.simulation.inject import Injector, write_sigma_block
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
@@ -143,6 +145,7 @@ def fake_filterbank(
     *,
     seed: int | None = None,
     gulp: int = 16384,
+    injector: Injector | None = None,
 ) -> str:
     """Write a fake filterbank of Gaussian noise plus an optional signal.
 
@@ -151,13 +154,16 @@ def fake_filterbank(
     header : Header
         Observing metadata (``nsamples``, ``nchans``, ``nbits``, band).
     params : PulsarParams, optional
-        Signal parameters. ``None`` writes noise only.
+        Rectangular-pulse parameters. ``None`` writes noise only, plus
+        ``injector`` when one is given.
     outfile : str, optional
         Output path, by default ``header.filename``.
     seed : int, optional
         ``numpy`` Generator seed. ``None`` uses the OS entropy.
     gulp : int, optional
         Samples written per block, by default 16384.
+    injector : Injector, optional
+        Furby profiles added in sigma units before digitisation.
 
     Returns
     -------
@@ -166,7 +172,7 @@ def fake_filterbank(
     """
     if params is None:
         params = PulsarParams()
-    bitsinfo = _check_fake(header, params, gulp)
+    _check_fake(header, params, gulp)
     width = params.resolved_width()
 
     if outfile is None:
@@ -201,21 +207,21 @@ def fake_filterbank(
                     snr_chan,
                     header.tobs,
                 )
-            if header.nbits < 32:
-                block = bitsinfo.quantize(block)
-            out.cwrite(np.ravel(block))
+            if injector is not None:
+                injector.add_into(block, start)
+            write_sigma_block(out, block, header.nbits)
             start += nsamp
     return outfile
 
 
-def _check_fake(header: Header, params: PulsarParams, gulp: int) -> BitsInfo:
+def _check_fake(header: Header, params: PulsarParams, gulp: int) -> None:
     if gulp < 1:
         msg = "gulp must be at least 1"
         raise ValueError(msg)
     if header.nsamples < 1:
         msg = "header.nsamples must be at least 1"
         raise ValueError(msg)
-    bitsinfo = BitsInfo(header.nbits)
+    BitsInfo(header.nbits)
     check_packed_length(header.nchans, header.nbits)
     if (
         params.accel != 0.0
@@ -230,7 +236,6 @@ def _check_fake(header: Header, params: PulsarParams, gulp: int) -> BitsInfo:
     ):
         msg = "pdot would drive the period through zero"
         raise ValueError(msg)
-    return bitsinfo
 
 
 def _effective_width(header: Header, params: PulsarParams, width: float) -> float:

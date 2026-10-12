@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 import pytest
 from matplotlib import pyplot as plt
@@ -9,6 +11,9 @@ from matplotlib import pyplot as plt
 from sigpyproc.block import FilterbankBlock
 from sigpyproc.header import Header
 from sigpyproc.simulation import furby
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -58,8 +63,130 @@ class TestFurbyGenerator:
         furby_obj = gen.generate()
         assert isinstance(furby_obj, furby.Furby)
         assert isinstance(furby_obj.block, FilterbankBlock)
+        assert furby_obj.profile is furby_obj.block
         assert furby_obj.params_hdr == dummy_params
         assert isinstance(furby_obj.stats_hdr, furby.PulseStats)
+        assert furby_obj.block.header.tsamp == pytest.approx(dummy_header.tsamp)
+        assert furby_obj.block.header.nsamples < 1000
+        assert furby_obj.delays.shape == (dummy_header.nchans,)
+        np.testing.assert_allclose(
+            furby_obj.stats_hdr.box_snr,
+            dummy_params.snr,
+            rtol=1e-3,
+        )
+
+    def test_flat_spectrum_has_equal_fluence(
+        self,
+        dummy_header: Header,
+    ) -> None:
+        params = furby.PulseParams(
+            dm=10.0,
+            snr=10.0,
+            width=2e-3,
+            spec_kind="flat",
+            spec_idx=-2.0,
+            dmsmear=False,
+        )
+        profile = furby.FurbyGenerator(dummy_header, params, seed=1).generate()
+        fluence = profile.block.data.sum(axis=1)
+        np.testing.assert_allclose(fluence, fluence[0], rtol=1e-4)
+
+    def test_power_law_is_not_flat(self, dummy_header: Header) -> None:
+        params = furby.PulseParams(
+            dm=10.0,
+            snr=10.0,
+            width=2e-3,
+            spec_kind="power_law",
+            spec_idx=-2.0,
+            dmsmear=False,
+        )
+        profile = furby.FurbyGenerator(dummy_header, params, seed=1).generate()
+        fluence = profile.block.data.sum(axis=1)
+        assert fluence[-1] > fluence[0] * 1.2
+
+    def test_tau_ref_freq_scaling(self, dummy_header: Header) -> None:
+        params_1ghz = furby.PulseParams(
+            dm=10.0,
+            snr=10.0,
+            width=2e-3,
+            tau0=1e-3,
+            tau_ref_freq=1000.0,
+            scatt_idx=-4.4,
+        )
+        params_1500mhz = furby.PulseParams(
+            dm=10.0,
+            snr=10.0,
+            width=2e-3,
+            tau0=1e-3,
+            tau_ref_freq=1500.0,
+            scatt_idx=-4.4,
+        )
+        gen1 = furby.FurbyGenerator(dummy_header, params_1ghz)
+        gen2 = furby.FurbyGenerator(dummy_header, params_1500mhz)
+        scat1 = gen1._scatter_samples(gen1.tsamp_os)
+        scat2 = gen2._scatter_samples(gen2.tsamp_os)
+        ratio = scat1 / scat2
+        expected_ratio = (1500.0 / 1000.0) ** (-4.4)
+        np.testing.assert_allclose(ratio, expected_ratio, rtol=1e-4)
+
+    def test_seeded_spectrum_is_reproducible(self, dummy_header: Header) -> None:
+        params = furby.PulseParams(
+            dm=10.0,
+            snr=5.0,
+            width=2e-3,
+            spec_kind="scintillation",
+            spec_idx=0.0,
+            dmsmear=False,
+        )
+        first = furby.FurbyGenerator(dummy_header, params, seed=4).generate()
+        second = furby.FurbyGenerator(dummy_header, params, seed=4).generate()
+        other = furby.FurbyGenerator(dummy_header, params, seed=5).generate()
+        np.testing.assert_allclose(first.block.data, second.block.data)
+        assert not np.allclose(first.block.data, other.block.data)
+
+    def test_realized_sweep_follows_delays(
+        self,
+        dummy_header: Header,
+        dummy_params: furby.PulseParams,
+    ) -> None:
+        profile = furby.FurbyGenerator(dummy_header, dummy_params).generate()
+        waterfall = profile.realize()
+        peaks = waterfall.data.argmax(axis=1)
+        delays = np.rint(profile.delays).astype(int)
+        np.testing.assert_allclose(peaks - peaks[0], delays - delays[0], atol=3)
+
+        aligned = waterfall.dedisperse(
+            dummy_params.dm,
+            ref_freq="fch1",
+            only_valid_samples=True,
+        )
+        aligned_peaks = aligned.data.argmax(axis=1)
+        assert int(np.ptp(aligned_peaks)) <= 5
+
+    def test_hdf5_roundtrip(
+        self,
+        dummy_header: Header,
+        dummy_params: furby.PulseParams,
+        tmp_path: Path,
+    ) -> None:
+        profile = furby.FurbyGenerator(dummy_header, dummy_params, seed=2).generate()
+        path = profile.save(tmp_path / "pulse.h5")
+        loaded = furby.Furby.from_file(path)
+        np.testing.assert_allclose(loaded.block.data, profile.block.data)
+        np.testing.assert_allclose(loaded.delays, profile.delays)
+        assert loaded.params_hdr == profile.params_hdr
+        assert loaded.sample0 == profile.sample0
+        assert loaded.block.header.tsamp == pytest.approx(profile.block.header.tsamp)
+
+    def test_plot(
+        self,
+        dummy_header: Header,
+        dummy_params: furby.PulseParams,
+    ) -> None:
+        profile = furby.FurbyGenerator(dummy_header, dummy_params).generate()
+        fig = profile.plot()
+        assert isinstance(fig, plt.Figure)
+        plt.close(fig)
 
 
 class TestSpectralStructure:
@@ -104,3 +231,10 @@ class TestSpectralStructure:
     def test_invalid_kind(self, freqs: np.ndarray) -> None:
         with pytest.raises(KeyError):
             furby.SpectralStructure(freqs, kind="invalid").generate()
+
+    def test_power_law_flux_ratio(self, freqs: np.ndarray) -> None:
+        spec_struct = furby.SpectralStructure(freqs, kind="power_law", spec_index=-2.0)
+        spec = spec_struct.generate()
+        ratio = spec[-1] / spec[0]
+        expected_ratio = (freqs[-1] / freqs[0]) ** (-2.0)
+        np.testing.assert_allclose(ratio, expected_ratio, rtol=1e-5)

@@ -1,6 +1,7 @@
 2.0.0 (Unreleased)
 ++++++++++++++++++
 
+- Added mock FRB population generation with ``RandomBurstPopulation``, ``BurstDistribution``, and ``spp_fake population``.
 - Reads search-mode PSRFITS by row, without loading the SUBINT table. Stokes I is ``P0 + P1`` for coherence and ``PPQQ`` data, and channel order follows ``DAT_FREQ``.
 - ``spp_digifil`` writes one IF. ``-d 2``, ``-d 3`` and ``-d 4`` are rejected.
 - Adds ``spp_digifil`` and ``sigpyproc.io.digifil`` to convert PSRFITS or filterbank data to N-bit (or float) filterbank following dspsr ``digifil``.

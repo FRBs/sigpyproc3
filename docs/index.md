@@ -62,6 +62,13 @@ Load a `.fil`, inspect the header, dedisperse, and fold.
 FFT, FFA, single pulses, and `CandidateTable` — how to use the search API.
 :::
 
+:::{grid-item-card} 📡 Simulate a pulse
+:link: tutorials/fake
+:link-type: doc
+
+Write a mock FRB with `spp_fake furby`, or inject one into a filterbank.
+:::
+
 :::{grid-item-card} 🖥️ Command line tools
 :link: cmd
 :link-type: doc
@@ -105,5 +112,6 @@ changes
 
 tutorials/quickstart
 tutorials/search
+tutorials/fake
 tutorials/header
 ```

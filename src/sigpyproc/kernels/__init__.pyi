@@ -89,4 +89,8 @@ from .moments import update_moments as update_moments
 from .moments import update_moments_basic as update_moments_basic
 from .pfits import decode_cube as decode_cube
 from .pfits import decode_intensity as decode_intensity
+from .simulation import downsample_profiles as downsample_profiles
+from .simulation import inject_pulse_2d as inject_pulse_2d
+from .simulation import inject_pulses as inject_pulses
 from .simulation import simulate_ism as simulate_ism
+from .simulation import smear_lead as smear_lead

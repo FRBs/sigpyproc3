@@ -280,18 +280,59 @@ def disperse_block(
     nsamps_out: int = 1,
     tfactor: int = 1,
 ) -> np.ndarray:
-    """Disperse a 2D block with per-channel delays."""
+    """Place each row at a delay and average ``tfactor`` fine samples.
+
+    Parameters
+    ----------
+    arr : ndarray
+        Channel-major profiles, shape ``(nchans, n_fine)``. Sample 0 of every
+        row is the same epoch.
+    shifts : ndarray
+        Fine-sample delay of each channel. Negative values are allowed. The
+        earliest channel is placed one native sample in from the start.
+    nsamps_out : int, optional
+        Minimum number of native output samples, by default 1.
+    tfactor : int, optional
+        Fine samples averaged into one native sample, by default 1.
+
+    Returns
+    -------
+    ndarray
+        Float32 array of shape ``(nchans, n_native)``. The length is the
+        placed span plus one sample of padding on each side, or
+        ``nsamps_out`` when that is longer.
+    """
     if arr.ndim != 2:
         msg = "Input array must be 2D."
         raise ValueError(msg)
     if len(shifts) != arr.shape[0]:
         msg = "Number of shifts must be equal to the number of rows."
         raise ValueError(msg)
+    if tfactor < 1:
+        msg = "tfactor must be at least 1"
+        raise ValueError(msg)
     nrows, ncols = arr.shape
-    valid_samps = max(2 * (ncols + np.abs(shifts).max()), nsamps_out)
-    res = np.zeros((nrows, valid_samps), dtype=arr.dtype)
-    start = valid_samps // 2 - ncols // 2
-    end = start + ncols
+    if nrows == 0:
+        n_out = max(nsamps_out, 1)
+        return np.zeros((0, n_out), dtype=np.float32)
+    shift_min = np.int64(shifts[0])
+    for irow in range(1, nrows):
+        sample = np.int64(shifts[irow])
+        shift_min = min(shift_min, sample)
+    max_rel = np.int64(0)
+    rel = np.empty(nrows, dtype=np.int64)
     for irow in range(nrows):
-        res[irow, start + shifts[irow] : end + shifts[irow]] = arr[irow]
+        rel[irow] = np.int64(shifts[irow]) - shift_min
+        max_rel = max(max_rel, rel[irow])
+    span = np.int64(ncols) + max_rel
+    n_native = (span + tfactor - 1) // tfactor
+    pad = 1
+    n_out = max(n_native + 2 * pad, nsamps_out)
+    res = np.zeros((nrows, n_out), dtype=np.float32)
+    inv = np.float32(1.0 / tfactor)
+    for irow in range(nrows):
+        for icol in range(ncols):
+            dest = (icol + rel[irow]) // tfactor + pad
+            if 0 <= dest < n_out:
+                res[irow, dest] += arr[irow, icol] * inv
     return res
