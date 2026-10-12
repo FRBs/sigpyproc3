@@ -203,6 +203,7 @@ class TestHarmonicSums:
             assert folded.shape == (4, 8)
             assert np.isfinite(folded).all()
 
+
 class TestLyne:
     def test_matches_sumharms_transcription(self) -> None:
         rng = np.random.default_rng(0)
@@ -322,8 +323,6 @@ class TestTemplates:
         folded = fourier.convolve_templates(data, templates, refs)
         assert folded.shape == (1, data.size)
         assert int(np.argmax(folded[0])) == 10
-
-
 
 
 class TestFourierKernels:

@@ -42,6 +42,7 @@ logger = logging.getLogger(__name__)
 _BULK_BYTES = 32 * 1024 * 1024
 _STREAM_GULP_BYTES = 8 * 1024 * 1024
 
+
 def _chan_start(header: Header, fch1: float, nchans: int) -> int:
     """Return the first channel index of a contiguous sub-band."""
     if nchans < 1 or nchans > header.nchans or header.foff == 0:
