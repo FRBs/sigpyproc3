@@ -3,7 +3,7 @@ from __future__ import annotations
 import rich_click as click
 
 from sigpyproc.apps._logging import logging_options, setup_cli_logging
-from sigpyproc.readers import FilReader
+from sigpyproc.readers import open_filterbank
 
 
 @logging_options
@@ -49,7 +49,7 @@ def main(
 ) -> None:
     """Fold a filterbank at a period and DM."""
     setup_cli_logging(verbose, quiet=quiet)
-    fil = FilReader(filfile)
+    fil = open_filterbank(filfile)
     cube = fil.fold(
         period,
         dm,

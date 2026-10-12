@@ -4,7 +4,7 @@ import numpy as np
 import rich_click as click
 
 from sigpyproc.apps._logging import logging_options, setup_cli_logging
-from sigpyproc.readers import FilReader
+from sigpyproc.readers import open_filterbank
 
 
 @logging_options
@@ -52,7 +52,7 @@ def samples(
     outfile: str | None,
 ) -> None:
     """Extract time samples from filterbank data."""
-    fil = FilReader(filfile)
+    fil = open_filterbank(filfile)
     if start_sec is not None:
         start = round(start_sec / fil.header.tsamp)
     if duration is not None:
@@ -100,7 +100,7 @@ def channels(
     outfile: str | None,
 ) -> None:
     """Extract frequency channels as time series (one ``.tim`` per channel)."""
-    fil = FilReader(filfile)
+    fil = open_filterbank(filfile)
     if chans:
         chan_arr = np.asarray(chans)
     elif chan_start is not None:
@@ -143,7 +143,7 @@ def bands(
     outfile: str | None,
 ) -> None:
     """Extract frequency bands from filterbank data."""
-    fil = FilReader(filfile)
+    fil = open_filterbank(filfile)
     for path in fil.extract_bands(
         chanstart=chanstart,
         nchans=nchans,

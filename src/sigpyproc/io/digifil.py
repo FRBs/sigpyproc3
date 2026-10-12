@@ -648,9 +648,7 @@ def _polarisation_plan(
     if npol_in > 1 and poln_state in {"Stokes", "Intensity"}:
         return 0, False, 1
     if npol_in > 1:
-        msg = (
-            f"digifil cannot form Stokes I for PSRFITS poln_state={poln_state!r}"
-        )
+        msg = f"digifil cannot form Stokes I for PSRFITS poln_state={poln_state!r}"
         raise NotImplementedError(msg)
     return -1, False, npol_in
 

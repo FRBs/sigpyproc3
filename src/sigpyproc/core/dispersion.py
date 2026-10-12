@@ -60,12 +60,39 @@ def compute_dmdelays(
         If dm is a scalar, returns a 1D array of delays. If dm is an array,
         returns a 2D array with shape ``(len(dm), len(freqs))``.
     """
-    freqs = np.atleast_1d(freqs).astype(np.float32)
-    dm = np.atleast_1d(dm)[:, np.newaxis].astype(np.float32)
-    delays = dm * DM_CONSTANT_LK * ((freqs**-2) - (ref_freq**-2))
+    freqs = np.atleast_1d(np.asarray(freqs, dtype=np.float64))
+    dm = np.atleast_1d(dm)[:, np.newaxis].astype(np.float64)
+    ref = float(ref_freq)
+    delays = dm * DM_CONSTANT_LK * ((freqs**-2) - (ref**-2))
     if in_samples:
         delays = (delays / tsamp).round().astype(np.int32)
+    else:
+        delays = delays.astype(np.float32)
     return delays.squeeze()
+
+
+def align_delays(delays: ArrayLike) -> tuple[NDArray[np.int32], NDArray[np.int32]]:
+    """Shift delays so the smallest value on the frequency axis is zero.
+
+    Parameters
+    ----------
+    delays : ArrayLike
+        Dispersion delays in samples. The last axis is frequency.
+
+    Returns
+    -------
+    aligned : NDArray[int32]
+        ``delays - min(delays)`` along the frequency axis.
+    lead : NDArray[int32]
+        ``-min(delays)`` for each dispersion-measure row. Output sample 0
+        corresponds to this many input samples after the start of the read.
+        A 1-D input returns a length-1 array.
+    """
+    arr = np.asarray(delays, dtype=np.int64)
+    lo = np.min(arr, axis=-1, keepdims=True)
+    aligned = np.ascontiguousarray(arr - lo, dtype=np.int32)
+    lead = np.ascontiguousarray((-lo).reshape(-1), dtype=np.int32)
+    return aligned, lead
 
 
 def compute_dmsmearing(
@@ -96,12 +123,14 @@ def compute_dmsmearing(
         If dm is a scalar, returns a 1D array of smearing. If dm is an array,
         returns a 2D array with shape ``(len(dm), len(freqs))``.
     """
-    freqs = np.atleast_1d(freqs).astype(np.float32)
-    dm = np.atleast_1d(dm)[:, np.newaxis].astype(np.float32)
-    foff = float(np.abs(freqs[1] - freqs[0]))
+    freqs = np.atleast_1d(np.asarray(freqs, dtype=np.float64))
+    dm = np.atleast_1d(dm)[:, np.newaxis].astype(np.float64)
+    foff = float(np.abs(freqs[1] - freqs[0])) if freqs.size > 1 else 0.0
     smearing = 2 * DM_CONSTANT_LK * foff * dm / freqs**3
     if in_samples:
         smearing = (smearing / tsamp).round().astype(np.int32)
+    else:
+        smearing = smearing.astype(np.float32)
     return smearing.squeeze()
 
 

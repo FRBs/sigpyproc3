@@ -5,7 +5,7 @@ from pathlib import Path
 import rich_click as click
 
 from sigpyproc.apps._logging import logging_options, setup_cli_logging
-from sigpyproc.readers import FilReader
+from sigpyproc.readers import open_filterbank
 
 
 @logging_options
@@ -32,7 +32,7 @@ def main(
 ) -> None:
     """Compute the mean bandpass of a filterbank."""
     setup_cli_logging(verbose, quiet=quiet)
-    fil = FilReader(filfile)
+    fil = open_filterbank(filfile)
     bpass = fil.bandpass(method="mean", gulp=gulp)
     freqs = fil.header.chan_freqs
     if outfile is not None:

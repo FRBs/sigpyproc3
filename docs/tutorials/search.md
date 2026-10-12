@@ -5,7 +5,7 @@
 ```{note}
 Search is a **library-first** API. The `spp_search` CLI is a thin wrapper
 around {py:class}`~sigpyproc.timeseries.TimeSeries` and
-{py:class}`~sigpyproc.candidates.CandidateTable`. This is a modern
+{py:class}`~sigpyproc.core.candidates.CandidateTable`. This is a modern
 extension of SIGPROC, not a clone of `seek` / `best` / `ffa` / `peak`.
 ```
 
@@ -25,7 +25,7 @@ This page is the “how to use it” companion to {doc}`/tutorials/quickstart`.
 | --- | --- | --- |
 | `seek` | {py:meth}`~sigpyproc.timeseries.TimeSeries.search` / `spp_search fft` | Whitened FFT + harmonic folds. No `.prd`, no birdie files. |
 | `find` | same as `spp_search fft` | Historical `find` was renamed `seek`; we do not ship `spp_find`. |
-| `best` | {py:meth}`~sigpyproc.candidates.CandidateTable.cluster` / `spp_search cluster` | Harmonic families only. No PGPLOT, no `.bst` / `.fld`. |
+| `best` | {py:meth}`~sigpyproc.core.candidates.CandidateTable.cluster` / `spp_search cluster` | Harmonic families only. No PGPLOT, no `.bst` / `.fld`. |
 | `peak` | {py:meth}`~sigpyproc.timeseries.TimeSeries.find_pulses` / `spp_search pulses` | Boxcar width bank + dead-time, not `peak.f`’s time-halving loop. |
 | `ffa` | {py:meth}`~sigpyproc.timeseries.TimeSeries.ffa` / `spp_search ffa` | Staelin / Mueller tree. Periods in **seconds** on the API. |
 | `giant` | — | Interactive PGPLOT viewer; out of scope. |
@@ -98,7 +98,7 @@ pipeline, on purpose, in a fixed order:
 4. Amplitude spectrum, with inter-bin interpolation by default
 5. Harmonic folds \(2, 4, \ldots, 2^{N}\) **in addition to** the
    unfolded spectrum
-6. Local-maxima peak pick → one {py:class}`~sigpyproc.candidates.CandidateTable`
+6. Local-maxima peak pick → one {py:class}`~sigpyproc.core.candidates.CandidateTable`
 
 ```python
 hits = ts.search(nfolds=4, pmax=10.0, snr_min=6.0)
@@ -110,17 +110,21 @@ print(hits.table["nharm"][:5])
 
 `nfolds` is the number of **folds**, not “use harmonics 1…n”.
 `nfolds=4` searches the unfolded spectrum plus 2, 4, 8 and 16 harmonics.
+`method` chooses how those harmonics are added:
 
-Folded spectra are not yet reliable for non-sinusoidal pulses. For a narrow
-pulse train the strongest candidate can be a harmonic of the true period, and
-the fold-to-period mapping is under review. For pulsed signals, prefer
-{py:meth}`~sigpyproc.timeseries.TimeSeries.ffa` (or `find_pulses` for single
-pulses). The FFT path is reliable for near-sinusoidal signals.
+- `lyne` (default): SIGPROC Lyne-Ashworth stretch, with a half-bin neighbour add.
+- `simple`: integer bins `h*n` only. No drift. Fast, and the least sensitive off-bin.
+- `presto`: stock PRESTO sum, even harmonics, nearest bin.
+- `greedy`: follow the louder neighbour as the harmonic order increases.
+
+Folded spectra stay on the original Fourier grid. A narrow pulse can still
+peak on a harmonic of the true period. {py:meth}`~sigpyproc.timeseries.TimeSeries.ffa`
+and `find_pulses` remain the tools for that case.
 
 ### Cluster harmonic families
 
 Several folds of the same pulsar show up as \(P\), \(P/2\), \(2P\), …
-{py:meth}`~sigpyproc.candidates.CandidateTable.cluster` keeps the
+{py:meth}`~sigpyproc.core.candidates.CandidateTable.cluster` keeps the
 loudest member of each \(k/n\) family (default \(k, n \le 16\)):
 
 ```python
@@ -183,7 +187,7 @@ is the honest answer.
 
 ## The candidate table
 
-{py:class}`~sigpyproc.candidates.CandidateTable` is a thin wrapper
+{py:class}`~sigpyproc.core.candidates.CandidateTable` is a thin wrapper
 around an Astropy `QTable`. Columns are SI:
 
 | Column | Meaning |
@@ -199,7 +203,7 @@ around an Astropy `QTable`. Columns are SI:
 | `kind` | `"fft"`, `"ffa"`, or `"pulse"`. |
 
 ```python
-from sigpyproc.candidates import CandidateTable
+from sigpyproc.core.candidates import CandidateTable
 
 # Unitless numpy arrays (recommended for arithmetic)
 period = hits.values("period_s")

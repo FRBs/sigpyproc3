@@ -18,7 +18,7 @@ from astropy.time import Time, TimeDelta
 from sigpyproc import utils
 from sigpyproc.core import dispersion
 from sigpyproc.io import fbh5, params, pfits, sigproc
-from sigpyproc.io.bits import BitsInfo
+from sigpyproc.io.bits import BitsInfo, check_packed_length
 from sigpyproc.io.fileio import FileWriter
 
 if TYPE_CHECKING:
@@ -943,6 +943,7 @@ class Header:
         if nbits != self.nbits:
             updates["nbits"] = nbits
         new_hdr = self.new_header(updates)
+        check_packed_length(new_hdr.nchans, nbits)
         out_file = FileWriter(
             filename,
             mode="w+",
@@ -967,8 +968,13 @@ class Header:
             A string representation of ``.inf`` data.
         """
         inf_dict = self.to_dict()
-        # Central freq of low channel (Mhz)
-        inf_dict["freq_low"] = self.fbottom + 0.5 * abs(self.foff)
+        # Centre of the lowest channel. PRESTO's channel width is positive.
+        centres = (
+            self.fch1,
+            self.fch1 + (self.nchans - 1) * self.foff,
+        )
+        inf_dict["freq_low"] = min(centres)
+        inf_dict["foff"] = abs(self.foff)
         inf_dict["barycentric"] = 1 if self.frame == "barycentric" else 0
         inf_dict["observer"] = "Robotic overlords"
         inf_dict["analyser"] = "sigpyproc"
@@ -1023,7 +1029,7 @@ class Header:
             **header,
             "filename": header["basename"],
             "data_type": "time series",
-            "fch1": header["freq_low"] + header["foff"] * header["nchans"],
+            "fch1": header["freq_low"] + header["foff"] * (header["nchans"] - 1),
             "nbits": 32,
             "nchans": 1,
             "nifs": 1,
@@ -1093,8 +1099,8 @@ class Header:
             "filename": filename,
             "data_type": "filterbank",
             "nchans": subint_hdr.nchans,
-            "foff": subint_hdr.freqs.foff,
-            "fch1": subint_hdr.freqs.fch1,
+            "foff": float(subint_hdr.freqs.foff.to_value(units.MHz)),
+            "fch1": float(subint_hdr.freqs.fch1.to_value(units.MHz)),
             "nbits": subint_hdr.nbits,
             "tsamp": subint_hdr.tsamp,
             "tstart": primary_hdr.tstart.mjd,

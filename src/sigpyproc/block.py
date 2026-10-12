@@ -239,6 +239,7 @@ class FilterbankBlock(BaseBlock):
         changes = {
             "tsamp": self.header.tsamp * tfactor,
             "foff": self.header.foff * ffactor,
+            "fch1": self.header.fch1 + self.header.foff * (ffactor - 1) / 2,
             "nsamples": self.header.nsamples // tfactor,
             "nchans": self.header.nchans // ffactor,
         }

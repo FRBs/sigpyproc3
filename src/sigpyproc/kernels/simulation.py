@@ -20,7 +20,7 @@ def simulate_ism(
     nsamps_pure = len(signal)
     nchans = len(spectrum)
     nsamps_smear = int(max(over_sampling, np.ceil(dm_smear.max())))
-    nsamps_scat = int(max(over_sampling, np.ceil(int(6 * tau_nus.max()))))
+    nsamps_scat = int(max(over_sampling, np.ceil(6.0 * float(tau_nus.max()))))
     max_len = nsamps_pure + nsamps_smear + nsamps_scat - 2
     final_arr = np.zeros((nchans, max_len), dtype=signal.dtype)
 
@@ -40,5 +40,6 @@ def simulate_ism(
             scat_prof = np.exp(-x_scat / tau_nus[ichan])
             scat_prof /= scat_prof.sum()
             chan_data = fftconvolve(chan_data, scat_prof)
-        final_arr[ichan] = chan_data[:max_len]
+        nwrite = min(max_len, chan_data.size)
+        final_arr[ichan, :nwrite] = chan_data[:nwrite]
     return final_arr

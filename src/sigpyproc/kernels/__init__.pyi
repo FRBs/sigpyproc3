@@ -72,7 +72,10 @@ from .fourier import nb_ifft as nb_ifft
 from .fourier import nb_irfft as nb_irfft
 from .fourier import nb_rfft as nb_rfft
 from .fourier import normalize_template as normalize_template
-from .fourier import sum_harmonics as sum_harmonics
+from .fourier import sum_harmonics_greedy as sum_harmonics_greedy
+from .fourier import sum_harmonics_lyne as sum_harmonics_lyne
+from .fourier import sum_harmonics_presto as sum_harmonics_presto
+from .fourier import sum_harmonics_simple as sum_harmonics_simple
 from .moments import add_online_moments as add_online_moments
 from .moments import compute_online_moments as compute_online_moments
 from .moments import compute_online_moments_basic as compute_online_moments_basic

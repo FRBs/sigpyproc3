@@ -10,6 +10,7 @@ We use the sample file shipped in the test data. Copy it first, because editing
 changes the file in place:
 
 ```bash
+# from a git checkout; tests/data is not part of the installed wheel
 cp tests/data/parkes_8bit_1.fil my_test.fil
 ```
 

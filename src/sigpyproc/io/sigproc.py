@@ -571,7 +571,8 @@ def parse_header(filename: str | Path) -> dict[str, float | int | str]:
         If the file header is not in sigproc format, is empty, or is
         truncated mid-header.
     ValueError
-        If required keys (nbits, nchans) are missing or nsamples is zero.
+        If required keys (nbits, nchans) are missing. A non-positive
+        ``nsamples`` is ignored and the length is taken from the file size.
     """
     filepath = validate_path(filename)
     with filepath.open("rb") as fp:
@@ -1007,6 +1008,10 @@ def _compute_nsamples(header: dict[str, int | float | str]) -> int:
 
     if "nsamples" in header:
         nsamples_declared = int(header["nsamples"])
+        # A zero placeholder means the length was not known when the header
+        # was written. Trust the bytes on disk.
+        if nsamples_declared <= 0:
+            return nsamples_from_file
         if nsamples_declared != nsamples_from_file:
             logger.warning(
                 f"Header nsamples={nsamples_declared} disagrees with file-derived "

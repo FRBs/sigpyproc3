@@ -411,6 +411,7 @@ class TimeSeries:
         interpolate: bool = True,
         snr_min: float = 6.0,
         npeaks: int = 100,
+        method: Literal["lyne", "simple", "presto", "greedy"] = "lyne",
     ) -> CandidateTable:
         """FFT search with harmonic folding.
 
@@ -442,6 +443,10 @@ class TimeSeries:
         npeaks : int, optional
             Maximum peaks kept *per* spectrum (unfolded and each fold),
             by default 100.
+        method : {"lyne", "simple", "presto", "greedy"}, optional
+            Harmonic-sum algorithm passed to
+            :meth:`~sigpyproc.fourierseries.PowerSpectrum.harmonic_fold`,
+            by default ``lyne``.
 
         Returns
         -------
@@ -469,7 +474,7 @@ class TimeSeries:
             ),
         ]
         if nfolds > 0:
-            for i, fold in enumerate(spec0.harmonic_fold(nfolds)):
+            for i, fold in enumerate(spec0.harmonic_fold(nfolds, method=method)):
                 tables.append(
                     fold.find_peaks(
                         npeaks=npeaks,
@@ -720,6 +725,7 @@ class TimeSeries:
         data = np.fromfile(
             timfile,
             dtype=header.dtype,
+            count=header.nsamples,
             offset=header.stream_info.entries[0].hdrlen,
         )
         return cls(data, header)

@@ -228,7 +228,7 @@ def ffa_search(
 
     For every integer trial period ``P`` (in bins) between ``pmin`` and
     ``pmax``, the series is reshaped to ``(nsamp // P, P)`` and folded with
-    the FFA tree in :func:`~sigpyproc.kernels.folding.ffa_stage`. The robust
+    the FFA tree in ``sigpyproc.kernels.folding.ffa_stage``. The robust
     SNR of each output profile is computed and the best one is kept.
 
     The input is capped at ``FFA_MAX_NSAMP`` samples. One candidate is kept

@@ -45,7 +45,7 @@ def detect_file_type(filename: str | Path) -> str:
     """
     filename = validate_path(filename, exists=False)
     ext = filename.suffix.lower()
-    if ext == ".fil":
+    if ext in {".fil", ".tim"}:
         return "sigproc"
     if ext in (".fits", ".sf"):
         return "pfits"
@@ -393,6 +393,8 @@ def _validate_freqs(
         msg = f"{attr_name} must be 1D, but got {value.ndim}D."
         raise ValueError(msg)
     diff = np.diff(value)
+    if diff.size == 0:
+        return
     if not np.all(np.isclose(diff, diff[0])):
         msg = f"{attr_name} must have a constant difference between elements."
         raise ValueError(msg)

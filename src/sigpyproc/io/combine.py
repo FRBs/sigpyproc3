@@ -33,7 +33,10 @@ def merge_filterbanks(
         msg = "Need at least two filterbank files"
         raise ValueError(msg)
     if axis == "auto":
-        headers = [FilReader(name).header for name in filenames]
+        headers = []
+        for name in filenames:
+            with FilReader(name) as fil:
+                headers.append(fil.header)
         same_freq = all(
             h.nchans == headers[0].nchans
             and h.fch1 == headers[0].fch1
@@ -61,7 +64,18 @@ def splice_filterbanks(
         msg = "Need at least two filterbank files"
         raise ValueError(msg)
     fils = _open_sorted_fils(filenames)
+    try:
+        return _splice_open(fils, outfile_name, gulp)
+    finally:
+        for fil in fils:
+            fil.close()
 
+
+def _splice_open(
+    fils: list[FilReader],
+    outfile_name: str,
+    gulp: int,
+) -> str:
     nchans = sum(fil.header.nchans for fil in fils)
     updates = {
         "nchans": nchans,
@@ -97,7 +111,7 @@ def _open_sorted_fils(filenames: Sequence[str | Path]) -> list[FilReader]:
     ref = fils[0].header
     for fil in fils[1:]:
         hdr = fil.header
-        if abs(hdr.tstart - ref.tstart) > 0.5 * ref.tsamp:
+        if abs(hdr.tstart - ref.tstart) * 86400 > 0.5 * ref.tsamp:
             msg = f"tstart mismatch: {hdr.tstart} vs {ref.tstart}"
             raise ValueError(msg)
         if hdr.tsamp != ref.tsamp or hdr.nbits != ref.nbits or hdr.nifs != ref.nifs:
@@ -129,8 +143,11 @@ def _merge_time(
     gulp: int,
 ) -> str:
     fil = FilReader(filenames, check_contiguity=True)
-    out_file = fil.header.prep_outfile(outfile_name)
-    for _, _, data in fil.read_plan(gulp=gulp):
-        out_file.cwrite(data)
-    out_file.close()
+    try:
+        out_file = fil.header.prep_outfile(outfile_name)
+        for _, _, data in fil.read_plan(gulp=gulp):
+            out_file.cwrite(data)
+        out_file.close()
+    finally:
+        fil.close()
     return outfile_name

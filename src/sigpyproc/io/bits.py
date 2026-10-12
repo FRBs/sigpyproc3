@@ -14,6 +14,29 @@ if TYPE_CHECKING:
     from numpy.typing import NDArray
 
 
+def check_packed_length(nchans: int, nbits: int) -> None:
+    """Require an integer number of bytes per time sample.
+
+    Parameters
+    ----------
+    nchans : int
+        Number of frequency channels.
+    nbits : int
+        Bits per sample.
+
+    Raises
+    ------
+    ValueError
+        If 1-, 2-, or 4-bit data would leave a fractional byte per sample.
+    """
+    if nbits in {1, 2, 4} and (nchans * nbits) % 8 != 0:
+        msg = (
+            f"nchans * nbits must be a multiple of 8 for {nbits}-bit data, "
+            f"got nchans={nchans}"
+        )
+        raise ValueError(msg)
+
+
 def unpack(
     array: NDArray[np.uint8],
     nbits: int,

@@ -3,7 +3,7 @@ from __future__ import annotations
 import rich_click as click
 
 from sigpyproc.apps._logging import logging_options, setup_cli_logging
-from sigpyproc.readers import FilReader
+from sigpyproc.readers import open_filterbank
 
 
 @logging_options
@@ -41,7 +41,7 @@ def main(
 ) -> None:
     """Downsample a filterbank in time and/or frequency."""
     setup_cli_logging(verbose, quiet=quiet)
-    fil = FilReader(filfile)
+    fil = open_filterbank(filfile)
     path = fil.downsample(tfactor, ffactor, outfile_name=outfile, gulp=gulp)
     click.echo(path)
 

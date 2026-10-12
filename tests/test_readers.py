@@ -74,16 +74,18 @@ class TestFilReader:
         for _, _, data in fil.read_plan(gulp=400, skipback=200):
             assert isinstance(data, np.ndarray)
 
-    def test_read_plan_corrupted_file(self, filfile_8bit_1: str, tmpfile: str) -> None:
+    def test_read_plan_truncated_file(self, filfile_8bit_1: str, tmpfile: str) -> None:
         fil = FilReader(filfile_8bit_1)
         corrupted_file = fil.header.prep_outfile(tmpfile)
         for _, _, data in fil.read_plan(gulp=fil.header.nsamples):
             corrupted_file.cwrite(data[: fil.header.nsamples * fil.header.nchans - 100])
         corrupted_file.close()
-        corruted_fil = FilReader(tmpfile)
-        with pytest.raises(ValueError):
-            for _, _, _ in corruted_fil.read_plan(gulp=512):
-                pass
+        truncated = FilReader(tmpfile)
+        assert truncated.header.nsamples < fil.header.nsamples
+        counts = [nsamp for nsamp, _, _ in truncated.read_plan(gulp=512)]
+        assert sum(counts) == truncated.header.nsamples
+        truncated.close()
+        fil.close()
 
     def test_nsamps_eq_skipback(self, filfile_8bit_1: str) -> None:
         fil = FilReader(filfile_8bit_1)

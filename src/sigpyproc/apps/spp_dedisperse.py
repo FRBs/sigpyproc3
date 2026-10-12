@@ -4,7 +4,7 @@ import rich_click as click
 
 from sigpyproc.apps._logging import logging_options, setup_cli_logging
 from sigpyproc.core.dispersion import DMPlan
-from sigpyproc.readers import FilReader
+from sigpyproc.readers import open_filterbank
 
 
 @logging_options
@@ -53,7 +53,7 @@ def tim(
     outfile: str | None,
 ) -> None:
     """Incoherent dedispersion to a time series."""
-    fil = FilReader(filfile)
+    fil = open_filterbank(filfile)
     series = fil.dedisperse(dm, _parse_ref_freq(ref_freq), gulp=gulp)
     click.echo(series.to_tim(outfile))
 
@@ -91,7 +91,7 @@ def subband(
     outfile: str | None,
 ) -> None:
     """Dedisperse into frequency subbands."""
-    fil = FilReader(filfile)
+    fil = open_filterbank(filfile)
     path = fil.subband(dm, nsub, _parse_ref_freq(ref_freq), outfile, gulp=gulp)
     click.echo(path)
 
@@ -121,7 +121,7 @@ def tree(
     no_flip: bool,
 ) -> None:
     """Taylor-tree dedispersion (one .tim per DM index)."""
-    fil = FilReader(filfile)
+    fil = open_filterbank(filfile)
     flip = False if no_flip else None
     paths = fil.tree_dedisperse(
         dm_lo,
@@ -172,7 +172,7 @@ def plan(
     outfile: str | None,
 ) -> None:
     """Dedisperse a Levin/Cordes DM plan to many .tim files."""
-    fil = FilReader(filfile)
+    fil = open_filterbank(filfile)
     dmplan = DMPlan.from_header(fil.header, dm_max, dm_min, ti=ti, tol=tol)
     paths = fil.dedisperse_plan(
         dmplan,

@@ -7,7 +7,7 @@ binary-name aliases.
 Algorithms live on the data objects
 ({py:class}`~sigpyproc.base.Filterbank`,
 {py:class}`~sigpyproc.timeseries.TimeSeries`,
-{py:class}`~sigpyproc.candidates.CandidateTable`). These pages document
+{py:class}`~sigpyproc.core.candidates.CandidateTable`). These pages document
 flags; {doc}`/tutorials/quickstart` and {doc}`/tutorials/search` show how
 to use the same methods from Python.
 
@@ -27,7 +27,7 @@ spp_header -v print my_test.fil
 spp_search -q fft observation.tim -o fft.csv
 ```
 
-From Python, call `sigpyproc.logging.configure_logging()` for the same
+From Python, call `sigpyproc.core.logging.configure_logging()` for the same
 Rich styling, or rely on your application's own `logging` configuration.
 
 | Script | Role |

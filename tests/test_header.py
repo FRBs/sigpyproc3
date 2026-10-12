@@ -213,6 +213,8 @@ class TestHeader:
         np.testing.assert_equal(header.nchans, 416)
         np.testing.assert_equal(header.nbits, 4)
         np.testing.assert_equal(header.nifs, 1)
+        assert type(header.fch1) is float
+        assert type(header.foff) is float
 
     def test_from_pfits_otherfile(self, inffile: str) -> None:
         with np.testing.assert_raises(OSError):

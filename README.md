@@ -15,20 +15,23 @@ the excellent [numba](https://numba.pydata.org) library.
 
 ## Installation
 
-The quickest way to install the package is to use [pip](https://pip.pypa.io):
+The package requires Python 3.12 or newer.
+
+```bash
+pip install sigpyproc
+```
+
+Until 2.0.0 is on PyPI, install the release candidate from git:
 
 ```bash
 pip install -U git+https://github.com/FRBs/sigpyproc3
 ```
 
-Note that you will need Python (>=3.12) installed to use `sigpyproc`.
-Also check out the [installation documentation page](https://sigpyproc3.readthedocs.io/en/latest/install.html) for more options.
+See the [installation page](https://sigpyproc3.readthedocs.io/en/latest/install.html) for a development checkout.
 
-## Legacy Version
+## Older releases
 
-`sigpyproc` is currently undergoing major developements which will modify the existing API in order to be a modern python
-replacement for [SIGPROC](http://sigproc.sourceforge.net). To use the older API, you can install the ``legacy``
-branch of this repo, or install the last released version 0.5.5.
+2.0.0 is the stable API. The ``legacy`` branch and the last 0.x release, 0.5.5, keep the previous interface.
 
 ## Usage
 

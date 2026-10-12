@@ -226,8 +226,7 @@ def arrange_data_bytes(
         expected = 1
     if elem_size != expected:
         msg = (
-            f"{nbits}-bit DATA element size is {elem_size}, "
-            f"expected {expected} byte(s)"
+            f"{nbits}-bit DATA element size is {elem_size}, expected {expected} byte(s)"
         )
         raise ValueError(msg)
     time_ax, pol_ax, chan_ax = _assign_axes(cshape, time_len, npol, nchan)
@@ -400,9 +399,7 @@ class _SearchTable:
             _repeat, code, _elem = _parse_tform(tform)
             if code not in _NUMERIC_CODES:
                 continue
-            rows = [
-                self.column_array(isub, name) for isub in range(self.nsubint)
-            ]
+            rows = [self.column_array(isub, name) for isub in range(self.nsubint)]
             scalars[name] = np.stack([row.reshape(-1) for row in rows])
         return scalars
 

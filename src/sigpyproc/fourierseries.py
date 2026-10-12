@@ -6,7 +6,7 @@ Fourier transformed data.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 
@@ -131,27 +131,54 @@ class PowerSpectrum:
         """
         return self.freq2bin(1 / period)
 
-    def harmonic_fold(self, nfolds: int = 1) -> list[PowerSpectrum]:
-        """Perform Lyne-Ashworth harmonic folding of the power spectrum.
+    def harmonic_fold(
+        self,
+        nfolds: int = 1,
+        *,
+        method: Literal["lyne", "simple", "presto", "greedy"] = "lyne",
+    ) -> list[PowerSpectrum]:
+        """Fold harmonics back onto the fundamental Fourier bins.
 
         Parameters
         ----------
         nfolds : int, optional
-            Number of harmonic folds to perform, by default 1.
+            Number of power-of-two folds. Fold ``i`` uses ``H = 2**(i+1)``
+            harmonics (2, 4, 8, …), by default 1.
+        method : {"lyne", "simple", "presto", "greedy"}, optional
+            ``lyne`` is the SIGPROC Lyne-Ashworth stretch. ``simple`` sums
+            integer multiples ``h*n`` and ignores drift. ``presto`` is the
+            stock PRESTO sum (even harmonics, nearest bin). ``greedy`` follows
+            the louder neighbouring bin as the harmonic order increases
+            (Adámek, Roy & Armour 2022). By default ``lyne``.
 
         Returns
         -------
         list[PowerSpectrum]
-            List of folded spectra where the i :sup:`th` element
-            is the spectrum folded i times.
+            One spectrum per fold, on the original frequency grid.
+
+        Raises
+        ------
+        ValueError
+            If ``nfolds`` is less than 1 or ``method`` is unknown.
         """
-        sum_arr = kernels.sum_harmonics(self.data, nfolds)
-        nharms = 2 ** np.arange(1, nfolds + 1)
-        folds = []
-        for ii, nharm in enumerate(nharms):
-            new_header = self.header.new_header({"tsamp": self.header.tsamp * nharm})
-            folds.append(PowerSpectrum(sum_arr[ii], new_header))
-        return folds
+        if nfolds < 1:
+            msg = "nfolds must be at least 1"
+            raise ValueError(msg)
+        kernels_by_method = {
+            "lyne": kernels.sum_harmonics_lyne,
+            "simple": kernels.sum_harmonics_simple,
+            "presto": kernels.sum_harmonics_presto,
+            "greedy": kernels.sum_harmonics_greedy,
+        }
+        kernel = kernels_by_method.get(method)
+        if kernel is None:
+            msg = f"method must be one of {tuple(kernels_by_method)}, got {method!r}"
+            raise ValueError(msg)
+        summed = kernel(self.data, nfolds)
+        return [
+            PowerSpectrum(summed[ifold], self.header.new_header())
+            for ifold in range(nfolds)
+        ]
 
     def find_peaks(
         self,
@@ -170,9 +197,10 @@ class PowerSpectrum:
         every bin with period ``> pmax`` are skipped. A local maximum is
         strictly greater than both neighbours.
 
-        Folded spectra use ``tobs / nharm`` for the frequency axis. For
-        non-sinusoidal signals the reported period can be a harmonic of the
-        true period (see the search tutorial).
+        Folded spectra are still sampled at the original ``tobs``. Harmonic
+        power has already been summed into the fundamental bin. For a
+        non-sinusoidal signal the brightest row can still be a harmonic of
+        the true period (see the search tutorial).
 
         Parameters
         ----------
@@ -210,10 +238,9 @@ class PowerSpectrum:
             msg = "nharm must be at least 1"
             raise ValueError(msg)
 
-        # harmonic_fold multiplies tsamp by nharm; divide it out for the fundamental.
         return algorithms.pick_spectral_peaks(
             self.data,
-            self.header.tobs / nharm,
+            self.header.tobs,
             npeaks=npeaks,
             snr_min=snr_min,
             pmax=pmax,
@@ -380,11 +407,27 @@ class FourierSeries:
         :class:`~sigpyproc.foldedcube.Profile`
             The reconstructed pulse profile.
         """
+        if nharms < 1:
+            msg = "nharms must be at least 1"
+            raise ValueError(msg)
         freq_bin = round(freq * self.header.tobs)
-        spec_ids = np.arange(1, nharms + 1) * 2 * freq_bin
-        harms = self.data[spec_ids]
-        harm_ar = np.hstack((harms, np.conj(harms[1:][::-1])))
-        return Profile(np.abs(kernels.nb_ifft(harm_ar)), tsamp=self.header.tsamp)
+        if freq_bin < 1:
+            msg = f"frequency {freq} is below one Fourier bin"
+            raise ValueError(msg)
+        spec_ids = np.arange(1, nharms + 1) * freq_bin
+        if int(spec_ids[-1]) >= self.data.size:
+            msg = (
+                f"harmonic {nharms} of frequency {freq} falls outside the spectrum "
+                f"({int(spec_ids[-1])} >= {self.data.size})"
+            )
+            raise ValueError(msg)
+        nprof = 2 * nharms
+        spec = np.zeros(nprof, dtype=np.complex64)
+        spec[1 : nharms + 1] = self.data[spec_ids]
+        if nharms > 1:
+            spec[nprof - nharms + 1 :] = np.conj(self.data[spec_ids[:0:-1]])
+        profile = np.fft.ifft(spec).real.astype(np.float32, copy=False)
+        return Profile(profile, tsamp=self.header.tsamp)
 
     def multiply(self, other: FourierSeries | ArrayLike) -> FourierSeries:
         """Multiply two Fourier series together.

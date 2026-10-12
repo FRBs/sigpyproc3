@@ -18,7 +18,7 @@ import attrs
 import numpy as np
 
 from sigpyproc.header import Header
-from sigpyproc.io.bits import BitsInfo
+from sigpyproc.io.bits import BitsInfo, check_packed_length
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
@@ -216,12 +216,7 @@ def _check_fake(header: Header, params: PulsarParams, gulp: int) -> BitsInfo:
         msg = "header.nsamples must be at least 1"
         raise ValueError(msg)
     bitsinfo = BitsInfo(header.nbits)
-    if bitsinfo.unpack and (header.nchans * header.nbits) % 8 != 0:
-        msg = (
-            f"nchans * nbits must be a multiple of 8 for {header.nbits}-bit data, "
-            f"got nchans={header.nchans}"
-        )
-        raise ValueError(msg)
+    check_packed_length(header.nchans, header.nbits)
     if (
         params.accel != 0.0
         and (1.0 + params.accel * header.tobs / _SPEED_OF_LIGHT) <= 0.0
@@ -258,14 +253,16 @@ def _signal_block(
     snr_chan: float,
     tobs: float,
 ) -> NDArray[np.float32]:
-    t_eff = times[:, np.newaxis] + delays[np.newaxis, :]
+    # Positive delay means that channel arrives later, so the emission
+    # time at an observer sample is ``times - delay``.
+    t_emit = times[:, np.newaxis] - delays[np.newaxis, :]
     if params.period is not None:
         period0 = params.period
         if params.accel != 0.0:
             period0 = params.period / (
                 1.0 + params.accel * tobs / (2.0 * _SPEED_OF_LIGHT)
             )
-        phase = np.mod(_pulse_phase(t_eff, period0, params.pdot, params.accel), 1.0)
+        phase = np.mod(_pulse_phase(t_emit, period0, params.pdot, params.accel), 1.0)
         duty = min(width_eff / params.period, 1.0)
         rising = 0.5 - 0.5 * duty
         trailing = 0.5 + 0.5 * duty
@@ -275,8 +272,7 @@ def _signal_block(
         if pulse_time is None:
             msg = "pulse_time is required for a single pulse"
             raise ValueError(msg)
-        arrival = pulse_time + delays
-        mask = np.abs(t_eff - arrival) <= (0.5 * width_eff)
+        mask = np.abs(t_emit - pulse_time) <= (0.5 * width_eff)
     return mask.astype(np.float32) * np.float32(snr_chan)
 
 

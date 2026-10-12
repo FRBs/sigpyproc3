@@ -3,7 +3,7 @@ from __future__ import annotations
 import rich_click as click
 
 from sigpyproc.apps._logging import logging_options, setup_cli_logging
-from sigpyproc.readers import FilReader
+from sigpyproc.readers import open_filterbank
 
 
 @logging_options
@@ -30,7 +30,7 @@ def main(
 ) -> None:
     """Subtract the channel-weighted zero-DM (Eatough / PRESTO)."""
     setup_cli_logging(verbose, quiet=quiet)
-    fil = FilReader(filfile)
+    fil = open_filterbank(filfile)
     path = fil.remove_zerodm(outfile_name=outfile, gulp=gulp)
     click.echo(path)
 

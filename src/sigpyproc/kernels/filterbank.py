@@ -143,8 +143,8 @@ def invert_freq(in_arr: np.ndarray, nchans: int, nsamps: int) -> np.ndarray:
 
 @njit(
     [
-        "void(u1[::1], u1[::1], f4[::1], i8, i8)",
-        "void(f4[::1], f4[::1], f4[::1], i8, i8)",
+        "void(u1[::1], u1[::1], f4[::1], i8, i8, i8)",
+        "void(f4[::1], f4[::1], f4[::1], i8, i8, i8)",
     ],
     cache=True,
     fastmath=True,
@@ -155,6 +155,7 @@ def remove_zerodm(
     bpass: np.ndarray,
     nchans: int,
     nsamps: int,
+    clip_max: int,
 ) -> None:
     in_arr_2d = in_arr.reshape(nsamps, nchans)
     out_arr_2d = out_arr.reshape(nsamps, nchans)
@@ -164,9 +165,13 @@ def remove_zerodm(
         for ichan in range(nchans):
             zerodm += in_arr_2d[isamp, ichan]
         for ichan in range(nchans):
-            out_arr_2d[isamp, ichan] = (
-                in_arr_2d[isamp, ichan] - zerodm * chanwts[ichan] + bpass[ichan]
-            )
+            written = in_arr_2d[isamp, ichan] - zerodm * chanwts[ichan] + bpass[ichan]
+            if clip_max > 0:
+                if written < 0:
+                    written = 0
+                elif written > clip_max:
+                    written = clip_max
+            out_arr_2d[isamp, ichan] = written
 
 
 downsample_1d_mean_par = njit(downsample_1d_mean.py_func, parallel=True, fastmath=True)
