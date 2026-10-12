@@ -9,6 +9,8 @@ from sigpyproc.viz.series import SeriesViewer, SpectrumViewer
 if TYPE_CHECKING:
     from pathlib import Path
 
+    import pytest
+
 
 class DummyEvent:
     def __init__(
@@ -86,14 +88,20 @@ def test_spectrum_viewer(fftfile: str, tmp_path: Path) -> None:
     assert out_png.exists()
 
 
-def test_timeseries_view_method(timfile: str) -> None:
+def test_timeseries_view_method(timfile: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    shown: list[bool] = []
+    monkeypatch.setattr(SeriesViewer, "show", lambda _self: shown.append(True))
     tim = TimeSeries.from_tim(timfile)
-    # Using batch=True to prevent GUI event loop block
     viewer = tim.view(batch=True)
     assert isinstance(viewer, SeriesViewer)
+    assert shown == []
 
 
-def test_fourierseries_and_powerspectrum_view_methods(fftfile: str) -> None:
+def test_fourierseries_and_powerspectrum_view_methods(
+    fftfile: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    shown: list[bool] = []
+    monkeypatch.setattr(SpectrumViewer, "show", lambda _self: shown.append(True))
     fs = FourierSeries.from_fft(fftfile)
     viewer = fs.view(batch=True)
     assert isinstance(viewer, SpectrumViewer)
@@ -101,3 +109,4 @@ def test_fourierseries_and_powerspectrum_view_methods(fftfile: str) -> None:
     spec = fs.form_spec()
     viewer_spec = spec.view(batch=True)
     assert isinstance(viewer_spec, SpectrumViewer)
+    assert shown == []

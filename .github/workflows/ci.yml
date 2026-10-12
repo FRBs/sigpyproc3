@@ -54,6 +54,9 @@ jobs:
 
     env:
       NUMBA_CACHE_DIR: ${{ github.workspace }}/.numba_cache
+      # macOS otherwise selects the MacOSX backend. plt.show() then blocks,
+      # and the viewer tests never finish.
+      MPLBACKEND: Agg
 
     steps:
       - uses: actions/checkout@v7
@@ -68,7 +71,6 @@ jobs:
         run: uv sync --extra tests
 
       - name: Restore numba cache
-        if: runner.os == 'Linux'
         uses: actions/cache@v6
         with:
           path: ${{ env.NUMBA_CACHE_DIR }}
@@ -81,7 +83,6 @@ jobs:
       # hash of its content keeps the cache valid for unchanged code and
       # invalidates it when the code changes.
       - name: Normalise source mtimes for numba cache
-        if: runner.os == 'Linux'
         run: |
           python3 - <<'EOF'
           import hashlib

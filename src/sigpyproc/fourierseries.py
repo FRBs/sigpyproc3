@@ -298,7 +298,8 @@ class PowerSpectrum:
         from sigpyproc.viz.series import SpectrumViewer
 
         viewer = SpectrumViewer(self, **kwargs)
-        viewer.show()
+        if not kwargs.get("batch"):
+            viewer.show()
         return viewer
 
 

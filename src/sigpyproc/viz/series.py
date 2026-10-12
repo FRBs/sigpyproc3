@@ -8,7 +8,11 @@ import numpy as np
 from matplotlib.widgets import SpanSelector
 
 from sigpyproc import kernels
-from sigpyproc.viz._backend import ensure_interactive_backend, viewer_context
+from sigpyproc.viz._backend import (
+    ensure_interactive_backend,
+    use_headless_backend,
+    viewer_context,
+)
 from sigpyproc.viz.keymap import BlitManager, KeyMap
 
 if TYPE_CHECKING:
@@ -29,7 +33,9 @@ class SeriesViewer:
         theme: str = "light",
         batch: bool = False,
     ) -> None:
-        if not batch:
+        if batch:
+            use_headless_backend()
+        else:
             ensure_interactive_backend()
 
         self.tim = tim
@@ -205,7 +211,9 @@ class SpectrumViewer:
         theme: str = "light",
         batch: bool = False,
     ) -> None:
-        if not batch:
+        if batch:
+            use_headless_backend()
+        else:
             ensure_interactive_backend()
 
         self.spec = spec

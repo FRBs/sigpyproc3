@@ -763,5 +763,6 @@ class TimeSeries:
         from sigpyproc.viz.series import SeriesViewer
 
         viewer = SeriesViewer(self, **kwargs)
-        viewer.show()
+        if not kwargs.get("batch"):
+            viewer.show()
         return viewer

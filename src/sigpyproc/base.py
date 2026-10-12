@@ -1657,7 +1657,8 @@ class Filterbank(ABC):
         from sigpyproc.viz.waterfall import WaterfallViewer
 
         viewer = WaterfallViewer(self, **kwargs)
-        viewer.show()
+        if not kwargs.get("batch"):
+            viewer.show()
         return viewer
 
 

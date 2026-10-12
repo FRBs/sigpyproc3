@@ -16,6 +16,7 @@ from sigpyproc.core.dispersion import DM_CONSTANT_LK
 from sigpyproc.viz._backend import (
     ensure_interactive_backend,
     paint_theme,
+    use_headless_backend,
     viewer_context,
 )
 from sigpyproc.viz.keymap import BlitManager, KeyMap
@@ -448,7 +449,9 @@ class WaterfallViewer:
         flatten: bool = False,
         batch: bool = False,
     ) -> None:
-        if not batch:
+        if batch:
+            use_headless_backend()
+        else:
             ensure_interactive_backend()
 
         from sigpyproc.base import Filterbank

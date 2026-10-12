@@ -34,6 +34,17 @@ def test_waterfall_viewer_init(filfile_8bit_1: str) -> None:
     assert len(viewer.file_list) == 1
 
 
+def test_filterbank_view_batch_does_not_show(
+    filfile_8bit_1: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    shown: list[bool] = []
+    monkeypatch.setattr(WaterfallViewer, "show", lambda _self: shown.append(True))
+    fil = open_filterbank(filfile_8bit_1)
+    viewer = fil.view(batch=True, gulp=128)
+    assert isinstance(viewer, WaterfallViewer)
+    assert shown == []
+
+
 def test_waterfall_viewer_navigation(filfile_8bit_1: str) -> None:
     viewer = WaterfallViewer(filfile_8bit_1, batch=True, gulp=512)
     # Next gulp

@@ -76,6 +76,11 @@ def ensure_interactive_backend(preferred: str | None = None) -> str:
     raise ViewerError(msg)
 
 
+def use_headless_backend() -> None:
+    """Force the Agg backend so a headless viewer never opens a native window."""
+    mpl.use("Agg", force=True)
+
+
 def viewer_rc(theme: str = "light") -> dict[str, object]:
     """Get customized rcParams dict for sigpyproc interactive viewers.
 
