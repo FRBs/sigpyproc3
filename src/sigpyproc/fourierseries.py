@@ -6,7 +6,7 @@ Fourier transformed data.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 
@@ -259,6 +259,47 @@ class PowerSpectrum:
         if self.data.size == 0:
             msg = "Input data is empty"
             raise ValueError(msg)
+
+    @classmethod
+    def from_spec(cls, filename: str | Path) -> PowerSpectrum:
+        """Read a sigpyproc format ``.spec`` file as a power spectrum.
+
+        Parameters
+        ----------
+        filename : str | Path
+            Name of the ``.spec`` file to read.
+
+        Returns
+        -------
+        PowerSpectrum
+            Power spectrum object.
+        """
+        header = Header.from_sigproc(filename)
+        data = np.fromfile(
+            filename,
+            dtype=np.float32,
+            offset=header.stream_info.entries[0].hdrlen,
+        )
+        return cls(data, header)
+
+    def view(self, **kwargs: Any) -> Any:  # noqa: ANN401
+        """Open the interactive power spectrum viewer.
+
+        Parameters
+        ----------
+        **kwargs : dict
+            Keyword arguments passed to :class:`~sigpyproc.viz.spectrum.SpectrumViewer`.
+
+        Returns
+        -------
+        SpectrumViewer
+            Interactive spectrum viewer instance.
+        """
+        from sigpyproc.viz.series import SpectrumViewer
+
+        viewer = SpectrumViewer(self, **kwargs)
+        viewer.show()
+        return viewer
 
 
 class FourierSeries:
@@ -549,6 +590,25 @@ class FourierSeries:
             offset=header.stream_info.entries[0].hdrlen,
         )
         return cls(data.view(np.complex64), header)
+
+    def view(self, **kwargs: Any) -> Any:  # noqa: ANN401
+        """Open the interactive spectrum viewer for this Fourier series.
+
+        Forms a power spectrum and launches
+        :class:`~sigpyproc.viz.spectrum.SpectrumViewer`.
+
+        Parameters
+        ----------
+        **kwargs : dict
+            Keyword arguments passed to :class:`~sigpyproc.viz.spectrum.SpectrumViewer`.
+
+        Returns
+        -------
+        SpectrumViewer
+            Interactive spectrum viewer instance.
+        """
+        spec = self.form_spec()
+        return spec.view(**kwargs)
 
     def _check_input(self) -> None:
         if not isinstance(self.header, Header):

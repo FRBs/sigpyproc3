@@ -746,3 +746,22 @@ class TimeSeries:
                 f"header nsamples ({self.header.nsamples})"
             )
             raise ValueError(msg)
+
+    def view(self, **kwargs: Any) -> Any:
+        """Open the interactive time series viewer.
+
+        Parameters
+        ----------
+        **kwargs : dict
+            Keyword arguments passed to :class:`~sigpyproc.viz.series.SeriesViewer`.
+
+        Returns
+        -------
+        SeriesViewer
+            Interactive time series viewer instance.
+        """
+        from sigpyproc.viz.series import SeriesViewer
+
+        viewer = SeriesViewer(self, **kwargs)
+        viewer.show()
+        return viewer

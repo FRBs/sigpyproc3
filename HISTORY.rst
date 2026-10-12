@@ -11,6 +11,7 @@
 - Robust Header reading and writing.
 - Adopts Scientific Python SPEC 1 (lazy-loader) for ``sigpyproc.kernels`` and public API exports.
 - Decomposes monolithic kernels into focused submodules.
+- Adds fast GUI visualization tools (interactive waterfall viewer, 1D time-series viewer, and power spectrum viewer).
 - Adds PEP 561 ``py.typed`` marker.
 
 

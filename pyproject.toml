@@ -90,6 +90,7 @@ spp_fold = "sigpyproc.apps.spp_fold:main"
 spp_fake = "sigpyproc.apps.spp_fake:main"
 spp_search = "sigpyproc.apps.spp_search:main"
 spp_digifil = "sigpyproc.apps.spp_digifil:main"
+spp_view = "sigpyproc.apps.spp_view:main"
 
 
 [tool.ruff]
@@ -107,10 +108,12 @@ select = ["ALL"]
 ignore = ["COM812", "CPY001", "D1", "D301", "PLR2004", "G004", "PLC0415"]
 
 [tool.ruff.lint.per-file-ignores]
-"src/sigpyproc/kernels/**.py" = ["ARG001"]
+"src/sigpyproc/kernels/**.py" = ["ARG001", "C901", "PLR0912", "PLR0915"]
 "src/sigpyproc/timeseries.py" = ["ANN401"] # numpy.pad kwargs depend on mode
 "src/sigpyproc/apps/spp_fake.py" = ["PLR0913", "PLR0917"]
 "src/sigpyproc/apps/spp_digifil.py" = ["PLR0913"]
+"src/sigpyproc/apps/spp_view.py" = ["PLR0913", "PLR0917"]
+"src/sigpyproc/viz/**.py" = ["PLR0913", "PLR0912", "PLR0915", "PLR0917", "FBT001", "FBT002", "T201", "C901"]
 "tests/**/*.py" = ["S101", "FBT", "PLR2004", "PT011", "SLF001"]
 "docs/**" = ["INP001", "ARG001", "ANN401"]
 "bench/**" = ["INP001", "S603"]

@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from contextlib import ExitStack
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -1639,6 +1639,26 @@ class Filterbank(ABC):
             **plan_kwargs,
         )
         return out_file, rfimask
+
+    def view(self, **kwargs: Any) -> Any:  # noqa: ANN401
+        """Open the interactive waterfall viewer.
+
+        Parameters
+        ----------
+        **kwargs : dict
+            Keyword arguments passed to
+            :class:`~sigpyproc.viz.waterfall.WaterfallViewer`.
+
+        Returns
+        -------
+        WaterfallViewer
+            Interactive waterfall viewer instance.
+        """
+        from sigpyproc.viz.waterfall import WaterfallViewer
+
+        viewer = WaterfallViewer(self, **kwargs)
+        viewer.show()
+        return viewer
 
 
 def _validate_tree(

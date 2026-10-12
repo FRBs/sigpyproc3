@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from io import StringIO
 from pathlib import Path
+from typing import Literal
 
 import rich_click as click
 
@@ -70,7 +71,7 @@ def fft(
     accel: float,
     snr: float,
     npeaks: int,
-    method: str,
+    method: Literal["lyne", "simple", "presto", "greedy"],
     outfile: str | None,
 ) -> None:
     """FFT search a SIGPROC time series (.tim)."""

@@ -41,6 +41,7 @@ from .digitizer import pscrunch_intensity as pscrunch_intensity
 from .digitizer import quantise as quantise
 from .digitizer import quantise_packed as quantise_packed
 from .digitizer import tscrunch as tscrunch
+from .filterbank import decimate_2d as decimate_2d
 from .filterbank import downsample_1d_mean as downsample_1d_mean
 from .filterbank import downsample_1d_mean_par as downsample_1d_mean_par
 from .filterbank import downsample_2d_mean_flat as downsample_2d_mean_flat
@@ -53,8 +54,10 @@ from .filterbank import invert_freq as invert_freq
 from .filterbank import invert_freq_par as invert_freq_par
 from .filterbank import mask_channels as mask_channels
 from .filterbank import mask_channels_par as mask_channels_par
+from .filterbank import minmax_envelope as minmax_envelope
 from .filterbank import remove_zerodm as remove_zerodm
 from .filterbank import remove_zerodm_par as remove_zerodm_par
+from .filterbank import robust_chan_norm as robust_chan_norm
 from .folding import CONST_C_VAL as CONST_C_VAL
 from .folding import ffa_profile_snr as ffa_profile_snr
 from .folding import ffa_stage as ffa_stage
