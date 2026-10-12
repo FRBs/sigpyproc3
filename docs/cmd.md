@@ -7,7 +7,7 @@ binary-name aliases.
 Algorithms live on the data objects
 ({py:class}`~sigpyproc.base.Filterbank`,
 {py:class}`~sigpyproc.timeseries.TimeSeries`,
-{py:class}`~sigpyproc.candidates.CandidateTable`). These pages document
+{py:class}`~sigpyproc.core.candidates.CandidateTable`). These pages document
 flags; {doc}`/tutorials/quickstart` and {doc}`/tutorials/search` show how
 to use the same methods from Python.
 
@@ -27,7 +27,7 @@ spp_header -v print my_test.fil
 spp_search -q fft observation.tim -o fft.csv
 ```
 
-From Python, call `sigpyproc.logging.configure_logging()` for the same
+From Python, call `sigpyproc.core.logging.configure_logging()` for the same
 Rich styling, or rely on your application's own `logging` configuration.
 
 | Script | Role |
@@ -46,6 +46,7 @@ Rich styling, or rely on your application's own `logging` configuration.
 | `spp_fake` | `noise` / `pulsar` / `pulse` filterbanks |
 | `spp_search` | `fft` / `pulses` / `ffa` / `cluster` on a `.tim` |
 | `spp_digifil` | Convert PSRFITS / filterbank to N-bit filterbank (dspsr `digifil` numerics) |
+| `spp_view` | Interactive viewer & batch renderer for filterbank, time-series, and spectrum |
 
 `spp_search` writes **CSV** (or stdout with `-o -`). Periods on the
 Python API are in seconds; `spp_search ffa --pmin-ms` / `--pmax-ms`
@@ -134,3 +135,10 @@ accept milliseconds for SIGPROC muscle memory and convert immediately.
    :prog: spp_digifil
    :nested: full
 ```
+
+```{eval-rst}
+.. click:: sigpyproc.apps.spp_view:main
+   :prog: spp_view
+   :nested: full
+```
+

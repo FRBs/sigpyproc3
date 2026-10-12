@@ -1,14 +1,17 @@
-Unreleased
-++++++++++
+2.0.0 (Unreleased)
+++++++++++++++++++
 
+- Reads search-mode PSRFITS by row, without loading the SUBINT table. Stokes I is ``P0 + P1`` for coherence and ``PPQQ`` data, and channel order follows ``DAT_FREQ``.
+- ``spp_digifil`` writes one IF. ``-d 2``, ``-d 3`` and ``-d 4`` are rejected.
 - Adds ``spp_digifil`` and ``sigpyproc.io.digifil`` to convert PSRFITS or filterbank data to N-bit (or float) filterbank following dspsr ``digifil``.
 - Fixes ``PFITSReader.read_plan``, which read ``nsamps`` samples per block and ran past the end of the file.
 - Sub-byte (2- and 4-bit) sigproc data are now read and written least-significant-bit first, as dspsr does.
 - Replaced ``sigpyproc.io.rescale.Rescale`` with ``sigpyproc.io.digifil``.
 - Removes the ``remove_bandpass`` option of ``requantize``.
 - Robust Header reading and writing.
-- Adopts Scientific Python SPEC 1 (`lazy-loader`) for ``sigpyproc.kernels`` and public API exports.
+- Adopts Scientific Python SPEC 1 (lazy-loader) for ``sigpyproc.kernels`` and public API exports.
 - Decomposes monolithic kernels into focused submodules.
+- Adds fast GUI visualization tools (interactive waterfall viewer, 1D time-series viewer, and power spectrum viewer).
 - Adds PEP 561 ``py.typed`` marker.
 
 

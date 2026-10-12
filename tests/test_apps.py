@@ -18,6 +18,7 @@ from sigpyproc.apps import (
     spp_search,
     spp_splice,
     spp_stats,
+    spp_view,
     spp_zerodm,
 )
 from sigpyproc.header import Header
@@ -695,3 +696,34 @@ class TestSppSearch:
         result = runner.invoke(spp_search.main, ["fft", "--help"])
         assert result.exit_code == 0
         assert "harmonic folds" in result.output
+
+
+class TestSppView:
+    def test_help(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(spp_view.main, ["--help"])
+        assert result.exit_code == 0
+        assert "Visualize pulsar/FRB filterbanks" in result.output
+
+    def test_batch_png(self, filfile_8bit_1: str, tmp_path: Path) -> None:
+        runner = CliRunner()
+        result = runner.invoke(
+            spp_view.main,
+            [
+                filfile_8bit_1,
+                "--batch",
+                "--format",
+                "png",
+                "-o",
+                str(tmp_path),
+                "--stop",
+                "2048",
+                "-g",
+                "1024",
+                "-j",
+                "1",
+            ],
+        )
+        assert result.exit_code == 0
+        pngs = list(tmp_path.glob("*.png"))
+        assert len(pngs) == 2

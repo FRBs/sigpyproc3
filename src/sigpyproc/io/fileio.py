@@ -358,11 +358,9 @@ class FileWriter(FileBase):
         file writing mode, by default "w"
     nbits : int, optional
         number of bits per sample in the file, by default 8
-    scale_fac : float, optional
-        Additional scale factor to apply to data, by default 1.0
     rescale : bool, optional
         whether to rescale the data using the nbit-dependent values,
-        by default True
+        by default False
 
     Raises
     ------
@@ -394,9 +392,15 @@ class FileWriter(FileBase):
         -----
         Input data will be packed with a bitsize determined by the nbits
         """
+        arr = np.asarray(arr)
         if self.bitsinfo.nbits < 32 and self.rescale:
             # arr should be normalized first
             arr = self.bitsinfo.quantize(arr)
+        elif self.bitsinfo.nbits < 32:
+            arr = np.clip(np.rint(arr), self.bitsinfo.digi_min, self.bitsinfo.digi_max)
+            arr = arr.astype(self.bitsinfo.dtype, copy=False)
+        else:
+            arr = np.asarray(arr, dtype=self.bitsinfo.dtype)
         if self.bitsinfo.unpack:
             packed = pack(arr, self.bitsinfo.nbits, bitorder=self.bitsinfo.bitorder)
             packed.tofile(self.file_obj)

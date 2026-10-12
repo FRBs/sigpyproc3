@@ -79,34 +79,153 @@ def fs_running_median(
     return out_arr
 
 
-@njit("f4[:,:](f4[:], i8)", cache=True, fastmath=True)
-def sum_harmonics(pow_spec: np.ndarray, nfolds: int) -> np.ndarray:
-    nfreqs = len(pow_spec)
-    sum_arr = np.zeros((nfolds, nfreqs), dtype=np.float32)
-    harm_sum = pow_spec.copy()
-    nfold1 = 0
-    for iff in range(nfolds):
-        nharm = 2 ** (iff + 1)
-        nfoldi = int(max(1, min(nharm * nfold1 - nharm // 2, nfreqs)))
-        harm_arr = np.array(
-            [kk * ll // nharm for ll in range(nharm) for kk in range(1, nharm, 2)],
-            dtype=np.int32,
-        )
+@njit(cache=True, fastmath=True, inline="always")
+def _harmonic_count(ifold: int) -> int:
+    """Power-of-two harmonic count for fold ``ifold`` (0 → 2, 1 → 4, …)."""
+    return 2 ** (ifold + 1)
 
-        facts_ar = np.array(
-            [(kk * nfoldi + nharm // 2) // nharm for kk in range(1, nharm, 2)],
-            dtype=np.int32,
-        )
-        for ifold in range(nfoldi, nfreqs - (nharm - 1), nharm):
-            for iharm in range(nharm):
-                for kk in range(nharm // 2):
-                    harm_sum[ifold + iharm] += pow_spec[
-                        facts_ar[kk] + harm_arr[iharm * nharm // 2 + kk]
-                    ]
-            for kk in range(nharm // 2):
-                facts_ar[kk] += 2 * kk + 1
-        sum_arr[iff] = harm_sum
-    return sum_arr
+
+@njit(cache=True, fastmath=True)
+def _lyne_tables(nharm: int, nfoldi: int) -> tuple[np.ndarray, np.ndarray]:
+    """SIGPROC ``sumarray`` and ``factarray`` for one stretch."""
+    nptr = nharm // 2
+    offsets = np.empty(nharm * nptr, dtype=np.int32)
+    slot = 0
+    for block in range(nharm):
+        step = 1
+        while step < nharm:
+            offsets[slot] = step * block // nharm
+            slot += 1
+            step += 2
+    pointers = np.empty(nptr, dtype=np.int32)
+    slot = 0
+    step = 1
+    while step < nharm:
+        pointers[slot] = (step * nfoldi + nharm // 2) // nharm
+        slot += 1
+        step += 2
+    return offsets, pointers
+
+
+@njit(cache=True, fastmath=True)
+def sum_harmonics_lyne(pow_spec: np.ndarray, nfolds: int) -> np.ndarray:
+    """Lyne-Ashworth stretch used by SIGPROC ``sumHarms``.
+
+    Fold ``i`` stretches by ``H = 2**(i+1)``. Each stage reads the original
+    spectrum with ``H/2`` pointers and adds them into ``H`` neighbouring
+    bins of a running sum. Pointer ``k`` then steps by ``2k+1``. The next
+    stage starts where the previous stretch ended.
+    """
+    nfreqs = len(pow_spec)
+    out = np.zeros((nfolds, nfreqs), dtype=np.float32)
+    folded = pow_spec.astype(np.float32).copy()
+    nfold_prev = 0
+    for ifold in range(nfolds):
+        nharm = _harmonic_count(ifold)
+        nfoldi = min(nfreqs, max(1, nharm * nfold_prev - nharm // 2))
+        nptr = nharm // 2
+        offsets, pointers = _lyne_tables(nharm, nfoldi)
+        origin = nfoldi
+        limit = nfreqs - (nharm - 1)
+        while origin < limit:
+            for neighbour in range(nharm):
+                dest = origin + neighbour
+                for ptr in range(nptr):
+                    src = pointers[ptr] + offsets[neighbour * nptr + ptr]
+                    if 0 <= src < nfreqs:
+                        folded[dest] += pow_spec[src]
+            for ptr in range(nptr):
+                pointers[ptr] += 2 * ptr + 1
+            origin += nharm
+        out[ifold, :] = folded
+        nfold_prev = nfoldi
+    return out
+
+
+@njit(cache=True, fastmath=True)
+def sum_harmonics_simple(pow_spec: np.ndarray, nfolds: int) -> np.ndarray:
+    """Sum ``spec[h*n]`` for ``h = 1 … H`` with no peak drift.
+
+    ``H = 2**(i+1)`` on fold ``i``. Bins that fall past the end of the
+    spectrum are left out. There is no ``1/sqrt(H)`` scale.
+    """
+    nfreqs = len(pow_spec)
+    out = np.zeros((nfolds, nfreqs), dtype=np.float32)
+    for ifold in range(nfolds):
+        nharm = _harmonic_count(ifold)
+        for fund in range(1, nfreqs):
+            total = np.float64(0.0)
+            for harm in range(1, nharm + 1):
+                bin_h = harm * fund
+                if bin_h >= nfreqs:
+                    break
+                total += pow_spec[bin_h]
+            out[ifold, fund] = total
+    return out
+
+
+@njit(cache=True, fastmath=True)
+def sum_harmonics_presto(pow_spec: np.ndarray, nfolds: int) -> np.ndarray:
+    """Stock PRESTO harmonic sum: even harmonics, nearest-bin drift.
+
+    For fold ``H``, end-bin ``n`` sums ``spec[round(h/H*n)]`` at the
+    fundamental and at even ``h``. The sum is stored on fundamental bin
+    ``round(n/H)``. When several end-bins share a fundamental, the largest
+    sum is kept.
+    """
+    nfreqs = len(pow_spec)
+    out = np.zeros((nfolds, nfreqs), dtype=np.float32)
+    for ifold in range(nfolds):
+        nharm = _harmonic_count(ifold)
+        partial = np.zeros(nfreqs, dtype=np.float64)
+        for end in range(nfreqs):
+            fund = int(end / nharm + 0.5)
+            if fund <= 0 or fund >= nfreqs:
+                continue
+            total = np.float64(pow_spec[fund])
+            for harm in range(2, nharm + 1, 2):
+                bin_h = int(harm * end / nharm + 0.5)
+                if bin_h >= nfreqs:
+                    break
+                total += pow_spec[bin_h]
+            partial[end] = total
+        for end in range(nfreqs):
+            fund = int(end / nharm + 0.5)
+            if 0 < fund < nfreqs and partial[end] > out[ifold, fund]:
+                out[ifold, fund] = partial[end]
+    return out
+
+
+@njit(cache=True, fastmath=True)
+def sum_harmonics_greedy(pow_spec: np.ndarray, nfolds: int) -> np.ndarray:
+    """Greedy harmonic sum (Adámek, Roy & Armour 2022).
+
+    At harmonic ``h`` the sum takes the louder of bins ``h*n+d`` and
+    ``h*n+d+1``, and the drift ``d`` grows by one when the upper bin wins.
+    Fold ``i`` is that path summed through ``H = 2**(i+1)`` harmonics.
+    """
+    nfreqs = len(pow_spec)
+    out = np.zeros((nfolds, nfreqs), dtype=np.float32)
+    for ifold in range(nfolds):
+        nharm = _harmonic_count(ifold)
+        for fund in range(1, nfreqs):
+            drift = 0
+            if fund + 1 < nfreqs and pow_spec[fund + 1] > pow_spec[fund]:
+                drift = 1
+                total = np.float64(pow_spec[fund + 1])
+            else:
+                total = np.float64(pow_spec[fund])
+            for harm in range(2, nharm + 1):
+                base = harm * fund + drift
+                if base >= nfreqs:
+                    break
+                chosen = base
+                if base + 1 < nfreqs and pow_spec[base + 1] > pow_spec[base]:
+                    drift += 1
+                    chosen = base + 1
+                total += pow_spec[chosen]
+            out[ifold, fund] = total
+    return out
 
 
 @njit(cache=True, fastmath=True)

@@ -37,15 +37,26 @@ jobs:
         run: uv run ty check
 
   test:
-    name: pytest (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    name: pytest (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.12", "3.13", "3.14"]
+        include:
+          - os: ubuntu-latest
+            python-version: "3.12"
+          - os: ubuntu-latest
+            python-version: "3.13"
+          - os: ubuntu-latest
+            python-version: "3.14"
+          - os: macos-latest
+            python-version: "3.12"
 
     env:
       NUMBA_CACHE_DIR: ${{ github.workspace }}/.numba_cache
+      # macOS otherwise selects the MacOSX backend. plt.show() then blocks,
+      # and the viewer tests never finish.
+      MPLBACKEND: Agg
 
     steps:
       - uses: actions/checkout@v7
@@ -84,11 +95,16 @@ jobs:
               os.utime(path, (stamp, stamp))
           EOF
 
-      - name: Run pytest
+      - name: Run pytest (with coverage)
+        if: runner.os == 'Linux'
         run: uv run pytest --cov=src --cov-report=xml -v
 
+      - name: Run pytest
+        if: runner.os == 'macOS'
+        run: uv run pytest -q
+
       - name: Upload coverage to Codecov
-        if: matrix.python-version == '3.14'
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.14'
         uses: codecov/codecov-action@v7
         with:
           files: ./coverage.xml

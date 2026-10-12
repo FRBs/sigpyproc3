@@ -5,6 +5,7 @@ from . import filterbank as filterbank
 from . import folding as folding
 from . import fourier as fourier
 from . import moments as moments
+from . import pfits as pfits
 from . import simulation as simulation
 from .bitpacking import pack1_8_big as pack1_8_big
 from .bitpacking import pack1_8_little as pack1_8_little
@@ -40,6 +41,7 @@ from .digitizer import pscrunch_intensity as pscrunch_intensity
 from .digitizer import quantise as quantise
 from .digitizer import quantise_packed as quantise_packed
 from .digitizer import tscrunch as tscrunch
+from .filterbank import decimate_2d as decimate_2d
 from .filterbank import downsample_1d_mean as downsample_1d_mean
 from .filterbank import downsample_1d_mean_par as downsample_1d_mean_par
 from .filterbank import downsample_2d_mean_flat as downsample_2d_mean_flat
@@ -52,8 +54,10 @@ from .filterbank import invert_freq as invert_freq
 from .filterbank import invert_freq_par as invert_freq_par
 from .filterbank import mask_channels as mask_channels
 from .filterbank import mask_channels_par as mask_channels_par
+from .filterbank import minmax_envelope as minmax_envelope
 from .filterbank import remove_zerodm as remove_zerodm
 from .filterbank import remove_zerodm_par as remove_zerodm_par
+from .filterbank import robust_chan_norm as robust_chan_norm
 from .folding import CONST_C_VAL as CONST_C_VAL
 from .folding import ffa_profile_snr as ffa_profile_snr
 from .folding import ffa_stage as ffa_stage
@@ -71,7 +75,10 @@ from .fourier import nb_ifft as nb_ifft
 from .fourier import nb_irfft as nb_irfft
 from .fourier import nb_rfft as nb_rfft
 from .fourier import normalize_template as normalize_template
-from .fourier import sum_harmonics as sum_harmonics
+from .fourier import sum_harmonics_greedy as sum_harmonics_greedy
+from .fourier import sum_harmonics_lyne as sum_harmonics_lyne
+from .fourier import sum_harmonics_presto as sum_harmonics_presto
+from .fourier import sum_harmonics_simple as sum_harmonics_simple
 from .moments import add_online_moments as add_online_moments
 from .moments import compute_online_moments as compute_online_moments
 from .moments import compute_online_moments_basic as compute_online_moments_basic
@@ -80,4 +87,6 @@ from .moments import detrend_2d as detrend_2d
 from .moments import moments_dtype as moments_dtype
 from .moments import update_moments as update_moments
 from .moments import update_moments_basic as update_moments_basic
+from .pfits import decode_cube as decode_cube
+from .pfits import decode_intensity as decode_intensity
 from .simulation import simulate_ism as simulate_ism

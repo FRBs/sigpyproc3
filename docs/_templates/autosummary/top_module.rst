@@ -13,11 +13,9 @@ sigpyproc
 
    ~sigpyproc.base
    ~sigpyproc.block
-   ~sigpyproc.candidates
    ~sigpyproc.foldedcube
    ~sigpyproc.fourierseries
    ~sigpyproc.header
-   ~sigpyproc.params
    ~sigpyproc.readers
    ~sigpyproc.timeseries
    ~sigpyproc.utils
@@ -30,10 +28,22 @@ sigpyproc.core
    :template: autosummary/module.rst
 
    ~sigpyproc.core.algorithms
+   ~sigpyproc.core.candidates
+   ~sigpyproc.core.custom_types
+   ~sigpyproc.core.dispersion
    ~sigpyproc.core.filters
-   ~sigpyproc.core.kernels
+   ~sigpyproc.core.logging
    ~sigpyproc.core.rfi
    ~sigpyproc.core.stats
+
+sigpyproc.kernels
+-----------------
+
+.. autosummary::
+   :toctree:
+   :template: autosummary/module.rst
+
+   ~sigpyproc.kernels
 
 sigpyproc.io
 ------------
@@ -43,10 +53,12 @@ sigpyproc.io
    :template: autosummary/module.rst
 
    ~sigpyproc.io.bits
+   ~sigpyproc.io.combine
+   ~sigpyproc.io.digifil
    ~sigpyproc.io.fbh5
    ~sigpyproc.io.fileio
+   ~sigpyproc.io.params
    ~sigpyproc.io.pfits
-   ~sigpyproc.io.rescale
    ~sigpyproc.io.sigproc
 
 sigpyproc.simulation

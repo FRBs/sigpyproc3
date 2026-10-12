@@ -193,6 +193,45 @@ def roll_block_valid(arr: np.ndarray, shifts: np.ndarray) -> np.ndarray:
     return res
 
 
+@njit(cache=True)
+def place_dedisp_span(
+    out: np.ndarray,
+    delays: np.ndarray,
+    clo: int,
+    chi: int,
+    isamp: int,
+    values: np.ndarray,
+) -> None:
+    """Scatter one time sample's active channels into a dedispersed block."""
+    for chan in range(clo, chi):
+        out[chan, isamp - delays[chan]] = values[chan - clo]
+
+
+@njit(cache=True)
+def place_dedisp_block(
+    out: np.ndarray,
+    delays: np.ndarray,
+    samples: np.ndarray,
+    isamp0: int,
+) -> None:
+    """Scatter a time-major gulp into a dedispersed block.
+
+    ``samples`` has shape ``(nt, nchans)``. Sample ``isamp0 + i`` is the
+    input row ``i``. Channels whose delay window does not cover that sample
+    are skipped.
+    """
+    nt = samples.shape[0]
+    nchans = samples.shape[1]
+    nsamps = out.shape[1]
+    for isamp in range(nt):
+        absolute = isamp0 + isamp
+        row = samples[isamp]
+        for chan in range(nchans):
+            col = absolute - delays[chan]
+            if 0 <= col < nsamps:
+                out[chan, col] = row[chan]
+
+
 @njit(cache=True, fastmath=True)
 def dmt_block(arr: np.ndarray, dm_delays: np.ndarray) -> np.ndarray:
     if arr.ndim != 2 or dm_delays.ndim != 2:

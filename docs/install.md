@@ -6,13 +6,19 @@
 **Requirements:** Python 3.12 or newer.
 ```
 
-`sigpyproc` is not currently published on PyPI. Installation is performed directly from the GitHub repository.
+`sigpyproc` 2.0.0 is the stable release. Install it from PyPI, or from git until that upload is live.
 
 ---
 
 ## Quick Start (Recommended)
 
 The recommended installation method uses [uv](https://docs.astral.sh/uv/):
+
+```bash
+pip install sigpyproc
+```
+
+Or, before the PyPI upload:
 
 ```bash
 uv pip install git+https://github.com/FRBs/sigpyproc3
@@ -84,8 +90,12 @@ sigpyproc depends on:
 - [bottleneck](https://bottleneck.readthedocs.io)
 - [h5py](https://docs.h5py.org/en/stable/)  
 - [attrs](https://attrs.org)
-- [rich](https://rich.readthedocs.io)
-- [click](https://click.palletsprojects.com/)  
+- [seaborn](https://seaborn.pydata.org)
+- [rich](https://rich.readthedocs.io) and [rich-click](https://github.com/ewels/rich-click)
+- [click](https://click.palletsprojects.com/)
+- [rocket-fft](https://github.com/styfenschaer/rocket-fft)
+- [bidict](https://github.com/jab/bidict)
+- [lazy-loader](https://github.com/scientific-python/lazy-loader)  
 
 All required dependencies are installed automatically via `uv sync` or `uv pip install`.
 

@@ -18,6 +18,7 @@ from sigpyproc.header import Header
 from sigpyproc.timeseries import TimeSeries
 
 if TYPE_CHECKING:
+    from matplotlib.figure import Figure
     from numpy.typing import NDArray
 
     from sigpyproc.core.custom_types import FilterMethods, LocMethods, ScaleMethods
@@ -147,7 +148,7 @@ class BaseBlock(ABC):
         )
 
     @abstractmethod
-    def plot(self, *args, **kwargs) -> None:  # noqa: ANN002, ANN003
+    def plot(self, *args, **kwargs) -> Figure:  # noqa: ANN002, ANN003
         """Plot the data block."""
 
     def _check_input(self) -> None:
@@ -209,9 +210,98 @@ class FilterbankBlock(BaseBlock):
         """
         return self.data.shape[0]
 
-    def plot(self, *args, **kwargs) -> None:  # noqa: ANN002, ANN003
-        """Plot the data block."""
-        raise NotImplementedError
+    def plot(
+        self,
+        scaler: str = "zscore",
+        cmap: str = "magma",
+        *,
+        show_ts: bool = True,
+        show_bp: bool = True,
+        figsize: tuple[float, float] = (10, 7),
+    ) -> Figure:
+        """Plot the filterbank block with time series and bandpass panels.
+
+        Parameters
+        ----------
+        scaler : str, optional
+            Scaler name ('zscore', 'minmax', 'zscale', 'percentile', 'clip').
+            Default is 'zscore'.
+        cmap : str, optional
+            Colormap name, by default 'magma'.
+        show_ts : bool, optional
+            Whether to show the top time series panel, by default True.
+        show_bp : bool, optional
+            Whether to show the right bandpass panel, by default True.
+        figsize : tuple[float, float], optional
+            Figure size in inches, by default (10, 7).
+
+        Returns
+        -------
+        matplotlib.figure.Figure
+            Rendered matplotlib figure.
+        """
+        import matplotlib.pyplot as plt
+
+        from sigpyproc.viz.scaling import SCALERS, frequency_oriented
+
+        active_scaler = next((s for s in SCALERS if s.name == scaler), SCALERS[0])
+        prep = active_scaler.prepare(self.data)
+        vmin, vmax = active_scaler.clim(prep)
+
+        t0 = 0.0
+        t1 = self.nsamples * self.header.tsamp
+        freqs = self.header.chan_freqs
+        image, f_lo, f_hi = frequency_oriented(prep, freqs)
+        extent = (t0, t1, f_lo, f_hi)
+
+        fig = plt.figure(figsize=figsize, layout="constrained")
+        if show_ts and show_bp:
+            gs = fig.add_gridspec(2, 2, width_ratios=[4, 1], height_ratios=[1, 4])
+            ax_ts = fig.add_subplot(gs[0, 0])
+            ax_im = fig.add_subplot(gs[1, 0], sharex=ax_ts)
+            ax_bp = fig.add_subplot(gs[1, 1], sharey=ax_im)
+
+            ts = np.nanmean(self.data, axis=0)
+            bp = np.nanmean(self.data, axis=1)
+            t_axis = np.linspace(t0, t1, len(ts), endpoint=False)
+
+            ax_ts.plot(t_axis, ts, color="#1f77b4", lw=1.0)
+            ax_ts.set_ylabel("Power")
+            ax_ts.tick_params(labelbottom=False)
+
+            im = ax_im.imshow(
+                image,
+                aspect="auto",
+                origin="lower",
+                extent=extent,
+                cmap=cmap,
+                vmin=vmin,
+                vmax=vmax,
+            )
+            ax_im.set_xlabel("Time (s)")
+            ax_im.set_ylabel("Frequency (MHz)")
+
+            ax_bp.plot(bp, freqs, color="#1f77b4", lw=1.0)
+            ax_bp.set_xlabel("Mean")
+            ax_bp.tick_params(labelleft=False)
+
+            fig.colorbar(im, ax=ax_bp, orientation="vertical", pad=0.02)
+        else:
+            ax_im = fig.add_subplot(1, 1, 1)
+            im = ax_im.imshow(
+                image,
+                aspect="auto",
+                origin="lower",
+                extent=extent,
+                cmap=cmap,
+                vmin=vmin,
+                vmax=vmax,
+            )
+            ax_im.set_xlabel("Time (s)")
+            ax_im.set_ylabel("Frequency (MHz)")
+            fig.colorbar(im, ax=ax_im, orientation="vertical", pad=0.02)
+
+        return fig
 
     def downsample(
         self,
@@ -239,6 +329,7 @@ class FilterbankBlock(BaseBlock):
         changes = {
             "tsamp": self.header.tsamp * tfactor,
             "foff": self.header.foff * ffactor,
+            "fch1": self.header.fch1 + self.header.foff * (ffactor - 1) / 2,
             "nsamples": self.header.nsamples // tfactor,
             "nchans": self.header.nchans // ffactor,
         }
@@ -413,9 +504,53 @@ class DMTBlock(BaseBlock):
         """
         return self.data.shape[0]
 
-    def plot(self, *args, **kwargs) -> None:  # noqa: ANN002, ANN003
-        """Plot the data block."""
-        raise NotImplementedError
+    def plot(
+        self,
+        cmap: str = "magma",
+        figsize: tuple[float, float] = (10, 6),
+    ) -> Figure:
+        """Plot the DM-time transform block with peak SNR curve.
+
+        Parameters
+        ----------
+        cmap : str, optional
+            Colormap name, by default 'magma'.
+        figsize : tuple[float, float], optional
+            Figure size in inches, by default (10, 6).
+
+        Returns
+        -------
+        matplotlib.figure.Figure
+            Rendered matplotlib figure.
+        """
+        import matplotlib.pyplot as plt
+
+        fig = plt.figure(figsize=figsize, layout="constrained")
+        gs = fig.add_gridspec(1, 2, width_ratios=[4, 1])
+        ax_dmt = fig.add_subplot(gs[0, 0])
+        ax_snr = fig.add_subplot(gs[0, 1], sharey=ax_dmt)
+
+        t0 = 0.0
+        t1 = self.nsamples * self.header.tsamp
+        extent = (t0, t1, float(np.min(self.dms)), float(np.max(self.dms)))
+
+        im = ax_dmt.imshow(
+            self.data,
+            aspect="auto",
+            origin="lower",
+            extent=extent,
+            cmap=cmap,
+        )
+        ax_dmt.set_xlabel("Time (s)")
+        ax_dmt.set_ylabel("DM ($pc\\,cm^{-3}$)")
+
+        peak_snrs = np.nanmax(self.data, axis=1)
+        ax_snr.plot(peak_snrs, self.dms, color="#d62728", lw=1.5)
+        ax_snr.set_xlabel("Peak")
+        ax_snr.tick_params(labelleft=False)
+
+        fig.colorbar(im, ax=ax_snr, orientation="vertical", pad=0.02)
+        return fig
 
     def _check_dm_input(self) -> None:
         if self.ndms != self.dms.size:

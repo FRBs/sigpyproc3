@@ -21,31 +21,34 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "Operating System :: MacOS :: MacOS X",
-    "Operating System :: Microsoft :: Windows",
     "Operating System :: POSIX :: Linux",
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Astronomy",
 ]
+keywords = ["pulsar", "FRB", "filterbank", "SIGPROC", "PSRFITS", "radio astronomy"]
 dependencies = [
     "numpy>=2.0",
     "numba>=0.61",
     "astropy>=6.0",
-    "matplotlib",
-    "seaborn",
-    "h5py",
-    "bottleneck",
-    "attrs",
-    "click",
-    "rich",
-    "rich-click",
-    "rocket-fft",
-    "bidict",
-    "lazy-loader",
+    "matplotlib>=3.8",
+    "seaborn>=0.13",
+    "h5py>=3.10",
+    "bottleneck>=1.4",
+    "attrs>=24",
+    "click>=8.1",
+    "rich>=13",
+    "rich-click>=1.8",
+    "rocket-fft>=0.3",
+    "bidict>=0.23",
+    "lazy-loader>=0.4",
 ]
 
 [project.urls]
 Repository = "https://github.com/FRBs/sigpyproc3"
+Documentation = "https://sigpyproc3.readthedocs.io"
+Changelog = "https://sigpyproc3.readthedocs.io/en/latest/changes.html"
+Issues = "https://github.com/FRBs/sigpyproc3/issues"
 
 [project.optional-dependencies]
 tests = [
@@ -87,6 +90,7 @@ spp_fold = "sigpyproc.apps.spp_fold:main"
 spp_fake = "sigpyproc.apps.spp_fake:main"
 spp_search = "sigpyproc.apps.spp_search:main"
 spp_digifil = "sigpyproc.apps.spp_digifil:main"
+spp_view = "sigpyproc.apps.spp_view:main"
 
 
 [tool.ruff]
@@ -104,10 +108,12 @@ select = ["ALL"]
 ignore = ["COM812", "CPY001", "D1", "D301", "PLR2004", "G004", "PLC0415"]
 
 [tool.ruff.lint.per-file-ignores]
-"src/sigpyproc/kernels/**.py" = ["ARG001"]
+"src/sigpyproc/kernels/**.py" = ["ARG001", "C901", "PLR0912", "PLR0915"]
 "src/sigpyproc/timeseries.py" = ["ANN401"] # numpy.pad kwargs depend on mode
 "src/sigpyproc/apps/spp_fake.py" = ["PLR0913", "PLR0917"]
 "src/sigpyproc/apps/spp_digifil.py" = ["PLR0913"]
+"src/sigpyproc/apps/spp_view.py" = ["PLR0913", "PLR0917"]
+"src/sigpyproc/viz/**.py" = ["PLR0913", "PLR0912", "PLR0915", "PLR0917", "FBT001", "FBT002", "T201", "C901"]
 "tests/**/*.py" = ["S101", "FBT", "PLR2004", "PT011", "SLF001"]
 "docs/**" = ["INP001", "ARG001", "ANN401"]
 "bench/**" = ["INP001", "S603"]

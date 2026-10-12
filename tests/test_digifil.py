@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import shutil
+import subprocess
 from pathlib import Path
 
 import numpy as np
@@ -7,12 +9,14 @@ import pytest
 from click.testing import CliRunner
 
 from sigpyproc.apps.spp_digifil import main as digifil_cli
-from sigpyproc.io import sigproc
+from sigpyproc.io import pfits, sigproc
 from sigpyproc.io.digifil import (
     MEGABYTE,
     DigifilConfig,
     Rescaler,
+    _detected_pol,
     _rechunk,
+    _validate_pfits_polarisation,
     default_gulp,
     digifil,
     dspsr_block_samples,
@@ -440,6 +444,94 @@ class TestDigifilDriver:
         hdr = FilReader(out).header
         assert hdr.nbits == 8
         assert hdr.foff < 0
+
+    def test_npol_other_than_stokes_i_is_rejected(self) -> None:
+        for npol in (2, 3, 4):
+            with pytest.raises(NotImplementedError, match=f"-d {npol}"):
+                DigifilConfig(npol=npol)
+
+    def test_parkes_float_matches_dspsr(self, fitsfile_4bit: str, tmpdir: str) -> None:
+        dspsr = shutil.which("digifil")
+        if dspsr is None:
+            pytest.skip("dspsr digifil is not installed")
+        ref = Path(tmpdir) / "dspsr_ref"
+        subprocess.run(  # noqa: S603
+            [
+                dspsr,
+                "-threads",
+                "1",
+                "-q",
+                "-b-32",
+                "-I",
+                "0",
+                "-d",
+                "1",
+                "-o",
+                str(ref),
+                fitsfile_4bit,
+            ],
+            check=True,
+        )
+        out = digifil(
+            fitsfile_4bit,
+            _out(tmpdir, "spp_ref.fil"),
+            DigifilConfig(nbits=-32, rescale_seconds=0),
+        )
+        ref_reader = FilReader(str(ref))
+        nsamples = ref_reader.header.nsamples
+        got = FilReader(out).read_block(0, nsamples).data
+        np.testing.assert_array_equal(got, ref_reader.read_block(0, nsamples).data)
+
+    def test_uwl_8bit_tscrunch_matches_dspsr_reference(self, tmpdir: str) -> None:
+        uwl = Path("tmp_files/uwl_210405_055326_60.sf")
+        ref_path = Path("tmp_files/dspsr_ref.fil")
+        if not uwl.is_file() or not ref_path.is_file():
+            pytest.skip("UWL reference files are not in tmp_files")
+        out = digifil(
+            str(uwl),
+            _out(tmpdir, "uwl.fil"),
+            DigifilConfig(nbits=8, rescale_seconds=0, tscrunch_factor=4),
+        )
+        ref = FilReader(str(ref_path))
+        got = FilReader(out)
+        assert got.header.nchans == ref.header.nchans
+        assert got.header.nbits == ref.header.nbits
+        assert got.header.nsamples == ref.header.nsamples
+        assert got.header.tsamp == pytest.approx(ref.header.tsamp)
+        assert got.header.foff == pytest.approx(ref.header.foff)
+        np.testing.assert_array_equal(
+            got.read_block(0, ref.header.nsamples).data,
+            ref.read_block(0, ref.header.nsamples).data,
+        )
+
+    def test_psrfits_rejects_unknown_state(
+        self,
+        fitsfile_4bit: str,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        sub = pfits.SubintHdr(fitsfile_4bit)
+        monkeypatch.setattr(type(sub), "poln_state", property(lambda _self: "Mystery"))
+        assert _validate_pfits_polarisation(sub) == "Mystery"
+        with pytest.raises(NotImplementedError, match="Mystery"):
+            _detected_pol(sub, DigifilConfig(nbits=8, rescale_seconds=0))
+
+    def test_psrfits_digifil_rejects_unknown_state(
+        self,
+        fitsfile_4bit: str,
+        tmpdir: str,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(
+            pfits.SubintHdr,
+            "poln_state",
+            property(lambda _self: "Mystery"),
+        )
+        with pytest.raises(NotImplementedError, match="Mystery"):
+            digifil(
+                fitsfile_4bit,
+                _out(tmpdir, "bad.fil"),
+                DigifilConfig(nbits=8, rescale_seconds=0),
+            )
 
     def test_reader_decodes_lsb_subbyte_output(
         self,

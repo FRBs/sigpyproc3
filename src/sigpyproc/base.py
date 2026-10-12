@@ -9,11 +9,12 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from contextlib import ExitStack
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from sigpyproc import kernels
+from sigpyproc.core.dispersion import align_delays
 from sigpyproc.core.rfi import RFIMask, zap_block
 from sigpyproc.core.stats import ChannelStats
 from sigpyproc.foldedcube import FoldedData
@@ -97,19 +98,32 @@ class Filterbank(ABC):
         """
 
     @abstractmethod
-    def read_dedisp_block(self, start: int, nsamps: int, dm: float) -> FilterbankBlock:
+    def read_dedisp_block(
+        self,
+        start: int,
+        nsamps: int,
+        dm: float,
+        *,
+        small_reads: bool | None = None,
+    ) -> FilterbankBlock:
         """Read a block of dedispersed filterbank data.
 
-        Best used in cases where I/O time dominates reading a block of data.
+        The output is ``(nchans, nsamps)`` at the reference frequency. The
+        read does not keep the dispersed rectangle.
 
         Parameters
         ----------
         start : int
-            First time sample of the block to be read.
+            First output sample, at the reference frequency.
         nsamps : int
-            Number of samples in the block (i.e. block will be nsamps*nchans in size).
+            Number of samples in the block.
         dm : float
             Dispersion measure to dedisperse at.
+        small_reads : bool or None, optional
+            ``None`` chooses a sequential read or per-sample channel seeks
+            from the DM. ``True`` forces channel seeks. ``False`` forces one
+            sequential read of the delay window. See
+            :meth:`sigpyproc.readers.FilReader.read_dedisp_block`.
 
         Returns
         -------
@@ -119,7 +133,7 @@ class Filterbank(ABC):
         Raises
         ------
         ValueError
-            if requested dedispersed ``nsamps`` are out of range.
+            If the requested dedispersed samples are out of range.
         """
 
     @abstractmethod
@@ -173,6 +187,9 @@ class Filterbank(ABC):
             * ``x[1]`` is the index of the read (i.e. ``x[1]=0`` is the first read)
             * ``x[2]`` is a 1-D numpy array containing the data that was read
 
+        The array is a view of a buffer that the next iteration overwrites.
+        Copy it before storing it past the loop body.
+
         Examples
         --------
         The normal calling syntax for this is function is:
@@ -192,6 +209,21 @@ class Filterbank(ABC):
             Channel statistics object if computed, else None.
         """
         return self._chan_stats
+
+    def _sample_window(self, start: int, nsamps: int | None) -> tuple[int, float]:
+        """Return the sample count and MJD of a read window."""
+        if start < 0:
+            msg = f"start must be >= 0, got {start}"
+            raise ValueError(msg)
+        if nsamps is None:
+            nsamps = self.header.nsamples - start
+        if nsamps < 1 or start + nsamps > self.header.nsamples:
+            msg = (
+                f"requested samples are out of range: start={start}, "
+                f"nsamps={nsamps}, nsamples={self.header.nsamples}"
+            )
+            raise ValueError(msg)
+        return nsamps, float(self.header.mjd_after_nsamps(start))
 
     def compute_stats(
         self,
@@ -289,10 +321,11 @@ class Filterbank(ABC):
         :class:`~sigpyproc.timeseries.TimeSeries`
             A zero-DM time series.
         """
-        tim_len = (self.header.nsamples - start) if nsamps is None else nsamps
+        tim_len, tstart = self._sample_window(start, nsamps)
         tim_ar = np.zeros(tim_len, dtype=np.float32)
         kernel_func = kernels.extract_tim_par if parallel else kernels.extract_tim
-        for nsamps_r, ii, data in self.read_plan(
+        offset = 0
+        for nsamps_r, _, data in self.read_plan(
             gulp=gulp,
             start=start,
             nsamps=nsamps,
@@ -303,11 +336,17 @@ class Filterbank(ABC):
                 tim_ar,
                 self.header.nchans,
                 nsamps_r,
-                ii * nsamps_r,
+                offset,
             )
+            offset += nsamps_r
         if method == "mean":
             tim_ar /= self.header.nchans
-        return TimeSeries(tim_ar, self.header.new_header({"nchans": 1, "dm": 0}))
+        return TimeSeries(
+            tim_ar,
+            self.header.new_header(
+                {"nchans": 1, "dm": 0, "nsamples": tim_len, "tstart": tstart},
+            ),
+        )
 
     def bandpass(
         self,
@@ -401,16 +440,23 @@ class Filterbank(ABC):
         If gulp < maximum dispersion delay, gulp is taken to be twice the
         maximum dispersion delay.
         """
-        chan_delays = self.header.get_dmdelays(dm, ref_freq)
-        max_delay = int(np.max(np.abs(chan_delays)))
+        n_in, _tstart = self._sample_window(start, nsamps)
+        chan_delays, lead = align_delays(self.header.get_dmdelays(dm, ref_freq))
+        max_delay = int(chan_delays.max()) if chan_delays.size else 0
+        if n_in <= max_delay:
+            msg = (
+                f"Not enough samples ({n_in}) to dedisperse a delay of "
+                f"{max_delay} samples"
+            )
+            raise ValueError(msg)
         gulp = max(2 * max_delay, gulp)
-        tim_len = self.header.nsamples - max_delay
+        tim_len = n_in - max_delay
         tim_ar = np.zeros(tim_len, dtype=np.float32)
         kernel_func = kernels.dedisperse_par if parallel else kernels.dedisperse
         for nsamps_r, ii, data in self.read_plan(
             gulp=gulp,
             start=start,
-            nsamps=nsamps,
+            nsamps=n_in,
             skipback=max_delay,
             **plan_kwargs,
         ):
@@ -422,9 +468,17 @@ class Filterbank(ABC):
                 nsamps_r,
                 ii * (gulp - max_delay),
             )
+        out_tstart = self.header.mjd_after_nsamps(start + int(lead[0]))
         return TimeSeries(
             tim_ar,
-            self.header.new_header({"nchans": 1, "dm": dm, "nsamples": tim_len}),
+            self.header.new_header(
+                {
+                    "nchans": 1,
+                    "dm": dm,
+                    "nsamples": tim_len,
+                    "tstart": out_tstart,
+                },
+            ),
         )
 
     def read_chan(
@@ -463,16 +517,24 @@ class Filterbank(ABC):
         if ichan >= self.header.nchans or ichan < 0:
             msg = f"Selected channel {ichan} out of range."
             raise ValueError(msg)
-        tim_ar = np.empty(self.header.nsamples, dtype=np.float32)
-        for nsamps_r, ii, data in self.read_plan(
+        tim_len, tstart = self._sample_window(start, nsamps)
+        tim_ar = np.zeros(tim_len, dtype=np.float32)
+        offset = 0
+        for nsamps_r, _, data in self.read_plan(
             gulp=gulp,
             start=start,
-            nsamps=nsamps,
+            nsamps=tim_len,
             **plan_kwargs,
         ):
             data_2d = data.reshape(nsamps_r, self.header.nchans)
-            tim_ar[ii * gulp : (ii + 1) * gulp] = data_2d[:, ichan]
-        return TimeSeries(tim_ar, self.header.new_header({"dm": 0, "nchans": 1}))
+            tim_ar[offset : offset + nsamps_r] = data_2d[:, ichan]
+            offset += nsamps_r
+        return TimeSeries(
+            tim_ar,
+            self.header.new_header(
+                {"dm": 0, "nchans": 1, "nsamples": tim_len, "tstart": tstart},
+            ),
+        )
 
     def invert_freq(
         self,
@@ -509,9 +571,12 @@ class Filterbank(ABC):
         if outfile_name is None:
             outfile_name = f"{self.header.basename}_inverted.fil"
 
+        n_in, tstart = self._sample_window(start, nsamps)
         updates = {
             "fch1": self.header.fch1 + (self.header.nchans - 1) * self.header.foff,
             "foff": self.header.foff * -1,
+            "nsamples": n_in,
+            "tstart": tstart,
         }
 
         out_file = self.header.prep_outfile(
@@ -523,7 +588,7 @@ class Filterbank(ABC):
         for nsamps_r, _, data in self.read_plan(
             gulp=gulp,
             start=start,
-            nsamps=nsamps,
+            nsamps=n_in,
             **plan_kwargs,
         ):
             out_ar = kernel_func(data, self.header.nchans, nsamps_r)
@@ -572,14 +637,18 @@ class Filterbank(ABC):
         if outfile_name is None:
             outfile_name = f"{self.header.basename}_masked.fil"
 
+        n_in, tstart = self._sample_window(start, nsamps)
         chan_mask = np.array(chan_mask).astype("bool")
         mask_value = np.float32(mask_value).astype(self.header.dtype)
-        out_file = self.header.prep_outfile(outfile_name)
+        out_file = self.header.prep_outfile(
+            outfile_name,
+            updates={"nsamples": n_in, "tstart": tstart},
+        )
         kernel_func = kernels.mask_channels_par if parallel else kernels.mask_channels
         for nsamps_r, _ii, data in self.read_plan(
             gulp=gulp,
             start=start,
-            nsamps=nsamps,
+            nsamps=n_in,
             **plan_kwargs,
         ):
             kernel_func(data, chan_mask, mask_value, self.header.nchans, nsamps_r)
@@ -631,14 +700,18 @@ class Filterbank(ABC):
         if outfile_name is None:
             outfile_name = f"{self.header.basename}_zap.fil"
 
+        n_in, tstart = self._sample_window(start, nsamps)
         nchans = self.header.nchans
         rng = np.random.default_rng()
-        out_file = self.header.prep_outfile(outfile_name)
+        out_file = self.header.prep_outfile(
+            outfile_name,
+            updates={"nsamples": n_in, "tstart": tstart},
+        )
         samp0 = start
         for nsamps_r, _, data in self.read_plan(
             gulp=gulp,
             start=start,
-            nsamps=nsamps,
+            nsamps=n_in,
             **plan_kwargs,
         ):
             block = np.array(data[: nsamps_r * nchans]).reshape(nsamps_r, nchans)
@@ -689,34 +762,45 @@ class Filterbank(ABC):
         """
         if outfile_name is None:
             outfile_name = f"{self.header.basename}_f{ffactor:d}_t{tfactor:d}.fil"
+        if tfactor < 1 or ffactor < 1:
+            msg = (
+                "downsample factors must be >= 1, "
+                f"got tfactor={tfactor}, ffactor={ffactor}"
+            )
+            raise ValueError(msg)
         if self.header.nchans % ffactor != 0:
             msg = f"Bad frequency factor given: {ffactor:d}"
             raise ValueError(msg)
+        n_in, tstart = self._sample_window(start, nsamps)
 
-        # Gulp must be a multiple of tfactor
+        # Gulp must be a multiple of tfactor so each read decimates evenly.
         gulp = int(np.ceil(gulp / tfactor) * tfactor)
 
         updates = {
             "tsamp": self.header.tsamp * tfactor,
             "nchans": self.header.nchans // ffactor,
             "foff": self.header.foff * ffactor,
+            "fch1": self.header.fch1 + self.header.foff * (ffactor - 1) / 2,
+            "nsamples": n_in // tfactor,
+            "tstart": tstart,
         }
         out_file = self.header.prep_outfile(outfile_name, updates=updates)
 
         for nsamps_r, _ii, data in self.read_plan(
             gulp=gulp,
             start=start,
-            nsamps=nsamps,
+            nsamps=n_in,
             **plan_kwargs,
         ):
             write_ar = kernels.downsample_2d_mean_flat(
                 data,
                 tfactor,
                 ffactor,
-                self.header.nchans,
                 nsamps_r,
+                self.header.nchans,
             )
             out_file.cwrite(write_ar)
+        out_file.close()
         return outfile_name
 
     def extract_samps(
@@ -761,7 +845,10 @@ class Filterbank(ABC):
             )
         out_file = self.header.prep_outfile(
             outfile_name,
-            updates={"tstart": self.header.mjd_after_nsamps(start)},
+            updates={
+                "tstart": self.header.mjd_after_nsamps(start),
+                "nsamples": nsamps,
+            },
             nbits=self.header.nbits,
         )
         for _, _, data in self.read_plan(
@@ -1082,14 +1169,29 @@ class Filterbank(ABC):
         if outfile_name is None:
             outfile_name = f"{self.header.basename}_noZeroDM.fil"
 
-        bpass = self.bandpass(**plan_kwargs).data
+        n_in, tstart = self._sample_window(start, nsamps)
+        bpass = self.bandpass(
+            gulp=gulp,
+            start=start,
+            nsamps=n_in,
+            **plan_kwargs,
+        ).data
         out_ar = np.empty(gulp * self.header.nchans, dtype=self.header.dtype)
-        out_file = self.header.prep_outfile(outfile_name, nbits=self.header.nbits)
+        out_file = self.header.prep_outfile(
+            outfile_name,
+            nbits=self.header.nbits,
+            updates={"nsamples": n_in, "tstart": tstart},
+        )
         kernel_func = kernels.remove_zerodm_par if parallel else kernels.remove_zerodm
+        clip_max = (
+            int(np.iinfo(self.header.dtype).max)
+            if np.issubdtype(self.header.dtype, np.integer)
+            else 0
+        )
         for nsamps_r, _, data in self.read_plan(
             gulp=gulp,
             start=start,
-            nsamps=nsamps,
+            nsamps=n_in,
             **plan_kwargs,
         ):
             out_ar_view = out_ar[: nsamps_r * self.header.nchans]
@@ -1099,6 +1201,7 @@ class Filterbank(ABC):
                 bpass,
                 self.header.nchans,
                 nsamps_r,
+                clip_max,
             )
             out_file.cwrite(out_ar_view)
         out_file.close()
@@ -1143,21 +1246,36 @@ class Filterbank(ABC):
         str
             Name of output file.
         """
+        if nsub < 1 or self.header.nchans % nsub != 0:
+            msg = (
+                f"nsub must be a positive divisor of nchans "
+                f"({self.header.nchans}), got {nsub}"
+            )
+            raise ValueError(msg)
+        n_in, _tstart = self._sample_window(start, nsamps)
         subfactor = self.header.nchans // nsub
-        chan_delays = self.header.get_dmdelays(dm, ref_freq)
-        max_delay = int(np.max(np.abs(chan_delays)))
+        chan_delays, lead = align_delays(self.header.get_dmdelays(dm, ref_freq))
+        max_delay = int(chan_delays.max()) if chan_delays.size else 0
+        if n_in <= max_delay:
+            msg = (
+                f"Not enough samples ({n_in}) to form subbands at a delay of "
+                f"{max_delay} samples"
+            )
+            raise ValueError(msg)
         gulp = max(2 * max_delay, gulp)
-        # must be memset to zero in c code
-        out_ar = np.empty((gulp - max_delay) * nsub, dtype=np.float32)
-        new_foff = self.header.foff * self.header.nchans // nsub
-        new_fch1 = self.header.ftop - new_foff / 2
+        out_ar = np.zeros((gulp - max_delay) * nsub, dtype=np.float32)
+        new_foff = self.header.foff * subfactor
+        new_fch1 = self.header.fch1 + self.header.foff * (subfactor - 1) / 2
         chan_to_sub = np.arange(self.header.nchans, dtype="int32") // subfactor
+        n_out = n_in - max_delay
         updates = {
             "fch1": new_fch1,
             "foff": new_foff,
             "dm": dm,
             "nchans": nsub,
             "nbits": 32,
+            "nsamples": n_out,
+            "tstart": self.header.mjd_after_nsamps(start + int(lead[0])),
         }
         if outfile_name is None:
             outfile_name = f"{self.header.basename}_DM{dm:06.2f}.subbands"
@@ -1166,10 +1284,11 @@ class Filterbank(ABC):
         for nsamps_r, _ii, data in self.read_plan(
             gulp=gulp,
             start=start,
-            nsamps=nsamps,
+            nsamps=n_in,
             skipback=max_delay,
             **plan_kwargs,
         ):
+            out_ar.fill(0)
             kernels.subband(
                 data,
                 out_ar,
@@ -1181,6 +1300,7 @@ class Filterbank(ABC):
                 nsamps_r,
             )
             out_file.cwrite(out_ar[: (nsamps_r - max_delay) * nsub])
+        out_file.close()
         return outfile_name
 
     def fold(
@@ -1250,8 +1370,8 @@ class Filterbank(ABC):
             msg = f"nbands x nints x nbins is too large: {nbands * nints * nbins}"
             raise ValueError(msg)
         nbands = min(nbands, self.header.nchans)
-        chan_delays = self.header.get_dmdelays(dm)
-        max_delay = int(chan_delays.max())
+        chan_delays, _lead = align_delays(self.header.get_dmdelays(dm))
+        max_delay = int(chan_delays.max()) if chan_delays.size else 0
         gulp = max(2 * max_delay, gulp)
         fold_ar = np.zeros(nbins * nints * nbands, dtype="float32")
         count_ar = np.zeros(nbins * nints * nbands, dtype="int32")
@@ -1277,7 +1397,7 @@ class Filterbank(ABC):
                 nbins,
                 nints,
                 nbands,
-                ii * (gulp - max_delay),
+                start + ii * (gulp - max_delay),
             )
         np.divide(fold_ar, count_ar, out=fold_ar, where=count_ar != 0)
         fold_ar = fold_ar.reshape(nints, nbands, nbins)
@@ -1385,18 +1505,31 @@ class Filterbank(ABC):
         if len(plan) == 0:
             msg = "DM plan is empty"
             raise ValueError(msg)
-        delays = np.atleast_2d(
-            self.header.get_dmdelays(plan.dms, ref_freq),
-        ).astype(np.int32, copy=False)
-        max_delay = int(np.max(np.abs(delays)))
+        n_in, _tstart = self._sample_window(start, nsamps)
+        delays, lead = align_delays(
+            np.atleast_2d(self.header.get_dmdelays(plan.dms, ref_freq)),
+        )
+        max_delay = int(delays.max()) if delays.size else 0
+        if n_in <= max_delay:
+            msg = (
+                f"Not enough samples ({n_in}) to dedisperse a delay of "
+                f"{max_delay} samples"
+            )
+            raise ValueError(msg)
+        n_out = n_in - max_delay
         gulp = max(2 * max_delay, gulp)
         if outfile_base is None:
             outfile_base = self.header.basename
         paths = [f"{outfile_base}_DM{dm:08.3f}.tim" for dm in plan.dms]
-        writers = [
-            self.header.dedispersed_header(float(dm)).prep_outfile(path, nbits=32)
-            for path, dm in zip(paths, plan.dms, strict=True)
-        ]
+        writers = []
+        for path, dm, lead_i in zip(paths, plan.dms, lead, strict=True):
+            hdr = self.header.dedispersed_header(float(dm)).new_header(
+                {
+                    "nsamples": n_out,
+                    "tstart": self.header.mjd_after_nsamps(start + int(lead_i)),
+                },
+            )
+            writers.append(hdr.prep_outfile(path, nbits=32))
         ndm = len(plan)
         out = np.empty((ndm, gulp - max_delay), dtype=np.float32)
         nchans = self.header.nchans
@@ -1404,7 +1537,7 @@ class Filterbank(ABC):
             for nsamps_r, _, data in self.read_plan(
                 gulp=gulp,
                 start=start,
-                nsamps=nsamps,
+                nsamps=n_in,
                 skipback=max_delay,
                 **plan_kwargs,
             ):
@@ -1506,6 +1639,27 @@ class Filterbank(ABC):
             **plan_kwargs,
         )
         return out_file, rfimask
+
+    def view(self, **kwargs: Any) -> Any:  # noqa: ANN401
+        """Open the interactive waterfall viewer.
+
+        Parameters
+        ----------
+        **kwargs : dict
+            Keyword arguments passed to
+            :class:`~sigpyproc.viz.waterfall.WaterfallViewer`.
+
+        Returns
+        -------
+        WaterfallViewer
+            Interactive waterfall viewer instance.
+        """
+        from sigpyproc.viz.waterfall import WaterfallViewer
+
+        viewer = WaterfallViewer(self, **kwargs)
+        if not kwargs.get("batch"):
+            viewer.show()
+        return viewer
 
 
 def _validate_tree(

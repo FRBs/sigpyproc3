@@ -81,7 +81,7 @@ from sigpyproc.io.digifil import DigifilConfig, default_gulp, digifil
     "--npol",
     type=click.IntRange(1, 4),
     default=1,
-    help="1=PP+QQ intensity, 2 or 4=keep all input polarisations",
+    help="Stokes I only (-d 1). -d 2, 3 and 4 are rejected",
 )
 @click.option(
     "-P",

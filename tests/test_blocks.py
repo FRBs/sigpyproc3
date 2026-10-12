@@ -169,6 +169,18 @@ class TestFilterbankBlock:
         np.testing.assert_array_equal(block_new.data, block.data)
         outfile_path.unlink()
 
+    def test_plot(self, filfile_8bit_1: str) -> None:
+        fil = FilReader(filfile_8bit_1)
+        block = fil.read_block(0, 512)
+        fig = block.plot()
+        assert fig is not None
+        fig_no_panels = block.plot(show_ts=False, show_bp=False)
+        assert fig_no_panels is not None
+        import matplotlib.pyplot as plt
+
+        plt.close(fig)
+        plt.close(fig_no_panels)
+
 
 class TestDMTBlock:
     def test_block_fails(self, filfile_8bit_1: str) -> None:
@@ -194,3 +206,13 @@ class TestDMTBlock:
         assert isinstance(block.header, Header)
         assert isinstance(block, DMTBlock)
         np.testing.assert_array_equal(block.dms, dms)
+
+    def test_plot(self, filfile_8bit_1: str) -> None:
+        fil = FilReader(filfile_8bit_1)
+        block = fil.read_block(0, 512)
+        dmt = block.dmt_transform(dm=10.0, dmsteps=32)
+        fig = dmt.plot()
+        assert fig is not None
+        import matplotlib.pyplot as plt
+
+        plt.close(fig)

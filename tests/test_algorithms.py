@@ -103,17 +103,11 @@ class TestPulseRobustness:
 
 
 class TestFFTRobustness:
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "Folded FFT candidates report harmonic periods for non-sinusoidal "
-            "pulse trains; fold-to-period mapping needs a fix."
-        ),
-    )
-    def test_fft_search_recovers_duty_cycle_pulse_train(self) -> None:
+    @pytest.mark.parametrize("method", ["simple", "greedy"])
+    def test_fft_search_recovers_duty_cycle_pulse_train(self, method: str) -> None:
         period = 0.05
         data = _pulse_train(period, duty=0.05, amp=4.0, seed=3)
-        cands = _series(data).search(nfolds=4, pmax=1.0, snr_min=6.0)
+        cands = _series(data).search(nfolds=4, pmax=1.0, snr_min=6.0, method=method)
         best = cands.cluster(snr_min=8.0).values("period_s")[0]
         assert abs(best - period) <= 2 * TSAMP
 

@@ -48,7 +48,7 @@ The architecture separates:
 
 New functionality typically involves:
 
-1. Adding a method to a data object (e.g. {py:class}`~sigpyproc.base.Filterbank`, {py:class}`~sigpyproc.timeseries.TimeSeries`, {py:class}`~sigpyproc.candidates.CandidateTable`)
+1. Adding a method to a data object (e.g. {py:class}`~sigpyproc.base.Filterbank`, {py:class}`~sigpyproc.timeseries.TimeSeries`, {py:class}`~sigpyproc.core.candidates.CandidateTable`)
 2. Implementing or extending a Numba kernel
 3. Writing tests
 4. Documenting the public API
@@ -98,7 +98,7 @@ Public-facing methods should remain clean and explicit.
 
 ### Step 2 — Implement the Numba Kernel
 
-Add the corresponding kernel to `sigpyproc/core/kernels.py`:
+Add the corresponding kernel to `sigpyproc/kernels/filterbank.py`:
 
 ```python
 @njit(

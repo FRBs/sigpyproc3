@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from io import StringIO
 from pathlib import Path
+from typing import Literal
 
 import rich_click as click
 
@@ -51,9 +52,15 @@ def _write_cands(
 @click.option("--snr", type=float, default=6.0, help="Minimum peak SNR")
 @click.option("--npeaks", type=int, default=100, help="Maximum peaks per spectrum")
 @click.option(
+    "--method",
+    type=click.Choice(["lyne", "simple", "presto", "greedy"]),
+    default="lyne",
+    help="Harmonic sum: lyne (SIGPROC), simple, presto, or greedy.",
+)
+@click.option(
     "-o",
     "--outfile",
-    type=click.Path(exists=False),
+    type=click.Path(exists=False, allow_dash=True),
     default=None,
     help="Output CSV (default: <stem>_fft.csv; '-' for stdout)",
 )
@@ -64,6 +71,7 @@ def fft(
     accel: float,
     snr: float,
     npeaks: int,
+    method: Literal["lyne", "simple", "presto", "greedy"],
     outfile: str | None,
 ) -> None:
     """FFT search a SIGPROC time series (.tim)."""
@@ -73,6 +81,7 @@ def fft(
         accel=accel,
         snr_min=snr,
         npeaks=npeaks,
+        method=method,  # type: ignore[arg-type]
     )
     _write_cands(cands, outfile, timfile, "fft")
 
@@ -96,7 +105,7 @@ def fft(
 @click.option(
     "-o",
     "--outfile",
-    type=click.Path(exists=False),
+    type=click.Path(exists=False, allow_dash=True),
     default=None,
     help="Output CSV (default: <stem>_pulses.csv; '-' for stdout)",
 )
@@ -150,7 +159,7 @@ def pulses(
 @click.option(
     "-o",
     "--outfile",
-    type=click.Path(exists=False),
+    type=click.Path(exists=False, allow_dash=True),
     default=None,
     help="Output CSV (default: <stem>_ffa.csv; '-' for stdout)",
 )
@@ -192,7 +201,7 @@ def ffa(
 @click.option(
     "-o",
     "--outfile",
-    type=click.Path(exists=False),
+    type=click.Path(exists=False, allow_dash=True),
     default=None,
     help="Output CSV (default: <stem>_cluster.csv; '-' for stdout)",
 )

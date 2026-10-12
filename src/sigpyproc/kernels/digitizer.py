@@ -5,6 +5,12 @@ from __future__ import annotations
 import numpy as np
 from numba import njit
 
+from sigpyproc.kernels.bitpacking import (
+    pack1_8_little,
+    pack2_8_little,
+    pack4_8_little,
+)
+
 
 @njit(cache=True, fastmath=True)
 def fscrunch(data: np.ndarray, factor: int) -> np.ndarray:
@@ -142,14 +148,17 @@ def quantise_packed(
     nbit: int,
     packed: np.ndarray,
 ) -> None:
-    """Quantise and pack 1, 2 or 4-bit samples least-significant-bit first."""
-    nrow, nchan = data.shape
-    samp_per_byte = 8 // nbit
-    bytes_per_row = nchan // samp_per_byte
-    for irow in range(nrow):
-        for ochan in range(nchan):
-            ichan = nchan - 1 - ochan if flip else ochan
-            value = _quantise_value(data[irow, ichan], means[irow], scale, digi_max)
-            byte = irow * bytes_per_row + ochan // samp_per_byte
-            shift = (ochan % samp_per_byte) * nbit
-            packed[byte] |= np.uint8(value << shift)
+    """Quantise, then pack 1-, 2- or 4-bit samples least-significant-bit first.
+
+    The bit layout is :func:`~sigpyproc.kernels.bitpacking.pack_array` with
+    ``bitorder="little"``, the same kernels sigproc files use.
+    """
+    levels = np.empty(data.shape, dtype=np.uint8)
+    quantise(data, flip, means, scale, digi_max, levels)
+    flat = np.ascontiguousarray(levels).reshape(levels.size)
+    if nbit == 1:
+        pack1_8_little(flat, packed)
+    elif nbit == 2:
+        pack2_8_little(flat, packed)
+    else:
+        pack4_8_little(flat, packed)

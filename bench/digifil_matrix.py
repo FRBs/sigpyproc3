@@ -95,7 +95,6 @@ def build_cases(preset: str) -> list[Case]:
         for tscrunch in (1, 4)
     ]
     cases += [
-        Case(bits=8, rescale=0.0, npol=2),
         Case(bits=8, rescale=0.0, poln=0),
         Case(bits=8, rescale=0.0, scloffs=True),
         Case(bits=8, rescale=10.0, tscrunch=4, fscrunch=2),

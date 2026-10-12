@@ -9,7 +9,7 @@ from __future__ import annotations
 import inspect
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Self
 
 import attrs
 import numpy as np
@@ -18,9 +18,15 @@ from rich.progress import track
 from sigpyproc.base import Filterbank
 from sigpyproc.block import FilterbankBlock
 from sigpyproc.header import Header
+from sigpyproc.io.bits import check_packed_length
 from sigpyproc.io.fileio import FileReader, allocate_buffer
 from sigpyproc.io.pfits import PFITSFile, PrimaryHdr, SubintHdr
-from sigpyproc.utils import get_callerfunc
+from sigpyproc.kernels.dedispersion import (
+    place_dedisp_block,
+    place_dedisp_span,
+    roll_block_valid,
+)
+from sigpyproc.utils import detect_file_type, get_callerfunc
 
 if TYPE_CHECKING:
     from collections.abc import Buffer, Callable, Iterator, Sequence
@@ -29,6 +35,160 @@ if TYPE_CHECKING:
     from sigpyproc.io.bits import BitsInfo
 
 logger = logging.getLogger(__name__)
+
+# One sequential read is cheaper than a seek per sample while the dispersed
+# rectangle still fits in memory. Above this, stream or seek to the channels
+# the DM actually uses.
+_BULK_BYTES = 32 * 1024 * 1024
+_STREAM_GULP_BYTES = 8 * 1024 * 1024
+
+
+def _chan_start(header: Header, fch1: float, nchans: int) -> int:
+    """Return the first channel index of a contiguous sub-band."""
+    if nchans < 1 or nchans > header.nchans or header.foff == 0:
+        msg = f"requested block is out of range: fch1={fch1}, nchans={nchans}"
+        raise ValueError(msg)
+    chan_start = round((fch1 - header.fch1) / header.foff)
+    if chan_start < 0 or chan_start + nchans > header.nchans:
+        msg = f"requested block is out of range: fch1={fch1}, nchans={nchans}"
+        raise ValueError(msg)
+    return chan_start
+
+
+def _dedisp_window(
+    header: Header,
+    start: int,
+    nsamps: int,
+    dm: float,
+) -> tuple[np.ndarray, int, int]:
+    """Return aligned delays and the input sample where that window starts.
+
+    Delays are shifted so the earliest channel is zero. Output sample 0 is
+    the reference-frequency sample at ``start``.
+    """
+    if nsamps < 1:
+        msg = f"nsamps must be at least 1, got {nsamps}"
+        raise ValueError(msg)
+    raw = np.asarray(header.get_dmdelays(dm), dtype=np.int32)
+    lo = int(raw.min())
+    hi = int(raw.max())
+    in_start = start + lo
+    n_in = nsamps + (hi - lo)
+    if start < 0 or in_start < 0 or in_start + n_in > header.nsamples:
+        msg = (
+            f"requested dedispersed block is out of range: "
+            f"start={start}, nsamps={nsamps}"
+        )
+        raise ValueError(msg)
+    aligned = np.ascontiguousarray(raw - lo, dtype=np.int32)
+    return aligned, in_start, n_in
+
+
+def _dedisp_read_mode(
+    n_in: int,
+    nsamps: int,
+    samp_stride: int,
+    nbits: int,
+    *,
+    small_reads: bool | None,
+) -> str:
+    """Choose how to read a dispersed block from disk.
+
+    ``"bulk"`` is one sequential read of the whole delay window. ``"stream"``
+    walks that window in small gulps and keeps only the output block.
+    ``"partial"`` seeks to the channels live at each sample. ``small_reads``
+    forces partial reads (``True``) or one bulk read (``False``). ``None``
+    picks from the DM geometry.
+    """
+    if nbits < 8 and small_reads is True:
+        msg = (
+            "small_reads needs at least 8 bits per sample so a channel can be "
+            f"sought directly; this file is {nbits}-bit"
+        )
+        raise ValueError(msg)
+    if small_reads is False:
+        return "bulk"
+    if small_reads is True:
+        return "partial"
+    bulk_bytes = n_in * samp_stride
+    active = nsamps / n_in if n_in else 1.0
+    if bulk_bytes <= _BULK_BYTES:
+        return "bulk"
+    if nbits < 8 or active >= 0.5:
+        return "stream"
+    return "partial"
+
+
+def _active_spans(
+    delays: np.ndarray,
+    nsamps: int,
+    n_in: int,
+) -> tuple[np.ndarray, np.ndarray] | None:
+    """Channel slice live at each input sample, or None if delays are gapped.
+
+    Delays must be monotonic in channel order. The slice is inclusive of
+    ``clo`` and exclusive of ``chi``.
+    """
+    diff = np.diff(delays)
+    if diff.size and not (np.all(diff >= 0) or np.all(diff <= 0)):
+        return None
+    nchans = int(delays.size)
+    decreasing = bool(diff.size and np.all(diff <= 0))
+    ordered = delays[::-1] if decreasing else delays
+    sample = np.arange(n_in, dtype=np.int32)
+    left = np.searchsorted(ordered, sample - nsamps, side="right")
+    right = np.searchsorted(ordered, sample, side="right")
+    if decreasing:
+        clo = nchans - right
+        chi = nchans - left
+    else:
+        clo = left
+        chi = right
+    return clo.astype(np.int32, copy=False), chi.astype(np.int32, copy=False)
+
+
+def _gather_dispersed(
+    block: np.ndarray,
+    aligned: np.ndarray,
+    nsamps: int,
+) -> np.ndarray:
+    """Keep ``nsamps`` valid samples per channel from a dispersed window."""
+    shifts = np.ascontiguousarray(-aligned, dtype=np.int64)
+    out = roll_block_valid(block, shifts)
+    if out.shape[1] != nsamps:
+        msg = f"dedispersed length {out.shape[1]} != {nsamps}"
+        raise RuntimeError(msg)
+    return out
+
+
+def open_filterbank(filename: str | Path) -> FilReader | PFITSReader:
+    """Open a sigproc filterbank or a search-mode PSRFITS file.
+
+    Parameters
+    ----------
+    filename : str | Path
+        ``.fil``, ``.tim``, ``.fits``, or ``.sf`` path.
+
+    Returns
+    -------
+    FilReader | PFITSReader
+        Reader for the file.
+
+    Raises
+    ------
+    ValueError
+        If the file is not sigproc or PSRFITS search data.
+    """
+    kind = detect_file_type(filename)
+    if kind == "sigproc":
+        return FilReader(filename)
+    if kind == "pfits":
+        return PFITSReader(str(filename))
+    msg = (
+        f"{filename} is {kind} data; filterbank commands read "
+        "sigproc and PSRFITS search files"
+    )
+    raise ValueError(msg)
 
 
 class FilReader(Filterbank):
@@ -65,6 +225,10 @@ class FilReader(Filterbank):
             self._filenames,
             check_contiguity=check_contiguity,
         )
+        check_packed_length(self._header.nchans, self._header.nbits)
+        if self._header.nifs != 1:
+            msg = f"FilReader supports one IF, got nifs={self._header.nifs}"
+            raise NotImplementedError(msg)
         self._file = FileReader(
             self.header.stream_info,
             mode="r",
@@ -96,6 +260,21 @@ class FilReader(Filterbank):
         """int: Sample byte stride in input data."""
         return int(self.header.nchans * self.chan_stride)
 
+    def close(self) -> None:
+        """Close the underlying file."""
+        self._file.close()
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self.close()
+
+    def _maybe_signed(self, data: np.ndarray) -> np.ndarray:
+        if self.header.signed and self.header.nbits == 8:
+            return data.view(np.int8).astype(np.float32)
+        return data
+
     def read_block(
         self,
         start: int,
@@ -105,19 +284,16 @@ class FilReader(Filterbank):
     ) -> FilterbankBlock:
         fch1 = fch1 if fch1 is not None else self.header.fch1
         nchans = nchans if nchans is not None else self.header.nchans
-        if fch1 > self.header.fch1 or nchans > self.header.nchans:
-            msg = f"requested block is out of range: fch1={fch1}, nchans={nchans}"
-            raise ValueError(msg)
+        chan_start = _chan_start(self.header, fch1, nchans)
         if start < 0 or start + nsamps > self.header.nsamples:
             msg = f"requested block is out of range: start={start}, nsamps={nsamps}"
             raise ValueError(msg)
 
         self._file.seek(start * self.samp_stride)
-        data = self._file.cread(self.header.nchans * nsamps)
+        data = self._maybe_signed(self._file.cread(self.header.nchans * nsamps))
         nsamps_read = data.size // self.header.nchans
         data = data.reshape(nsamps_read, self.header.nchans).transpose()
 
-        chan_start = int((fch1 - self.header.fch1) / self.header.foff)
         data_block = data[chan_start : chan_start + nchans]
         start_mjd = self.header.mjd_after_nsamps(start)
         new_header = self.header.new_header(
@@ -130,44 +306,141 @@ class FilReader(Filterbank):
         )
         return FilterbankBlock(data_block, new_header)
 
-    def read_dedisp_block(self, start: int, nsamps: int, dm: float) -> FilterbankBlock:
-        delays = self.header.get_dmdelays(dm)
-        min_sample = start + delays
-        max_sample = min_sample + nsamps
-        if np.any(min_sample < 0) or np.any(max_sample > self.header.nsamples):
-            msg = (
-                f"requested dedispersed block is out of range: "
-                f"start={start}, nsamps={nsamps}"
-            )
-            raise ValueError(msg)
+    def read_dedisp_block(
+        self,
+        start: int,
+        nsamps: int,
+        dm: float,
+        *,
+        small_reads: bool | None = None,
+    ) -> FilterbankBlock:
+        """Read a dedispersed block straight from disk.
 
-        self._file.seek(start * self.samp_stride)
-        samples_read = np.zeros(self.header.nchans, dtype=int)
-        data = np.zeros((self.header.nchans, nsamps), dtype=self._file.bitsinfo.dtype)
+        Parameters
+        ----------
+        start : int
+            First output sample. This is the reference-frequency sample.
+        nsamps : int
+            Number of output samples.
+        dm : float
+            Dispersion measure.
+        small_reads : bool or None, optional
+            How to read the delay window.
 
-        for isamp in track(range(nsamps), description="Reading dedispersed data ..."):
-            samples_offset = start + isamp
-            relevant_chans = np.argwhere(
-                np.logical_and(
-                    max_sample > samples_offset,
-                    min_sample <= samples_offset,
-                ),
-            ).flatten()
-            chans_slice = np.arange(
-                relevant_chans.min(),
-                relevant_chans.max() + 1,
-                dtype=int,
-            )
-            # Read channel data for for each sample
-            sample_data = self._file.cread(self.header.nchans)
-            data[chans_slice, samples_read[chans_slice]] = sample_data[chans_slice]
+            ``None`` (default) picks from the DM. A window that fits in 32 MiB
+            is one sequential read. A larger window is streamed in 8 MiB gulps
+            when most channels are live, and sought per sample down to the
+            live channels when a high DM leaves most of each sample unused.
+            ``True`` forces those channel seeks. ``False`` forces the single
+            sequential read. Seeks need at least 8 bits per sample. 1-, 2- and
+            4-bit data are always read as whole samples.
 
-            # Update sample counts
-            samples_read[chans_slice] += 1
+        Returns
+        -------
+        FilterbankBlock
+            Shape ``(nchans, nsamps)``. A bulk read holds the delay window
+            only while it copies into this block. Stream and channel-seek
+            reads never build that window.
 
-        start_mjd = self.header.mjd_after_nsamps(start)
-        new_header = self.header.new_header({"tstart": start_mjd, "nsamples": nsamps})
+        Raises
+        ------
+        ValueError
+            If the delay window runs off the file, or ``small_reads`` is forced
+            on sub-byte data.
+        """
+        aligned, in_start, n_in = _dedisp_window(self.header, start, nsamps, dm)
+        mode = _dedisp_read_mode(
+            n_in,
+            nsamps,
+            self.samp_stride,
+            self.header.nbits,
+            small_reads=small_reads,
+        )
+        if mode == "bulk":
+            data = self._dedisp_bulk(in_start, n_in, aligned, nsamps)
+        elif mode == "partial":
+            data = self._dedisp_partial(in_start, n_in, aligned, nsamps)
+        else:
+            data = self._dedisp_stream(in_start, n_in, aligned, nsamps)
+        new_header = self.header.new_header(
+            {
+                "tstart": self.header.mjd_after_nsamps(start),
+                "nsamples": nsamps,
+            },
+        )
         return FilterbankBlock(data, new_header, dm=dm)
+
+    def _dedisp_dtype(self) -> np.dtype[np.generic]:
+        if self.header.signed and self.header.nbits == 8:
+            return np.dtype(np.float32)
+        return self.bitsinfo.dtype
+
+    def _dedisp_bulk(
+        self,
+        in_start: int,
+        n_in: int,
+        aligned: np.ndarray,
+        nsamps: int,
+    ) -> np.ndarray:
+        block = self.read_block(in_start, n_in)
+        return _gather_dispersed(block.data, aligned, nsamps)
+
+    def _dedisp_stream(
+        self,
+        in_start: int,
+        n_in: int,
+        aligned: np.ndarray,
+        nsamps: int,
+    ) -> np.ndarray:
+        nchans = self.header.nchans
+        out = np.zeros((nchans, nsamps), dtype=self._dedisp_dtype())
+        gulp = max(1, min(n_in, _STREAM_GULP_BYTES // max(self.samp_stride, 1)))
+        self._file.seek(in_start * self.samp_stride)
+        done = 0
+        while done < n_in:
+            take = min(gulp, n_in - done)
+            raw = self._maybe_signed(self._file.cread(take * nchans))
+            place_dedisp_block(out, aligned, raw.reshape(take, nchans), done)
+            done += take
+        return out
+
+    def _dedisp_partial(
+        self,
+        in_start: int,
+        n_in: int,
+        aligned: np.ndarray,
+        nsamps: int,
+    ) -> np.ndarray:
+        spans = _active_spans(aligned, nsamps, n_in)
+        if spans is None:
+            return self._dedisp_stream(in_start, n_in, aligned, nsamps)
+        clo, chi = spans
+        nchans = self.header.nchans
+        out = np.zeros((nchans, nsamps), dtype=self._dedisp_dtype())
+        item = self.bitsinfo.itemsize
+        stride = self.samp_stride
+        pos: int | None = None
+        for isamp in range(n_in):
+            lo_c = int(clo[isamp])
+            hi_c = int(chi[isamp])
+            if hi_c <= lo_c:
+                continue
+            target = (in_start + isamp) * stride + lo_c * item
+            if pos != target:
+                gap = -1 if pos is None else target - pos
+                useful = (hi_c - lo_c) * item
+                if 0 <= gap <= useful:
+                    if gap:
+                        self._file.cread(gap // item)
+                else:
+                    self._file.seek(target)
+            chunk = self._maybe_signed(self._file.cread(hi_c - lo_c))
+            if chunk.size != hi_c - lo_c:
+                msg = f"short read at sample {in_start + isamp}"
+                raise OSError(msg)
+            place_dedisp_span(out, aligned, lo_c, hi_c, isamp, chunk)
+            pos = target + (hi_c - lo_c) * item
+        return out
 
     def read_plan(
         self,
@@ -221,8 +494,12 @@ class FilReader(Filterbank):
                 f"read_plan: Reading block {ii}/{nreads}, {block} elements, "
                 f"with skipback={skip}",
             )
-            nbytes = self._file.creadinto(read_buffer, unpack_buffer)
-            expected_nbytes = int(block * self.chan_stride)
+            need = int(block * self.chan_stride)
+            unpack_view = (
+                None if unpack_buffer is None else memoryview(unpack_buffer)[:block]
+            )
+            nbytes = self._file.creadinto(memoryview(read_buffer)[:need], unpack_view)
+            expected_nbytes = need
             if nbytes != expected_nbytes:
                 msg = (
                     f"Unexpected number of bytes read from file {nbytes} (actual) "
@@ -231,7 +508,9 @@ class FilReader(Filterbank):
                 raise ValueError(msg)
             if skip != 0:
                 self._file.seek(int(skip * self.chan_stride), whence=1)
-            yield block // self.header.nchans, ii, data[:block]
+            # ``data`` is a view of the gulp buffer. It is valid until the next
+            # iteration, which overwrites it. Copy before storing it.
+            yield block // self.header.nchans, ii, self._maybe_signed(data[:block])
 
 
 class PFITSReader(Filterbank):
@@ -249,6 +528,16 @@ class PFITSReader(Filterbank):
         self._header = Header.from_pfits(self._filename)
         self._fitsfile = PFITSFile(self._filename)
         super().__init__()
+
+    def close(self) -> None:
+        """Close the underlying FITS file."""
+        self._fitsfile.close()
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self.close()
 
     @property
     def pri_hdr(self) -> PrimaryHdr:
@@ -283,22 +572,16 @@ class PFITSReader(Filterbank):
     ) -> FilterbankBlock:
         fch1 = fch1 if fch1 is not None else self.header.fch1
         nchans = nchans if nchans is not None else self.header.nchans
-        if fch1 > self.header.fch1 or nchans > self.header.nchans:
-            msg = f"requested block is out of range: fch1={fch1}, nchans={nchans}"
-            raise ValueError(msg)
+        chan_start = _chan_start(self.header, fch1, nchans)
         if start < 0 or start + nsamps > self.header.nsamples:
             msg = f"requested block is out of range: start={start}, nsamps={nsamps}"
             raise ValueError(msg)
 
-        startsub, startsamp = divmod(start, self.sub_hdr.subint_samples)
-        nsubs = (
-            nsamps + self.sub_hdr.subint_samples - 1
-        ) // self.sub_hdr.subint_samples
-        data = self._fitsfile.read_subints(startsub, nsubs)
-        data = data[startsamp : startsamp + nsamps]
+        data = self._read_samples(start, nsamps)
+        if data.shape[0] != nsamps:
+            msg = f"short PSRFITS read: {data.shape[0]} != {nsamps}"
+            raise ValueError(msg)
         data = data.reshape(nsamps, self.header.nchans).transpose()
-
-        chan_start = int((fch1 - self.header.fch1) / self.header.foff)
         data_block = data[chan_start : chan_start + nchans]
         start_mjd = self.header.mjd_after_nsamps(start)
         new_header = self.header.new_header(
@@ -306,9 +589,63 @@ class PFITSReader(Filterbank):
         )
         return FilterbankBlock(data_block, new_header)
 
-    def read_dedisp_block(self, start: int, nsamps: int, dm: float) -> FilterbankBlock:
-        msg = "Not implemented for PFITSReader"
-        raise NotImplementedError(msg)
+    def read_dedisp_block(
+        self,
+        start: int,
+        nsamps: int,
+        dm: float,
+        *,
+        small_reads: bool | None = None,
+    ) -> FilterbankBlock:
+        """Read a dedispersed block from search-mode PSRFITS.
+
+        ``small_reads`` selects the same modes as
+        :meth:`FilReader.read_dedisp_block`. A PSRFITS row has no per-channel
+        byte seek, so ``True`` streams whole samples instead of seeking inside
+        a sample. ``None`` uses one read while the delay window is at most
+        32 MiB, and streams above that.
+        """
+        aligned, in_start, n_in = _dedisp_window(self.header, start, nsamps, dm)
+        mode = _dedisp_read_mode(
+            n_in,
+            nsamps,
+            self.header.nchans * 4,
+            32,
+            small_reads=small_reads,
+        )
+        if mode == "partial":
+            mode = "stream"
+        if mode == "bulk":
+            block = self.read_block(in_start, n_in)
+            data = _gather_dispersed(block.data, aligned, nsamps)
+        else:
+            data = self._dedisp_stream(in_start, n_in, aligned, nsamps)
+        new_header = self.header.new_header(
+            {
+                "tstart": self.header.mjd_after_nsamps(start),
+                "nsamples": nsamps,
+            },
+        )
+        return FilterbankBlock(data, new_header, dm=dm)
+
+    def _dedisp_stream(
+        self,
+        in_start: int,
+        n_in: int,
+        aligned: np.ndarray,
+        nsamps: int,
+    ) -> np.ndarray:
+        nchans = self.header.nchans
+        out = np.zeros((nchans, nsamps), dtype=np.float32)
+        stride = nchans * 4
+        gulp = max(1, min(n_in, _STREAM_GULP_BYTES // max(stride, 1)))
+        done = 0
+        while done < n_in:
+            take = min(gulp, n_in - done)
+            raw = self._read_samples(in_start + done, take)
+            place_dedisp_block(out, aligned, raw, done)
+            done += take
+        return out
 
     def read_plan(
         self,

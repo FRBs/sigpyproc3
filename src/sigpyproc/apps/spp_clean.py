@@ -7,7 +7,7 @@ import numpy as np
 import rich_click as click
 
 from sigpyproc.apps._logging import logging_options, setup_cli_logging
-from sigpyproc.readers import FilReader
+from sigpyproc.readers import open_filterbank
 
 if TYPE_CHECKING:
     from sigpyproc.core.custom_types import MaskMethods
@@ -68,13 +68,14 @@ def rfi(
     gulp: int,
 ) -> None:
     """Clean RFI from filterbank data."""
-    fil = FilReader(filfile)
-    _out_file, rfimask = fil.clean_rfi(
+    fil = open_filterbank(filfile)
+    out_file, rfimask = fil.clean_rfi(
         method=method,
         threshold=threshold,
         outfile_name=outfile,
         gulp=gulp,
     )
+    click.echo(out_file)
     if maskfile is not None:
         rfimask.to_file(filename=maskfile)
 
@@ -123,7 +124,7 @@ def zap_channels(
     if zap.size == 0:
         msg = "Provide -c/--chans or --mask-file"
         raise click.UsageError(msg)
-    fil = FilReader(filfile)
+    fil = open_filterbank(filfile)
     chan_mask = np.zeros(fil.header.nchans, dtype=bool)
     chan_mask[zap] = True
     path = fil.apply_channel_mask(chan_mask, outfile_name=outfile, gulp=gulp)
@@ -172,7 +173,7 @@ def zap_times(
     in_place: bool,
 ) -> None:
     """Replace a time-sample range in a filterbank."""
-    fil = FilReader(filfile)
+    fil = open_filterbank(filfile)
     if in_place:
         tmp_path = Path(filfile).with_suffix(Path(filfile).suffix + ".zap.tmp")
         fil.zap_times([(start, end)], mode=mode, outfile_name=str(tmp_path), gulp=gulp)
