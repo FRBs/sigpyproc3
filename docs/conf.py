@@ -128,6 +128,7 @@ numpydoc_xref_aliases = {
     "Literal": "typing.Literal",
     "CandidateTable": "sigpyproc.core.candidates.CandidateTable",
     "Filterbank": "sigpyproc.base.Filterbank",
+    "FilterbankBlock": "sigpyproc.block.FilterbankBlock",
     "PlanReader": "sigpyproc.core.custom_types.PlanReader",
     "SkyCoord": "astropy.coordinates.SkyCoord",
     "Angle": "astropy.coordinates.Angle",
@@ -135,6 +136,10 @@ numpydoc_xref_aliases = {
     "Header": "sigpyproc.header.Header",
     "TimeSeries": "sigpyproc.timeseries.TimeSeries",
     "PulsarParams": "sigpyproc.simulation.pulsar.PulsarParams",
+    "Furby": "sigpyproc.simulation.furby.Furby",
+    "PulseParams": "sigpyproc.simulation.furby.PulseParams",
+    "Injector": "sigpyproc.simulation.inject.Injector",
+    "FileWriter": "sigpyproc.io.fileio.FileWriter",
 }
 numpydoc_xref_ignore = {
     "of",

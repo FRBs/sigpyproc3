@@ -304,6 +304,7 @@ def convolve_templates(
     ntemps = len(temp_bank)
     convs = np.empty((ntemps, nbins), dtype=data.dtype)
     data_pad = circular_pad_goodsize(data)
+    n_pad = len(data_pad)
     data_fft = np.fft.rfft(data_pad)
     for itemp in range(ntemps):
         temp_kernel = temp_bank[itemp]
@@ -312,6 +313,6 @@ def convolve_templates(
         temp_pad = np.roll(temp_pad, -ref_bin[itemp])
         temp_pad = np.roll(temp_pad[::-1], 1)
         temp_norm = normalize_template(temp_pad)
-        conv = np.fft.irfft(data_fft * np.fft.rfft(temp_norm))
+        conv = np.fft.irfft(data_fft * np.fft.rfft(temp_norm), n_pad)
         convs[itemp, :] = conv[:nbins]
     return convs

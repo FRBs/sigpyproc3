@@ -8,8 +8,8 @@ Algorithms live on the data objects
 ({py:class}`~sigpyproc.base.Filterbank`,
 {py:class}`~sigpyproc.timeseries.TimeSeries`,
 {py:class}`~sigpyproc.core.candidates.CandidateTable`). These pages document
-flags; {doc}`/tutorials/quickstart` and {doc}`/tutorials/search` show how
-to use the same methods from Python.
+flags; {doc}`/tutorials/quickstart`, {doc}`/tutorials/search`, and
+{doc}`/tutorials/fake` show how to use the same methods from Python.
 
 ## Logging
 
@@ -43,7 +43,7 @@ Rich styling, or rely on your application's own `logging` configuration.
 | `spp_splice` | Stack in frequency |
 | `spp_dedisperse` | `tim` / `subband` / `tree` / `plan` |
 | `spp_fold` | Fold to `.npz` + ASCII profile |
-| `spp_fake` | `noise` / `pulsar` / `pulse` filterbanks |
+| `spp_fake` | `noise` / `pulsar` / `pulse` / `furby` filterbanks, and `inject` |
 | `spp_search` | `fft` / `pulses` / `ffa` / `cluster` on a `.tim` |
 | `spp_digifil` | Convert PSRFITS / filterbank to N-bit filterbank (dspsr `digifil` numerics) |
 | `spp_view` | Interactive viewer & batch renderer for filterbank, time-series, and spectrum |

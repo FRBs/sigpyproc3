@@ -105,5 +105,6 @@ All required dependencies are installed automatically via `uv sync` or `uv pip i
 
 - {doc}`/tutorials/quickstart` — load a filterbank, inspect the header, dedisperse.
 - {doc}`/tutorials/search` — search a time series and work with `CandidateTable`.
+- {doc}`/tutorials/fake` — write a mock FRB, or inject one into a filterbank.
 - {doc}`/cmd` — every `spp_*` command.
 - {doc}`/generated/sigpyproc` — full API.

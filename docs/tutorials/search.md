@@ -288,6 +288,10 @@ The recovered period should sit within about one Fourier bin of
 To invent a filterbank instead of a time series, use
 {py:func}`~sigpyproc.simulation.pulsar.fake_filterbank` /
 `spp_fake pulsar`, then {py:meth}`~sigpyproc.base.Filterbank.dedisperse`.
+`spp_fake furby` writes a mock FRB whose ``--snr`` is the matched-filter
+signal-to-noise ratio of the dedispersed sum, including 1- to 16-bit files.
+`spp_fake inject` stamps the same pulses into a filterbank that `spp_fake`
+already wrote. The walk-through is {doc}`/tutorials/fake`.
 
 ---
 

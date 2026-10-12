@@ -69,6 +69,7 @@ sigpyproc.simulation
    :template: autosummary/module.rst
 
    ~sigpyproc.simulation.furby
+   ~sigpyproc.simulation.inject
    ~sigpyproc.simulation.pulsar
 
 sigpyproc.viz
