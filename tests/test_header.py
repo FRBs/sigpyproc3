@@ -640,3 +640,36 @@ class TestSigprocRules:
             expected = "barycentric" if value else "topocentric"
             assert Header.from_inffile(path).frame == expected
         assert Header.from_inffile(inffile).frame == "topocentric"
+
+
+@pytest.mark.parametrize("unit", ["Mhz", "MHz", "MHZ"])
+def test_inf_frequency_unit_case(inffile: str, tmp_path: Path, unit: str) -> None:
+    original = Header.from_inffile(inffile)
+    text = Path(inffile).read_text().replace("MHz", unit).replace("Mhz", unit)
+    path = tmp_path / "case.inf"
+    path.write_text(text)
+    loaded = Header.from_inffile(path)
+    assert loaded.fch1 == original.fch1
+    assert loaded.foff == original.foff
+
+
+def test_inf_non_radio_metadata(inffile: str, tmp_path: Path) -> None:
+    radio_fields = (
+        "Central freq",
+        "Total bandwidth",
+        "Number of channels",
+        "Channel bandwidth",
+        "Dispersion measure",
+    )
+    text = "\n".join(
+        line
+        for line in Path(inffile).read_text().splitlines()
+        if not any(label in line for label in radio_fields)
+    )
+    path = tmp_path / "xray.inf"
+    path.write_text(text + "\n Type of observation (EM band) = X-ray\n")
+    header = Header.from_inffile(path)
+    assert header.fch1 == 0
+    assert header.foff == 0
+    assert header.dm == 0
+    assert header.nchans == 1

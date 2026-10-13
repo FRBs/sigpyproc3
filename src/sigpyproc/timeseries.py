@@ -5,12 +5,14 @@ This module contains the TimeSeries class for handling 1D time series data.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 
 from sigpyproc import fourierseries, kernels
-from sigpyproc.core import algorithms, stats
+from sigpyproc.algorithms import box, period
+from sigpyproc.core import stats
 from sigpyproc.core.candidates import CandidateTable
 from sigpyproc.foldedcube import FoldedData
 from sigpyproc.header import Header
@@ -18,11 +20,19 @@ from sigpyproc.utils import validate_path
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from pathlib import Path
 
     from numpy.typing import ArrayLike, NDArray
 
-    from sigpyproc.core.custom_types import FilterMethods, LocMethods, ScaleMethods
+    from sigpyproc.algorithms.heimdall import HeimdallConfig
+    from sigpyproc.core.custom_types import (
+        BoxcarEngine,
+        FilterMethods,
+        LocMethods,
+        PulseDetrend,
+        PulseMethod,
+        ScaleMethods,
+        WidthStyle,
+    )
 
 PadMode = Literal[
     "constant",
@@ -493,52 +503,93 @@ class TimeSeries:
         snr_min: float = 6.0,
         max_width: int = 256,
         spacing_factor: float = 2.0,
-        deadtime: int = 8,
+        deadtime: int | None = None,
+        method: PulseMethod = "presto",
+        engine: BoxcarEngine = "running_sum",
+        width_style: WidthStyle | None = None,
+        widths: ArrayLike | None = None,
+        block_size: int = 8000,
+        detrend: PulseDetrend = "linear",
+        mask_bad_blocks: bool = False,
+        chunk_size: int = 8192,
+        heimdall_config: HeimdallConfig | None = None,
     ) -> CandidateTable:
-        """Find multiple pulses with a boxcar matched-filter bank.
-
-        This is not a single :class:`~sigpyproc.core.filters.MatchedFilter`
-        call (that class returns one best peak). Widths are geometric
-        from 1 to ``max_width`` (powers of two when ``spacing_factor=2``).
-        SIGPROC ``peak``'s time-halving loop is not cloned — the width
-        bank already covers 1…``max_width``.
+        """Find pulses using selectable full-resolution boxcar pipelines.
 
         Parameters
         ----------
         snr_min : float, optional
-            Minimum matched-filter SNR, by default 6.0.
+            Positive minimum detection SNR, by default 6.0.
         max_width : int, optional
-            Widest boxcar in bins, by default 256.
+            Ceiling on trial widths in samples, by default 256.
         spacing_factor : float, optional
-            Geometric spacing of the width bank, by default 2.0.
+            Geometric width spacing (> 1), by default 2.0.
         deadtime : int, optional
-            Bins zeroed on *either* side of an accepted peak, by
-            default 8 (as in SIGPROC ``peak``).
+            Minimum exclusion radius in samples. Defaults to 0 for PRESTO
+            (which also suppresses by width), or 8 for matched filter.
+        method : {"presto", "matched_filter", "heimdall"}, optional
+            PRESTO-inspired robust search (default), or the original globally
+            normalized, circular matched-filter search, or a CPU adaptation
+            of Heimdall's single-series stages (GPU parity is unverified).
+        engine : {"running_sum", "fft"}, optional
+            PRESTO boxcar computation, by default "running_sum". FFT uses
+            rocket-fft inside Numba. Ignored by matched filter.
+        width_style : {"presto", "geometric", "powers_of_two"}, optional
+            Defaults to PRESTO's bank for PRESTO, geometric for matched filter,
+            and powers of two for Heimdall. Heimdall accepts only binary widths.
+            The PRESTO preset ends at 300 samples.
+        widths : array_like, optional
+            Explicit positive integer widths <= max_width, overriding the bank.
+        block_size : int, optional
+            PRESTO preprocessing block size in samples, by default 8000.
+        detrend : {"linear", "median"}, optional
+            PRESTO baseline removal, by default "linear".
+        mask_bad_blocks : bool, optional
+            Reject unusual-noise blocks in PRESTO, by default False. Enabling
+            this can also reject strong broad pulses.
+        chunk_size : int, optional
+            PRESTO scoring chunk size in samples, by default 8192.
+        heimdall_config : HeimdallConfig, optional
+            Controls for method="heimdall" (gulp size, baseline length,
+            filter striding, and giant clustering). PRESTO-specific options
+            and fixed deadtime must retain their defaults with this method.
 
         Returns
         -------
         CandidateTable
-            Pulse candidates (``kind="pulse"``), sorted by SNR.
+            Pulse rows sorted by SNR. PRESTO and CPU Heimdall report the boxcar
+            center (start + width // 2); matched filter retains start bins.
+            Heimdall adds filter_index, begin_bin, end_bin, and members.
+            Widths are in seconds. Input samples are never modified.
 
         Raises
         ------
         ValueError
-            If ``max_width`` or ``deadtime`` is invalid.
-        """
-        if max_width < 1:
-            msg = "max_width must be at least 1"
-            raise ValueError(msg)
-        if deadtime < 0:
-            msg = "deadtime must be >= 0"
-            raise ValueError(msg)
+            If parameters or samples are invalid, or a selected width exceeds
+            the observation length.
 
-        return algorithms.boxcar_pulse_search(
+        See Also
+        --------
+        sigpyproc.algorithms.box.pulse_search
+        sigpyproc.algorithms.sps.preprocess_pulse_data
+        sigpyproc.algorithms.sps.iter_boxcar_scores
+        """
+        return box.pulse_search(
             self.data,
             self.header.tsamp,
             snr_min=snr_min,
             max_width=max_width,
             spacing_factor=spacing_factor,
             deadtime=deadtime,
+            method=method,
+            engine=engine,
+            width_style=width_style,
+            widths=widths,
+            block_size=block_size,
+            detrend=detrend,
+            mask_bad_blocks=mask_bad_blocks,
+            chunk_size=chunk_size,
+            heimdall_config=heimdall_config,
             dm=self.header.dm,
             accel=self.header.accel,
         )
@@ -609,12 +660,12 @@ class TimeSeries:
             msg = "npeaks must be at least 1"
             raise ValueError(msg)
 
-        rebins = algorithms.FFA_WIDTH_REBINS if search_width else (nrebin,)
+        rebins = period.FFA_WIDTH_REBINS if search_width else (nrebin,)
         tables = []
         for rebin in rebins:
             series = self.downsample(rebin) if rebin > 1 else self
             tables.append(
-                algorithms.ffa_search(
+                period.ffa_search(
                     series.data,
                     series.header.tsamp,
                     pmin,
@@ -651,8 +702,8 @@ class TimeSeries:
             basename = self.header.basename
         self.header.make_inf(outfile=f"{basename}.inf")
         out_filename = f"{basename}.dat"
-        with self.header.prep_outfile(out_filename, nbits=32) as outfile:
-            outfile.cwrite(self.data)
+        # PRESTO .dat contains raw float32 samples, without a SIGPROC header.
+        self.data.astype("<f4", copy=False).tofile(out_filename)
         return out_filename
 
     def to_tim(self, filename: str | None = None) -> str:
@@ -679,6 +730,8 @@ class TimeSeries:
         cls,
         datfile: str | Path,
         inffile: str | Path | None = None,
+        *,
+        trim_padding: bool = True,
     ) -> TimeSeries:
         """Read a Presto format ``.dat`` file.
 
@@ -688,6 +741,10 @@ class TimeSeries:
             Name of the ``.dat`` file to read.
         inffile : str | Path, optional
             Name of the corresponding ``.inf`` file, by default None.
+        trim_padding : bool, optional
+            Honor PRESTO's terminal-padding marker, by default True. This
+            removes the padded tail, preserving every preceding observed
+            sample. False reads all raw samples, including padding.
 
         Returns
         -------
@@ -704,6 +761,10 @@ class TimeSeries:
             inffile = datpath.with_suffix(".inf")
         data = np.fromfile(datpath, dtype=np.float32)
         inf_hdr = Header.from_inffile(inffile)
+        if trim_padding:
+            observed_end = _presto_observed_end(Path(inffile), inf_hdr.nsamples)
+            if observed_end is not None:
+                data = data[:observed_end]
         hdr_changes = {"nsamples": data.size, "filename": datpath.as_posix()}
         return cls(data, inf_hdr.new_header(hdr_changes))
 
@@ -766,3 +827,25 @@ class TimeSeries:
         if not kwargs.get("batch"):
             viewer.show()
         return viewer
+
+
+def _presto_observed_end(inffile: Path, nsamples: int) -> int | None:
+    """Honor PRESTO's final (N-1,N-1) sentinel for an otherwise padded tail."""
+    has_breaks = False
+    intervals: list[tuple[int, int]] = []
+    for line in inffile.read_text().splitlines():
+        label, _, value = line.rpartition("=")
+        label = label.strip()
+        if label.startswith("Any breaks in the data?"):
+            has_breaks = bool(int(value.strip()))
+        elif label.startswith("On/Off bin pair"):
+            on, off = (int(v.strip()) for v in value.split(","))
+            intervals.append((on, off))
+    if (
+        has_breaks
+        and len(intervals) >= 2
+        and intervals[-1] == (nsamples - 1, nsamples - 1)
+        and 0 <= intervals[-2][1] < nsamples - 1
+    ):
+        return intervals[-2][1] + 1
+    return None

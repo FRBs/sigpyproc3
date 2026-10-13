@@ -31,6 +31,8 @@ CANDIDATE_DTYPE: list[tuple[str, str]] = [
     ("width_s", "f8"),
     ("kind", "U8"),
 ]
+HEIMDALL_CANDIDATE_NAMES = ("filter_index", "begin_bin", "end_bin", "members")
+PULSE_CANDIDATE_NAMES = ("dm", "snr", "time_s", "bin", "width_bins", "width_s")
 CANDIDATE_NAMES: tuple[str, ...] = tuple(name for name, _ in CANDIDATE_DTYPE)
 _COLUMN_UNITS: dict[str, u.UnitBase] = {
     "period_s": u.s,
@@ -220,16 +222,21 @@ class CandidateTable:
         Returns
         -------
         CandidateTable
-            Combined table, or :meth:`empty` if every input is empty.
+            Combined table, retaining optional columns even when all inputs
+            are empty. No inputs returns :meth:`empty`.
         """
-        nonempty = [item.table for item in tables if len(item) > 0]
-        if not nonempty:
+        if not tables:
             return cls.empty()
-        return cls(QTable(vstack(nonempty)))
+        nonempty = [item.table for item in tables if len(item) > 0]
+        return cls(QTable(vstack(nonempty or [item.table for item in tables])))
 
     @classmethod
     def from_csv(cls, path: str | Path) -> CandidateTable:
-        """Read a CSV written by :meth:`to_csv`.
+        """Read a shared candidate CSV or pulse-specific CSV.
+
+        Pulse CSVs written by :meth:`to_pulse_csv` are restored to the shared
+        in-memory schema with kind="pulse" and unused periodic fields NaN.
+        Derived event times and integer widths remain available in the CSV.
 
         Parameters
         ----------
@@ -247,6 +254,25 @@ class CandidateTable:
             If required columns are missing.
         """
         raw = Table.read(path, format="ascii.csv")
+        if "kind" not in raw.colnames and set(PULSE_CANDIDATE_NAMES) <= set(
+            raw.colnames
+        ):
+            pulses = cls.from_rows(
+                [
+                    {
+                        "kind": "pulse",
+                        "dm": row["dm"],
+                        "snr": row["snr"],
+                        "bin": row["bin"],
+                        "width_s": row["width_s"],
+                    }
+                    for row in raw
+                ]
+            )
+            for name in raw.colnames:
+                if name not in PULSE_CANDIDATE_NAMES:
+                    pulses.table[name] = raw[name]
+            return pulses
         missing = [name for name in CANDIDATE_NAMES if name not in raw.colnames]
         if missing:
             msg = f"CSV is missing columns: {missing}"
@@ -261,6 +287,9 @@ class CandidateTable:
         table["bin"] = np.asarray(raw["bin"], dtype=np.int64)
         table["width_s"] = np.asarray(raw["width_s"], dtype=np.float64) * u.s
         table["kind"] = np.asarray(raw["kind"], dtype="U8")
+        for name in raw.colnames:
+            if name not in CANDIDATE_NAMES:
+                table[name] = raw[name]
         return cls(table)
 
     def to_csv(self, path: str | Path | TextIO) -> None:
@@ -276,8 +305,66 @@ class CandidateTable:
             Output path (overwritten if it exists) or an open text stream.
         """
         plain = Table()
-        for name in CANDIDATE_NAMES:
-            plain[name] = _plain(self.table[name])
+        for name in self.table.colnames:
+            plain[name] = self.table[name]
+            if name in _COLUMN_UNITS:
+                plain[name] = _plain(self.table[name])
+        if hasattr(path, "write"):
+            plain.write(path, format="ascii.csv")
+        else:
+            plain.write(path, format="ascii.csv", overwrite=True)
+
+    def to_pulse_csv(self, path: str | Path | TextIO, tsamp: float) -> None:
+        """Write pulse event fields without periodic-search columns.
+
+        Columns are dm, snr, time_s, bin, width_bins, and width_s. Event time
+        is bin * tsamp in seconds since observation start. The bin convention
+        follows the search method (center for PRESTO and Heimdall, start for
+        matched filter).
+        Heimdall's filter_index, begin_bin, end_bin, and members columns are
+        also included when present. The shared base schema remains unchanged.
+
+        Parameters
+        ----------
+        path : str | Path | TextIO
+            Output CSV path or open text stream.
+        tsamp : float
+            Positive sampling interval in seconds.
+
+        Raises
+        ------
+        ValueError
+            If sampling interval is invalid, rows are not pulses, or widths
+            are not positive whole numbers of samples.
+        """
+        if not np.isfinite(tsamp) or tsamp <= 0:
+            msg = "tsamp must be finite and positive"
+            raise ValueError(msg)
+        if np.any(self.values("kind") != "pulse"):
+            msg = "pulse export requires only pulse candidates"
+            raise ValueError(msg)
+        widths = self.values("width_s") / tsamp
+        rounded = np.rint(widths)
+        if (
+            not np.all(np.isfinite(widths))
+            or np.any(rounded < 1)
+            or not np.allclose(widths, rounded, rtol=0, atol=1e-6)
+        ):
+            msg = "pulse widths must be positive whole numbers of samples"
+            raise ValueError(msg)
+        plain = Table(
+            {
+                "dm": self.values("dm"),
+                "snr": self.values("snr"),
+                "time_s": self.values("bin") * tsamp,
+                "bin": self.values("bin"),
+                "width_bins": rounded.astype(np.int64),
+                "width_s": self.values("width_s"),
+            }
+        )
+        for name in HEIMDALL_CANDIDATE_NAMES:
+            if name in self.table.colnames:
+                plain[name] = self.table[name]
         if hasattr(path, "write"):
             plain.write(path, format="ascii.csv")
         else:
@@ -301,7 +388,7 @@ class CandidateTable:
     def sort_by_snr(self) -> CandidateTable:
         """Return a copy sorted by decreasing SNR."""
         if len(self) == 0:
-            return self.empty()
+            return CandidateTable(QTable(self.table))
         order = np.argsort(-_plain(self.table["snr"]))
         return CandidateTable(QTable(self.table[order]))
 
@@ -351,7 +438,7 @@ class CandidateTable:
             msg = "harm_max must be at least 1"
             raise ValueError(msg)
         if len(self) == 0:
-            return self.empty()
+            return CandidateTable(QTable(self.table))
 
         snr = _plain(self.table["snr"]).astype(np.float64, copy=False)
         period = _plain(self.table["period_s"]).astype(np.float64, copy=False)

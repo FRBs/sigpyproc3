@@ -49,6 +49,11 @@ class ZScoreResult:
     scale: NDArray[np.floating]
 
 
+# Gaussian consistency factors for robust scale estimators (see _scale_mad).
+_NORM_MAD = 0.6744897501960817  # scipy.stats.norm.ppf(0.75)
+MAD_GAUSSIAN_SCALE = 1.0 / _NORM_MAD
+
+
 def downsample_1d(
     array: np.ndarray,
     factor: int,
@@ -279,6 +284,74 @@ def running_filter_fast(
     filtered_ds = running_filter(ds, min_points, method)
     x_ds = np.arange(ds.size) * ds_factor + 0.5 * (ds_factor - 1)
     return np.interp(np.arange(array.size), x_ds, filtered_ds)
+
+
+def running_robust_standardize(
+    data: ArrayLike,
+    window: int,
+    *,
+    min_window: int = 3,
+) -> ZScoreResult:
+    """Robustly standardize a 1D series with a running median and MAD.
+
+    Each sample is ``(x - med) / scale`` where ``med`` is a running median and
+    ``scale`` is ``MAD_GAUSSIAN_SCALE`` times the running median of
+    ``|x - med|``. Bins with zero local MAD use unit scale.
+
+    Parameters
+    ----------
+    data : ArrayLike
+        Finite, real, one-dimensional input samples.
+    window : int
+        Positive integer sliding-window length for the running medians.
+    min_window : int, optional
+        Positive integer cutoff. Below this window length, use a single
+        global median and MAD, by default 3.
+
+    Returns
+    -------
+    ZScoreResult
+        Robust Z-scores and per-sample location and scale arrays.
+
+    Raises
+    ------
+    ValueError
+        If samples are empty, nonfinite, or not real and one-dimensional,
+        or either window length is not a positive integer.
+    """
+    raw = np.asarray(data)
+    if raw.ndim != 1 or np.iscomplexobj(raw):
+        msg = "data must be real and one-dimensional"
+        raise ValueError(msg)
+    arr = np.asarray(raw, dtype=np.float64)
+    if arr.size == 0:
+        msg = "Cannot robustly standardize an empty array."
+        raise ValueError(msg)
+    if not np.all(np.isfinite(arr)):
+        msg = "data must contain only finite samples"
+        raise ValueError(msg)
+    for name, value in (("window", window), ("min_window", min_window)):
+        if (
+            isinstance(value, (bool, np.bool_))
+            or not isinstance(value, (int, np.integer))
+            or value < 1
+        ):
+            msg = f"{name} must be a positive integer"
+            raise ValueError(msg)
+    n = arr.size
+    if window < min_window:
+        loc_value = np.median(arr)
+        loc = np.full(n, loc_value, dtype=np.float64)
+        mad = np.full(n, np.median(np.abs(arr - loc_value)), dtype=np.float64)
+    else:
+        loc = np.asarray(running_filter(arr, window, "median"), dtype=np.float64)
+        mad = np.asarray(
+            running_filter(np.abs(arr - loc), window, "median"),
+            dtype=np.float64,
+        )
+    scale = np.where(mad > 0.0, MAD_GAUSSIAN_SCALE * mad, 1.0)
+    zscores = (arr - loc) / scale
+    return ZScoreResult(data=zscores, loc=loc, scale=scale)
 
 
 def estimate_loc(
@@ -527,10 +600,9 @@ def _scale_mad(
         https://www.ibm.com/docs/en/cognos-analytics/12.0.0?topic=terms-modified-z-score
     """
     data = np.asanyarray(data, dtype=np.float64)
-    norm = 0.6744897501960817  # scipy.stats.norm.ppf(0.75)
     norm_aad = np.sqrt(2 / np.pi)
     loc = np.median(data, axis=axis, keepdims=True)
-    mad = np.median(np.abs(data - loc), axis=axis, keepdims=True) / norm
+    mad = np.median(np.abs(data - loc), axis=axis, keepdims=True) / _NORM_MAD
     # Handle zero MAD case using np.isclose for stability
     is_zero_mad = np.isclose(mad, 0)
     if np.any(is_zero_mad):
@@ -566,7 +638,6 @@ def _scale_doublemad(
         https://aakinshin.net/posts/harrell-davis-double-mad-outlier-detector/
     """
     data = np.asanyarray(data, dtype=np.float64)
-    norm = 0.6744897501960817  # scipy.stats.norm.ppf(0.75)
     norm_aad = np.sqrt(2 / np.pi)
     loc = np.median(data, axis=axis, keepdims=True)
     diff = data - loc
@@ -574,8 +645,8 @@ def _scale_doublemad(
     # Split into left and right deviations
     data_left = np.where(data <= loc, np.abs(diff), np.nan)
     data_right = np.where(data >= loc, np.abs(diff), np.nan)
-    mad_left = np.nanmedian(data_left, axis=axis, keepdims=True) / norm
-    mad_right = np.nanmedian(data_right, axis=axis, keepdims=True) / norm
+    mad_left = np.nanmedian(data_left, axis=axis, keepdims=True) / _NORM_MAD
+    mad_right = np.nanmedian(data_right, axis=axis, keepdims=True) / _NORM_MAD
 
     # Replace zero MADs with mean absolute deviation
     mad_left = np.where(

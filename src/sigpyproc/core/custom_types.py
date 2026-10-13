@@ -37,6 +37,11 @@ type SpecSimulMethods = Literal[
 ]
 type MatchFilterMethods = Literal["boxcar", "gaussian", "lorentzian"]
 
+type PulseMethod = Literal["presto", "matched_filter", "heimdall"]
+type BoxcarEngine = Literal["running_sum", "fft"]
+type WidthStyle = Literal["presto", "geometric", "powers_of_two"]
+type PulseDetrend = Literal["linear", "median"]
+
 
 @runtime_checkable
 class PlanReader(Protocol):

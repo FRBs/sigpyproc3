@@ -505,6 +505,8 @@ class Header:
         dtype
             Data type.
         """
+        if self.nbits == 8 and self.signed:
+            return np.dtype("int8")
         return BitsInfo(self.nbits).dtype
 
     @property
@@ -1015,14 +1017,18 @@ class Header:
         with filepath.open("r") as fp:
             lines = fp.readlines()
 
+        # PRESTO versions and third-party writers use both MHz and Mhz.
+        inf_fields = {
+            label.casefold(): field for label, field in params.presto_inf.items()
+        }
         for line in lines:
             desc, _, val = line.rpartition("=")
             desc = desc.strip()
             if desc in params.PRESTO_BARYCENTRIC_ALIASES:
                 desc = params.PRESTO_BARYCENTRIC_LABEL
-            if desc not in params.presto_inf:
+            if desc.casefold() not in inf_fields:
                 continue
-            key, keytype, _keyformat = params.presto_inf[desc]
+            key, keytype, _keyformat = inf_fields[desc.casefold()]
             header[key] = keytype(val.strip())
 
         known = {
@@ -1037,7 +1043,10 @@ class Header:
             **header,
             "filename": header["basename"],
             "data_type": "time series",
-            "fch1": header["freq_low"] + header["foff"] * (header["nchans"] - 1),
+            # Non-radio time series have no channel-frequency metadata.
+            "fch1": header.get("freq_low", 0.0)
+            + header.get("foff", 0.0) * (header.get("nchans", 1) - 1),
+            "foff": header.get("foff", 0.0),
             "nbits": 32,
             "nchans": 1,
             "nifs": 1,

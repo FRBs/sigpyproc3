@@ -255,19 +255,3 @@ ts = fil.dedisperse(50.0)
 peak = int(ts.data.argmax())
 print(peak, peak * fil.header.tsamp)
 ```
-
-For an 8-bit file the samples are digitiser levels (mean 127.5), not
-sigma. The pulse is still the bright outlier after dedispersion.
-
----
-
-## What this does not do
-
-- No fluence or SEFD calibration. `--snr` is defined against noise of
-  rms 1 per channel.
-- No measured SNR on the noisy file, and no threshold that drops a
-  weak pulse.
-- The spectral shapes are a gain per channel. They are not a
-  time-frequency dynamic scintillation screen.
-- `spp_fake pulse` remains the rectangular SIGPROC-style pulse. It
-  does not grow a scattering tail or a spectrum.

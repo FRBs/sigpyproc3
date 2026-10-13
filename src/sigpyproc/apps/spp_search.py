@@ -2,13 +2,22 @@ from __future__ import annotations
 
 from io import StringIO
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import rich_click as click
 
+from sigpyproc.algorithms.heimdall import HeimdallConfig
 from sigpyproc.apps._logging import logging_options, setup_cli_logging
 from sigpyproc.core.candidates import CandidateTable
 from sigpyproc.timeseries import TimeSeries
+
+if TYPE_CHECKING:
+    from sigpyproc.core.custom_types import (
+        BoxcarEngine,
+        PulseDetrend,
+        PulseMethod,
+        WidthStyle,
+    )
 
 
 @logging_options
@@ -25,16 +34,58 @@ def _write_cands(
     outfile: str | None,
     source: str,
     tag: str,
+    *,
+    pulse_tsamp: float | None = None,
 ) -> None:
     if outfile is None:
         outfile = f"{Path(source).stem}_{tag}.csv"
     if outfile == "-":
         buf = StringIO()
-        cands.to_csv(buf)
+        if pulse_tsamp is None:
+            cands.to_csv(buf)
+        else:
+            cands.to_pulse_csv(buf, pulse_tsamp)
         click.echo(buf.getvalue(), nl=False)
         return
-    cands.to_csv(outfile)
+    if pulse_tsamp is None:
+        cands.to_csv(outfile)
+    else:
+        cands.to_pulse_csv(outfile, pulse_tsamp)
     click.echo(outfile)
+
+
+def _load_pulse_series(filename: str) -> TimeSeries:
+    suffix = Path(filename).suffix.lower()
+    if suffix == ".dat":
+        return TimeSeries.from_dat(filename)
+    if suffix == ".tim":
+        return TimeSeries.from_tim(filename)
+    msg = "pulse input must be a .tim or .dat file (with a matching .inf)"
+    raise ValueError(msg)
+
+
+def _heimdall_cli_config(
+    method: PulseMethod,
+    options: dict[str, int | float | bool],
+) -> HeimdallConfig | None:
+    if method != "heimdall":
+        if options:
+            msg = "Heimdall options require --method heimdall"
+            raise ValueError(msg)
+        return None
+    # Click has validated individual option types; the config validates their
+    # relationships and applies defaults for omitted options.
+    defaults = HeimdallConfig()
+    return HeimdallConfig(
+        gulp_size=int(options.get("gulp_size", defaults.gulp_size)),
+        baseline_length=float(options.get("baseline_length", defaults.baseline_length)),
+        min_tscrunch_width=int(
+            options.get("min_tscrunch_width", defaults.min_tscrunch_width)
+        ),
+        cand_sep_time=int(options.get("cand_sep_time", defaults.cand_sep_time)),
+        cand_sep_filter=int(options.get("cand_sep_filter", defaults.cand_sep_filter)),
+        boxcar_renorm=bool(options.get("boxcar_renorm", defaults.boxcar_renorm)),
+    )
 
 
 @main.command()
@@ -89,7 +140,12 @@ def fft(
 @main.command()
 @click.argument("timfile", type=click.Path(exists=True))
 @click.option("--snr", type=float, default=6.0, help="Minimum pulse SNR")
-@click.option("--max-width", type=int, default=256, help="Widest boxcar (bins)")
+@click.option(
+    "--max-width",
+    type=click.IntRange(min=1),
+    default=256,
+    help="Trial width ceiling (bins)",
+)
 @click.option(
     "--spacing-factor",
     type=float,
@@ -98,9 +154,9 @@ def fft(
 )
 @click.option(
     "--deadtime",
-    type=int,
-    default=8,
-    help="Exclusion window either side of a peak",
+    type=click.IntRange(min=0),
+    default=None,
+    help="Minimum exclusion radius (bins; default: PRESTO 0, matched filter 8)",
 )
 @click.option(
     "-o",
@@ -109,22 +165,144 @@ def fft(
     default=None,
     help="Output CSV (default: <stem>_pulses.csv; '-' for stdout)",
 )
-def pulses(
+@click.option(
+    "--method",
+    type=click.Choice(["presto", "matched_filter", "heimdall"]),
+    default="presto",
+)
+@click.option(
+    "--engine",
+    type=click.Choice(["running_sum", "fft"]),
+    default="running_sum",
+    help="PRESTO boxcar engine",
+)
+@click.option(
+    "--width-style",
+    type=click.Choice(["presto", "geometric", "powers_of_two"]),
+    default=None,
+    help="Width bank (default follows method)",
+)
+@click.option(
+    "--width",
+    "widths",
+    type=click.IntRange(min=1),
+    multiple=True,
+    help="Explicit width in bins; repeat to build a bank",
+)
+@click.option(
+    "--block-size",
+    type=click.IntRange(min=2),
+    default=8000,
+    help="PRESTO preprocessing block size (bins)",
+)
+@click.option(
+    "--detrend",
+    type=click.Choice(["linear", "median"]),
+    default="linear",
+    help="PRESTO baseline removal",
+)
+@click.option(
+    "--mask-bad-blocks/--no-mask-bad-blocks",
+    default=False,
+    help="Reject PRESTO noise-outlier blocks; may reject bright broad pulses",
+)
+@click.option(
+    "--chunk-size",
+    type=click.IntRange(min=1),
+    default=8192,
+    help="PRESTO scoring chunk size (bins)",
+)
+@click.option(
+    "--gulp-size",
+    type=click.IntRange(min=2),
+    default=None,
+    help="Heimdall fresh samples per gulp (default: 262144)",
+)
+@click.option(
+    "--baseline-length",
+    type=float,
+    default=None,
+    help="Heimdall baseline smoothing length in seconds (default: 2)",
+)
+@click.option(
+    "--min-tscrunch-width",
+    type=click.IntRange(min=2),
+    default=None,
+    help="Heimdall filter-striding threshold (default: 4096)",
+)
+@click.option(
+    "--cand-sep-time",
+    type=click.IntRange(min=0),
+    default=None,
+    help="Heimdall giant/cluster separation in filter widths (default: 3)",
+)
+@click.option(
+    "--cand-sep-filter",
+    type=click.IntRange(min=0),
+    default=None,
+    help="Heimdall cluster separation in filter indices (default: 3)",
+)
+@click.option(
+    "--boxcar-renorm/--no-boxcar-renorm",
+    default=None,
+    help="Heimdall: re-estimate noise after each boxcar (default: disabled)",
+)
+def pulses(  # noqa: PLR0913 - method-specific Click options
     timfile: str,
     snr: float,
     max_width: int,
     spacing_factor: float,
-    deadtime: int,
+    deadtime: int | None,
     outfile: str | None,
+    method: PulseMethod,
+    engine: BoxcarEngine,
+    width_style: WidthStyle | None,
+    widths: tuple[int, ...],
+    block_size: int,
+    detrend: PulseDetrend,
+    chunk_size: int,
+    *,
+    gulp_size: int | None,
+    baseline_length: float | None,
+    min_tscrunch_width: int | None,
+    cand_sep_time: int | None,
+    cand_sep_filter: int | None,
+    mask_bad_blocks: bool,
+    boxcar_renorm: bool | None,
 ) -> None:
-    """Single-pulse search a SIGPROC time series (.tim)."""
-    cands = TimeSeries.from_tim(timfile).find_pulses(
-        snr_min=snr,
-        max_width=max_width,
-        spacing_factor=spacing_factor,
-        deadtime=deadtime,
-    )
-    _write_cands(cands, outfile, timfile, "pulses")
+    """Single-pulse search a .tim or PRESTO .dat/.inf time series."""
+    try:
+        series = _load_pulse_series(timfile)
+        hoptions = {
+            "gulp_size": gulp_size,
+            "baseline_length": baseline_length,
+            "min_tscrunch_width": min_tscrunch_width,
+            "cand_sep_time": cand_sep_time,
+            "cand_sep_filter": cand_sep_filter,
+            "boxcar_renorm": boxcar_renorm,
+        }
+        supplied = {
+            name: value for name, value in hoptions.items() if value is not None
+        }
+        config = _heimdall_cli_config(method, supplied)
+        cands = series.find_pulses(
+            heimdall_config=config,
+            snr_min=snr,
+            max_width=max_width,
+            spacing_factor=spacing_factor,
+            deadtime=deadtime,
+            method=method,
+            engine=engine,
+            width_style=width_style,
+            widths=widths or None,
+            block_size=block_size,
+            detrend=detrend,
+            mask_bad_blocks=mask_bad_blocks,
+            chunk_size=chunk_size,
+        )
+    except (ValueError, OSError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    _write_cands(cands, outfile, timfile, "pulses", pulse_tsamp=series.header.tsamp)
 
 
 @main.command()

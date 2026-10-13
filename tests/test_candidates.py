@@ -1,10 +1,15 @@
+from io import StringIO
 from pathlib import Path
 
 import numpy as np
 import pytest
 from astropy.table import QTable
 
-from sigpyproc.core.candidates import CANDIDATE_NAMES, CandidateTable
+from sigpyproc.core.candidates import (
+    CANDIDATE_NAMES,
+    PULSE_CANDIDATE_NAMES,
+    CandidateTable,
+)
 
 
 def _row(
@@ -125,3 +130,66 @@ class TestCandidateTable:
         cands = CandidateTable.from_rows([_row(1.0, 5.0), _row(2.0, 15.0)])
         ordered = cands.sort_by_snr()
         np.testing.assert_allclose(ordered.table["snr"][0], 15.0)
+
+
+class TestPulseCSV:
+    @pytest.mark.parametrize("empty", [False, True])
+    def test_file_and_stream_roundtrip(self, tmp_path: Path, empty: bool) -> None:
+        cands = (
+            CandidateTable.empty()
+            if empty
+            else CandidateTable.from_rows(
+                [
+                    {
+                        "kind": "pulse",
+                        "snr": 12.5,
+                        "dm": 42.0,
+                        "bin": 10,
+                        "width_s": 0.003,
+                    },
+                    {
+                        "kind": "pulse",
+                        "snr": 8.0,
+                        "dm": 42.0,
+                        "bin": 30,
+                        "width_s": 0.008,
+                    },
+                ]
+            )
+        )
+        original = cands.table.copy()
+        stream = StringIO()
+        cands.to_pulse_csv(stream, 0.001)
+        lines = stream.getvalue().splitlines()
+        assert lines[0].split(",") == list(PULSE_CANDIDATE_NAMES)
+        assert "period" not in lines[0]
+        assert "freq" not in lines[0]
+        assert "nharm" not in lines[0]
+        assert "accel" not in lines[0]
+        path = tmp_path / "pulses.csv"
+        cands.to_pulse_csv(path, 0.001)
+        assert path.read_text() == stream.getvalue()
+        loaded = CandidateTable.from_csv(path)
+        assert len(loaded) == len(cands)
+        for col in ("snr", "dm", "bin", "width_s"):
+            np.testing.assert_array_equal(loaded.values(col), cands.values(col))
+        assert np.all(loaded.values("kind") == "pulse")
+        assert np.all(np.isnan(loaded.values("period_s")))
+        assert cands.table.colnames == original.colnames
+        if not empty:
+            assert lines[1].split(",")[2] == "0.01"
+            assert lines[1].split(",")[4] == "3"
+            assert lines[2].split(",")[4] == "8"
+
+    @pytest.mark.parametrize("tsamp", [0.0, -1.0, np.nan, np.inf])
+    def test_invalid_sampling_interval(self, tsamp: float) -> None:
+        with pytest.raises(ValueError, match="tsamp"):
+            CandidateTable.empty().to_pulse_csv(StringIO(), tsamp)
+
+    def test_reject_periodic_and_invalid_widths(self) -> None:
+        with pytest.raises(ValueError, match="only pulse"):
+            CandidateTable.from_rows([_row(1.0, 8.0)]).to_pulse_csv(StringIO(), 0.001)
+        for width in (np.nan, 0.0, 0.0015):
+            cands = CandidateTable.from_rows([{"kind": "pulse", "width_s": width}])
+            with pytest.raises(ValueError, match="whole numbers"):
+                cands.to_pulse_csv(StringIO(), 0.001)
