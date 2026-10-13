@@ -20,6 +20,20 @@ sigpyproc
    ~sigpyproc.timeseries
    ~sigpyproc.utils
 
+sigpyproc.algorithms
+--------------------
+
+.. autosummary::
+   :toctree:
+   :template: autosummary/module.rst
+
+   ~sigpyproc.algorithms
+   ~sigpyproc.algorithms.box
+   ~sigpyproc.algorithms.period
+   ~sigpyproc.algorithms.sps
+   ~sigpyproc.algorithms.heimdall
+   ~sigpyproc.algorithms.common
+
 sigpyproc.core
 --------------
 
@@ -27,7 +41,6 @@ sigpyproc.core
    :toctree:
    :template: autosummary/module.rst
 
-   ~sigpyproc.core.algorithms
    ~sigpyproc.core.candidates
    ~sigpyproc.core.custom_types
    ~sigpyproc.core.dispersion

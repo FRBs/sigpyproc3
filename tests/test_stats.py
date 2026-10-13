@@ -342,6 +342,50 @@ class TestRunningFilter:
         assert result.shape == random_normal_1d.shape
 
 
+class TestRunningRobustStandardize:
+    def test_matches_global_median_mad_for_short_window(self) -> None:
+        data = np.array([1.0, 2.0, 100.0, 3.0, 4.0])
+        result = stats.running_robust_standardize(data, 2, min_window=3)
+        loc = np.median(data)
+        mad = np.median(np.abs(data - loc))
+        scale = stats.MAD_GAUSSIAN_SCALE * mad if mad > 0 else 1.0
+        expected = (data - loc) / scale
+        np.testing.assert_allclose(result.data, expected)
+        np.testing.assert_allclose(result.loc, np.full_like(data, loc))
+        np.testing.assert_allclose(result.scale, np.full_like(data, scale))
+
+    def test_running_window(self) -> None:
+        rng = np.random.default_rng(0)
+        data = rng.normal(size=512)
+        window = 31
+        result = stats.running_robust_standardize(data, window)
+        med = stats.running_filter(data, window, "median")
+        mad = stats.running_filter(np.abs(data - med), window, "median")
+        scale = np.where(mad > 0.0, stats.MAD_GAUSSIAN_SCALE * mad, 1.0)
+        expected = (data - med) / scale
+        np.testing.assert_allclose(result.data, expected)
+        np.testing.assert_allclose(result.loc, med)
+        np.testing.assert_allclose(result.scale, scale)
+
+    def test_empty_raises(self) -> None:
+        with pytest.raises(ValueError, match="empty"):
+            stats.running_robust_standardize(np.array([]), 3)
+
+    @pytest.mark.parametrize("name", ["window", "min_window"])
+    @pytest.mark.parametrize("value", [0, -1, 1.5, True, np.nan])
+    def test_invalid_window_lengths(self, name: str, value: object) -> None:
+        options = {"window": 3, "min_window": 3, name: value}
+        with pytest.raises(ValueError, match=f"{name} must be a positive integer"):
+            stats.running_robust_standardize(np.arange(8.0), **options)
+
+    @pytest.mark.parametrize(
+        "data", [np.array([1, np.nan]), np.array([np.inf]), np.array([1j])]
+    )
+    def test_invalid_samples(self, data: np.ndarray) -> None:
+        with pytest.raises(ValueError, match=r"finite|real"):
+            stats.running_robust_standardize(data, 3)
+
+
 class TestDownsample:
     @pytest.mark.parametrize("factor", [1, 2, 4, 7, 10])
     @pytest.mark.parametrize("method", ["mean", "median"])

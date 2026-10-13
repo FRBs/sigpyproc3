@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 
 from sigpyproc import kernels, timeseries
-from sigpyproc.core import algorithms
+from sigpyproc.algorithms import period
 from sigpyproc.foldedcube import Profile
 from sigpyproc.header import Header
 from sigpyproc.utils import validate_path
@@ -192,8 +192,8 @@ class PowerSpectrum:
     ) -> CandidateTable:
         """Pick local maxima in a whitened power spectrum.
 
-        SNR in bin ``i`` is ``(data[i] - med) / (1.4826 * MAD)`` over a
-        running window of ``max(128, nfreq // 64)`` bins. The DC bin and
+        SNR in bin ``i`` uses :func:`sigpyproc.core.stats.running_robust_standardize`
+        over a running window of ``max(128, nfreq // 64)`` bins. The DC bin and
         every bin with period ``> pmax`` are skipped. A local maximum is
         strictly greater than both neighbours.
 
@@ -238,7 +238,7 @@ class PowerSpectrum:
             msg = "nharm must be at least 1"
             raise ValueError(msg)
 
-        return algorithms.pick_spectral_peaks(
+        return period.pick_spectral_peaks(
             self.data,
             self.header.tobs,
             npeaks=npeaks,

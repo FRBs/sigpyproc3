@@ -169,36 +169,34 @@ def add_online_moments(a: np.ndarray, b: np.ndarray, c: np.ndarray) -> None:
 
 @njit("f4[::1](f4[::1])", cache=True, fastmath=True)
 def detrend_1d(arr: np.ndarray) -> np.ndarray:
-    """Detrend a 1D array using a linear fit."""
+    """Detrend a 1D array using a linear fit.
+
+    Accumulate centered sums in float64 in one pass, using the closed-form
+    coordinate variance. A second pass writes the float32 residuals.
+    """
     m = arr.shape[0]
     if m == 0:
         msg = "Input array must be non-empty."
         raise ValueError(msg)
     if m == 1:
         return np.zeros(1, dtype=arr.dtype)
-    m_f = np.float32(m)
-    x_sum = m_f * (m_f - 1.0) / 2.0
-    x_sq_sum = m_f * (m_f - 1.0) * (2.0 * m_f - 1.0) / 6.0
-
-    y_sum = np.float32(0.0)
-    x_y_sum = np.float32(0.0)
+    # Center coordinates and remove a reference level before accumulating in
+    # float64. Since sum(x) = 0, covariance needs no separate mean-removal pass.
+    m_f = np.float64(m)
+    center = (m_f - 1.0) / 2.0
+    reference = np.float64(arr[0])
+    total = 0.0
+    covariance = 0.0
     for i in range(m):
-        y_sum += arr[i]
-        x_y_sum += i * arr[i]
-
-    denominator = m_f * x_sq_sum - x_sum * x_sum
-    if denominator == 0.0:
-        mean_val = y_sum / m_f
-        result = np.empty(m, dtype=np.float32)
-        for i in range(m):
-            result[i] = arr[i] - mean_val
-        return result
-
-    slope = (m_f * x_y_sum - x_sum * y_sum) / denominator
-    intercept = (y_sum - slope * x_sum) / m_f
+        value = np.float64(arr[i]) - reference
+        total += value
+        covariance += (i - center) * value
+    mean = total / m_f
+    variance = m_f * (m_f * m_f - 1.0) / 12.0
+    slope = covariance / variance
     result = np.empty(m, dtype=np.float32)
     for i in range(m):
-        result[i] = arr[i] - (slope * np.float32(i) + intercept)
+        result[i] = (np.float64(arr[i]) - reference) - mean - slope * (i - center)
     return result
 
 

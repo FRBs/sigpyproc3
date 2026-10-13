@@ -1,13 +1,6 @@
-"""Period and pulse search algorithms on plain arrays.
+"""Period search algorithms on plain 1D arrays.
 
-The public search methods live on the data objects:
-:meth:`~sigpyproc.timeseries.TimeSeries.search`,
-:meth:`~sigpyproc.timeseries.TimeSeries.find_pulses`,
-:meth:`~sigpyproc.timeseries.TimeSeries.ffa`, and
-:meth:`~sigpyproc.fourierseries.PowerSpectrum.find_peaks`. They validate
-their arguments and do the object-level work (downsampling, resampling,
-folding), then call the functions here. Each function returns a
-:class:`~sigpyproc.core.candidates.CandidateTable`.
+This module contains functions for finding periodic signals in 1D arrays.
 """
 
 from __future__ import annotations
@@ -15,18 +8,23 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import numpy as np
-from numba import typed
 
 from sigpyproc import kernels
 from sigpyproc.core import stats
 from sigpyproc.core.candidates import CandidateTable
-from sigpyproc.core.filters import MatchedFilter, Template
 
 if TYPE_CHECKING:
     from numpy.typing import ArrayLike
 
 FFA_MAX_NSAMP = 1 << 24
 FFA_WIDTH_REBINS = (1, 2, 4, 8, 16)
+
+
+def _spectral_running_window(nfreq: int) -> int:
+    window = max(128, nfreq // 64)
+    if window >= nfreq:
+        return nfreq if nfreq % 2 == 1 else max(nfreq - 1, 1)
+    return window
 
 
 def pick_spectral_peaks(
@@ -42,9 +40,9 @@ def pick_spectral_peaks(
 ) -> CandidateTable:
     """Pick local maxima of a whitened spectrum.
 
-    SNR in bin ``i`` is ``(spec[i] - med) / (1.4826 * MAD)`` over a running
-    window of ``max(128, nfreq // 64)`` bins. The DC bin and every bin with
-    period ``> pmax`` are skipped. A local maximum is strictly greater than
+    SNR in bin ``i`` uses :func:`sigpyproc.core.stats.running_robust_standardize`
+    over a running window of ``max(128, nfreq // 64)`` bins. The DC bin and every
+    bin with period ``> pmax`` are skipped. A local maximum is strictly greater than
     both neighbours.
 
     Parameters
@@ -73,23 +71,9 @@ def pick_spectral_peaks(
     """
     spec = np.asarray(spec, dtype=np.float64)
     nfreq = spec.size
-    window = max(128, nfreq // 64)
-    if window >= nfreq:
-        window = nfreq if nfreq % 2 == 1 else max(nfreq - 1, 1)
-    if window < 3:
-        med = np.full(nfreq, np.median(spec))
-        mad = np.full(nfreq, np.median(np.abs(spec - med[0])))
-    else:
-        med = np.asarray(
-            stats.running_filter(spec, window, "median"),
-            dtype=np.float64,
-        )
-        mad = np.asarray(
-            stats.running_filter(np.abs(spec - med), window, "median"),
-            dtype=np.float64,
-        )
-    scale = np.where(mad > 0.0, 1.4826 * mad, 1.0)
-    snr = (spec - med) / scale
+    if nfreq < 3:
+        return CandidateTable.empty()
+    snr = stats.running_robust_standardize(spec, _spectral_running_window(nfreq)).data
 
     r_min = max(1, int(np.ceil(tobs / pmax)))
     r_max = nfreq - 1
@@ -121,95 +105,6 @@ def pick_spectral_peaks(
         }
         for r_i, s_i, f_i in zip(peak_bins, peak_snr, freq, strict=True)
     ]
-    return CandidateTable.from_rows(rows).sort_by_snr()
-
-
-def boxcar_pulse_search(
-    data: ArrayLike,
-    tsamp: float,
-    *,
-    snr_min: float,
-    max_width: int,
-    spacing_factor: float,
-    deadtime: int,
-    dm: float,
-    accel: float,
-) -> CandidateTable:
-    """Find multiple pulses with a boxcar bank and a greedy dead-time.
-
-    The data are robustly normalised, convolved with boxcars whose widths
-    are geometric from 1 to ``max_width``, and the best width per sample is
-    kept. Peaks are accepted in decreasing SNR; ``deadtime`` bins on either
-    side of each accepted peak are then excluded.
-
-    Parameters
-    ----------
-    data : array_like
-        Time series samples.
-    tsamp : float
-        Sampling interval in seconds, used to convert widths to seconds.
-    snr_min : float
-        Minimum matched-filter SNR.
-    max_width : int
-        Widest boxcar in bins.
-    spacing_factor : float
-        Geometric spacing of the width bank.
-    deadtime : int
-        Bins excluded on either side of an accepted peak.
-    dm : float
-        Dispersion measure stored on each row.
-    accel : float
-        Acceleration stored on each row.
-
-    Returns
-    -------
-    CandidateTable
-        Pulse candidates (``kind="pulse"``), sorted by SNR.
-
-    Raises
-    ------
-    ValueError
-        If the widest boxcar is longer than the data.
-    """
-    arr = np.asarray(data)
-    zscores = stats.estimate_zscore(arr, loc_method="median", scale_method="iqr")
-    widths = MatchedFilter.get_box_width_spacing(max_width, spacing_factor)
-    templates = [Template.gen_boxcar(int(width)) for width in widths]
-    if any(temp.data.size > arr.size for temp in templates):
-        msg = "max_width is larger than the time series"
-        raise ValueError(msg)
-    convs = kernels.convolve_templates(
-        zscores.data,
-        typed.List([temp.data for temp in templates]),
-        typed.List([temp.ref_bin for temp in templates]),
-    )
-    best_idx = np.argmax(convs, axis=0)
-    best_snr = np.max(convs, axis=0).astype(np.float64, copy=True)
-
-    rows: list[dict[str, object]] = []
-    nsamp = best_snr.size
-    while True:
-        peak = int(np.argmax(best_snr))
-        peak_snr = float(best_snr[peak])
-        if peak_snr < snr_min or not np.isfinite(peak_snr):
-            break
-        width_bins = int(widths[best_idx[peak]])
-        rows.append(
-            {
-                "period_s": np.nan,
-                "freq_hz": np.nan,
-                "snr": peak_snr,
-                "dm": dm,
-                "accel": accel,
-                "nharm": 1,
-                "bin": peak,
-                "width_s": width_bins * tsamp,
-                "kind": "pulse",
-            },
-        )
-        lo = max(0, peak - deadtime)
-        hi = min(nsamp, peak + deadtime + 1)
-        best_snr[lo:hi] = -np.inf
     return CandidateTable.from_rows(rows).sort_by_snr()
 
 

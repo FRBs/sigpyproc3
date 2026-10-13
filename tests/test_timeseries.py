@@ -6,6 +6,7 @@ import pytest
 from sigpyproc.foldedcube import FoldedData
 from sigpyproc.fourierseries import FourierSeries
 from sigpyproc.header import Header
+from sigpyproc.io import sigproc
 from sigpyproc.timeseries import TimeSeries
 
 
@@ -97,6 +98,9 @@ class TestTimeSeries:
         inffile_path = datfile_path.with_suffix(".inf")
         assert datfile_path.is_file()
         assert inffile_path.is_file()
+        assert datfile_path.stat().st_size == tim.nsamples * 4
+        np.testing.assert_array_equal(np.fromfile(datfile_path, dtype="<f4"), tim.data)
+        np.testing.assert_array_equal(TimeSeries.from_dat(datfile_path).data, tim.data)
         datfile_path.unlink()
         inffile_path.unlink()
 
@@ -135,3 +139,120 @@ class TestTimeSeries:
         tim = TimeSeries.from_tim(timfile)
         np.testing.assert_allclose(tim.data.mean(), timfile_mean, atol=1)
         np.testing.assert_allclose(tim.data.std(), timfile_std, atol=1)
+
+
+@pytest.mark.parametrize("signed", [False, True])
+def test_from_tim_eight_bit_sign(tmp_path: Path, signed: bool) -> None:
+    path = tmp_path / "eight.tim"
+    data = np.array(
+        [-128, -1, 0, 127] if signed else [0, 127, 128, 255],
+        dtype=np.int8 if signed else np.uint8,
+    )
+    header = Header(
+        filename=str(path),
+        data_type="time series",
+        nchans=1,
+        foff=1.0,
+        fch1=1400.0,
+        nbits=8,
+        tsamp=0.001,
+        tstart=50000.0,
+        nsamples=4,
+        signed=signed,
+    )
+    with path.open("wb") as handle:
+        handle.write(sigproc.encode_header(header.to_sigproc()))
+        handle.write(data.tobytes())
+    series = TimeSeries.from_tim(path)
+    np.testing.assert_array_equal(series.data, data.astype(np.float32))
+
+
+@pytest.mark.parametrize("terminal_padding", [True, False])
+def test_from_dat_terminal_padding(tmp_path: Path, terminal_padding: bool) -> None:
+    path = tmp_path / "padding.dat"
+    data = np.arange(128, dtype=np.float32)
+    data[100:127] = 0
+    data.tofile(path)
+    header = Header(
+        filename=str(path),
+        data_type="time series",
+        nchans=1,
+        foff=1.0,
+        fch1=1400.0,
+        nbits=32,
+        tsamp=0.001,
+        tstart=50000.0,
+        nsamples=data.size,
+    )
+    text = header.make_inf()
+    last = "127, 127" if terminal_padding else "110, 127"
+    text += (
+        "\n Any breaks in the data? (1=yes, 0=no) = 1"
+        "\n On/Off bin pair # 1 = 0, 99\n On/Off bin pair # 2 = " + last + "\n"
+    )
+    path.with_suffix(".inf").write_text(text)
+    trimmed = TimeSeries.from_dat(path)
+    count = 100 if terminal_padding else 128
+    assert trimmed.nsamples == count
+    assert trimmed.header.nsamples == count
+    np.testing.assert_array_equal(trimmed.data, data[:count])
+    raw = TimeSeries.from_dat(path, trim_padding=False)
+    np.testing.assert_array_equal(raw.data, data)
+
+
+def test_pulse_search_ignores_terminal_padding(tmp_path: Path) -> None:
+    path = tmp_path / "observed.dat"
+    nvalid, ntotal = 20500, 32000
+    data = np.zeros(ntotal, dtype=np.float32)
+    data[:nvalid] = 1000 + np.random.default_rng(99).normal(size=nvalid)
+    start, width = 20460, 14
+    data[start : start + width] += 18 / np.sqrt(width)
+    data.tofile(path)
+    header = Header(
+        filename=str(path),
+        data_type="time series",
+        nchans=1,
+        foff=1.0,
+        fch1=1400.0,
+        nbits=32,
+        tsamp=0.001,
+        tstart=50000.0,
+        nsamples=ntotal,
+    )
+    text = header.make_inf() + (
+        "\n Any breaks in the data? (1 yes, 0 no) = 1"
+        f"\n On/Off bin pair # 1 = 0, {nvalid - 1}"
+        f"\n On/Off bin pair # 2 = {ntotal - 1}, {ntotal - 1}\n"
+    )
+    path.with_suffix(".inf").write_text(text)
+    series = TimeSeries.from_dat(path)
+    cands = series.find_pulses(snr_min=8, max_width=150, widths=[width])
+    bins = cands.values("bin")
+    assert len(cands) >= 1
+    assert np.min(np.abs(bins - (start + width // 2))) <= 1
+    # Proximity pruning can retain shoulders of a bright event, but there
+    # must be no unrelated high-SNR detections induced by the padding edge.
+    assert np.all(np.abs(bins - (start + width // 2)) <= width)
+    assert series.nsamples == nvalid
+
+
+def test_from_dat_uses_actual_file_length(tmp_path: Path) -> None:
+    path = tmp_path / "length.dat"
+    data = np.arange(128, dtype=np.float32)
+    data.tofile(path)
+    header = Header(
+        filename=str(path),
+        data_type="time series",
+        nchans=1,
+        foff=1.0,
+        fch1=1400.0,
+        nbits=32,
+        tsamp=0.001,
+        tstart=50000.0,
+        nsamples=16,
+    )
+    path.with_suffix(".inf").write_text(header.make_inf())
+    series = TimeSeries.from_dat(path)
+    assert series.nsamples == data.size
+    assert series.header.nsamples == data.size
+    np.testing.assert_array_equal(series.data, data)

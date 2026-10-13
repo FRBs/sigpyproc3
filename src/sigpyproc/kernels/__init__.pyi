@@ -6,6 +6,7 @@ from . import folding as folding
 from . import fourier as fourier
 from . import moments as moments
 from . import pfits as pfits
+from . import search as search
 from . import simulation as simulation
 from .bitpacking import pack1_8_big as pack1_8_big
 from .bitpacking import pack1_8_little as pack1_8_little
@@ -89,6 +90,18 @@ from .moments import update_moments as update_moments
 from .moments import update_moments_basic as update_moments_basic
 from .pfits import decode_cube as decode_cube
 from .pfits import decode_intensity as decode_intensity
+from .search import boxcar_fft_kernel as boxcar_fft_kernel
+from .search import boxcar_fft_scores as boxcar_fft_scores
+from .search import boxcar_running_scores as boxcar_running_scores
+from .search import heimdall_baseline as heimdall_baseline
+from .search import heimdall_cluster_labels as heimdall_cluster_labels
+from .search import heimdall_filter as heimdall_filter
+from .search import heimdall_giants as heimdall_giants
+from .search import heimdall_linear_stretch as heimdall_linear_stretch
+from .search import heimdall_median_scrunch as heimdall_median_scrunch
+from .search import heimdall_rms as heimdall_rms
+from .search import prune_boxcar_candidates as prune_boxcar_candidates
+from .search import threshold_boxcar as threshold_boxcar
 from .simulation import downsample_profiles as downsample_profiles
 from .simulation import inject_pulse_2d as inject_pulse_2d
 from .simulation import inject_pulses as inject_pulses

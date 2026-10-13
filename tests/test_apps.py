@@ -21,6 +21,7 @@ from sigpyproc.apps import (
     spp_view,
     spp_zerodm,
 )
+from sigpyproc.core.candidates import PULSE_CANDIDATE_NAMES, CandidateTable
 from sigpyproc.header import Header
 from sigpyproc.io import sigproc
 from sigpyproc.readers import FilReader
@@ -941,13 +942,129 @@ class TestSppSearch:
         assert "period_s" in text
         assert "fft" in text
 
-    def test_pulses(self, tmpdir: str) -> None:
+    @pytest.mark.parametrize(
+        ("method", "engine"),
+        [
+            ("presto", "running_sum"),
+            ("presto", "fft"),
+            ("matched_filter", "running_sum"),
+        ],
+    )
+    def test_pulses(self, tmpdir: str, method: str, engine: str) -> None:
         tim = _write_search_tim(Path(tmpdir) / "inj.tim")
         out = str(Path(tmpdir) / "pulses.csv")
         runner = CliRunner()
-        result = runner.invoke(spp_search.main, ["pulses", str(tim), "-o", out])
-        assert result.exit_code == 0
-        assert Path(out).is_file()
+        result = runner.invoke(
+            spp_search.main,
+            ["pulses", str(tim), "--method", method, "--engine", engine, "-o", out],
+        )
+        assert result.exit_code == 0, result.output
+        assert Path(out).read_text().splitlines()[0].split(",") == list(
+            PULSE_CANDIDATE_NAMES
+        )
+        actual = CandidateTable.from_csv(out)
+        expected = TimeSeries.from_tim(tim).find_pulses(method=method, engine=engine)
+        assert len(actual) > 0
+        for column in ("bin", "snr", "width_s"):
+            np.testing.assert_allclose(actual.values(column), expected.values(column))
+
+    def test_pulses_controls_and_stdout(self, tmpdir: str) -> None:
+        tim = _write_search_tim(Path(tmpdir) / "inj.tim")
+        result = CliRunner().invoke(
+            spp_search.main,
+            [
+                "pulses",
+                str(tim),
+                "--engine",
+                "fft",
+                "--width-style",
+                "geometric",
+                "--width",
+                "3",
+                "--width",
+                "8",
+                "--block-size",
+                "1000",
+                "--chunk-size",
+                "127",
+                "--detrend",
+                "median",
+                "--mask-bad-blocks",
+                "--deadtime",
+                "10",
+                "-o",
+                "-",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        # stdout must be CSV only, including when preprocessing controls are used.
+        out = Path(tmpdir) / "stdout.csv"
+        out.write_text(result.output)
+        assert result.output.splitlines()[0].split(",") == list(PULSE_CANDIDATE_NAMES)
+        actual = CandidateTable.from_csv(out)
+        expected = TimeSeries.from_tim(tim).find_pulses(
+            engine="fft",
+            width_style="geometric",
+            widths=[3, 8],
+            block_size=1000,
+            chunk_size=127,
+            detrend="median",
+            mask_bad_blocks=True,
+            deadtime=10,
+        )
+        assert len(actual) > 0
+        for column in ("bin", "snr", "width_s"):
+            np.testing.assert_allclose(actual.values(column), expected.values(column))
+
+    @pytest.mark.parametrize(
+        "options",
+        [
+            ["--snr", "nan"],
+            ["--snr", "0"],
+            ["--spacing-factor", "1"],
+            ["--width", "300"],
+            ["--max-width", "0"],
+            ["--block-size", "1"],
+            ["--deadtime", "-1"],
+            ["--chunk-size", "0"],
+            ["--engine", "unknown"],
+        ],
+    )
+    def test_pulses_invalid_options(self, tmpdir: str, options: list[str]) -> None:
+        tim = _write_search_tim(Path(tmpdir) / "inj.tim")
+        out = Path(tmpdir) / "invalid.csv"
+        result = CliRunner().invoke(
+            spp_search.main,
+            ["pulses", str(tim), *options, "-o", str(out)],
+        )
+        assert result.exit_code != 0
+        assert "Error" in result.output
+        assert "Traceback" not in result.output
+        assert not out.exists()
+
+    def test_pulses_dat_input(self, tmpdir: str) -> None:
+        tim = _write_search_tim(Path(tmpdir) / "inj.tim")
+        series = TimeSeries.from_tim(tim)
+        dat = series.to_dat(str(Path(tmpdir) / "inj"))
+        out = Path(tmpdir) / "dat_pulses.csv"
+        result = CliRunner().invoke(spp_search.main, ["pulses", dat, "-o", str(out)])
+        assert result.exit_code == 0, result.output
+        actual = CandidateTable.from_csv(out)
+        expected = series.find_pulses()
+        np.testing.assert_array_equal(actual.values("bin"), expected.values("bin"))
+        Path(dat).with_suffix(".inf").unlink()
+        result = CliRunner().invoke(spp_search.main, ["pulses", dat, "-o", "-"])
+        assert result.exit_code != 0
+        assert "Error" in result.output
+        assert "Traceback" not in result.output
+
+    def test_pulses_empty_export(self, tmpdir: str) -> None:
+        tim = _write_search_tim(Path(tmpdir) / "inj.tim")
+        result = CliRunner().invoke(
+            spp_search.main, ["pulses", str(tim), "--snr", "1000", "-o", "-"]
+        )
+        assert result.exit_code == 0, result.output
+        assert result.output.strip().split(",") == list(PULSE_CANDIDATE_NAMES)
 
     def test_cluster(self, tmpdir: str) -> None:
         src = Path(tmpdir) / "cands.csv"

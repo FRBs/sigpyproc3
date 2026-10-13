@@ -26,7 +26,7 @@ This page is the “how to use it” companion to {doc}`/tutorials/quickstart`.
 | `seek` | {py:meth}`~sigpyproc.timeseries.TimeSeries.search` / `spp_search fft` | Whitened FFT + harmonic folds. No `.prd`, no birdie files. |
 | `find` | same as `spp_search fft` | Historical `find` was renamed `seek`; we do not ship `spp_find`. |
 | `best` | {py:meth}`~sigpyproc.core.candidates.CandidateTable.cluster` / `spp_search cluster` | Harmonic families only. No PGPLOT, no `.bst` / `.fld`. |
-| `peak` | {py:meth}`~sigpyproc.timeseries.TimeSeries.find_pulses` / `spp_search pulses` | Boxcar width bank + dead-time, not `peak.f`’s time-halving loop. |
+| `peak` | {py:meth}`~sigpyproc.timeseries.TimeSeries.find_pulses` / `spp_search pulses` | Selectable PRESTO-inspired and original matched-filter boxcar searches. |
 | `ffa` | {py:meth}`~sigpyproc.timeseries.TimeSeries.ffa` / `spp_search ffa` | Staelin / Mueller tree. Periods in **seconds** on the API. |
 | `giant` | — | Interactive PGPLOT viewer; out of scope. |
 
@@ -143,18 +143,75 @@ fft_only = hits[hits.values("kind") == "fft"]
 
 ## Single pulses
 
-{py:meth}`~sigpyproc.timeseries.TimeSeries.find_pulses` runs a
-**boxcar bank** (widths 1, 2, 4, … up to `max_width` when
-`spacing_factor=2`) and then a greedy dead-time, the same idea as
-SIGPROC `peak` without repeatedly halving the time series.
+{py:meth}`~sigpyproc.timeseries.TimeSeries.find_pulses` defaults to a
+PRESTO-inspired search. It removes a baseline and estimates noise in blocks,
+searches full-resolution boxcars, then suppresses nearby weaker detections
+within and across widths. This is a modern adaptation of
+[PRESTO single_pulse_search.py](https://github.com/scottransom/presto/blob/master/bin/single_pulse_search.py),
+with different normalization and deterministic greedy pruning.
 
 ```python
-pulses = ts.find_pulses(snr_min=6.0, max_width=256, deadtime=8)
-print(pulses.values("bin")[:5])
-print(pulses.values("width_s")[:5])  # seconds
+pulses = ts.find_pulses(snr_min=6.0, max_width=256)
+fft_pulses = ts.find_pulses(snr_min=6.0, max_width=256, engine="fft")
+original = ts.find_pulses(method="matched_filter", max_width=256)
 ```
 
-`period_s` is NaN for pulses — they are not periodic candidates.
+Both PRESTO engines compute the same statistic:
+
+$$
+\mathrm{SNR} = \frac{\sum_{i \in \mathrm{window}} z_i}{\sqrt{w}},
+$$
+
+where samples $z_i$ are baseline-subtracted and normalized by their block's
+noise estimate, and $w$ is the width in samples. The `running_sum` engine
+(default) uses Numba rolling sums with float64 accumulation. The `fft` engine
+uses zero-padded linear convolution through rocket-fft inside Numba. Numerical
+rounding can change results very close to an SNR threshold or a tie.
+
+### Widths and preprocessing
+
+The width bank is a **ceiling**, not a promise to search that exact
+width.
+
+```python
+# Same bank for comparisons between pipelines.
+widths = [1, 3, 8, 17, 32]
+a = ts.find_pulses(widths=widths, max_width=32)
+b = ts.find_pulses(method="matched_filter", widths=widths, max_width=32)
+
+# Geometric bank: 1, 2, 4, ..., 256.
+c = ts.find_pulses(width_style="geometric", spacing_factor=2, max_width=256)
+
+# Median subtraction provides another baseline experiment.
+d = ts.find_pulses(block_size=16000, detrend="median", chunk_size=8192)
+```
+
+---
+
+## CPU Heimdall behavior
+
+`method="heimdall"` models the single-DM stages of the supplied Heimdall CUDA
+pipeline on a CPU. It is intended for experimentation on an already dedispersed
+series; GPU parity is unverified.
+
+```python
+from sigpyproc.algorithms.heimdall import HeimdallConfig
+
+native = ts.find_pulses(method="heimdall", max_width=4096)
+renormalized = ts.find_pulses(
+    method="heimdall",
+    max_width=4096,
+    heimdall_config=HeimdallConfig(
+        gulp_size=262144,
+        baseline_length=2.0,       # seconds
+        min_tscrunch_width=4096,
+        cand_sep_time=3,
+        cand_sep_filter=3,
+        boxcar_renorm=True,
+    ),
+)
+native.to_pulse_csv("heimdall.csv", ts.header.tsamp)
+```
 
 ---
 
@@ -185,47 +242,6 @@ is the honest answer.
 
 ---
 
-## The candidate table
-
-{py:class}`~sigpyproc.core.candidates.CandidateTable` is a thin wrapper
-around an Astropy `QTable`. Columns are SI:
-
-| Column | Meaning |
-| --- | --- |
-| `period_s` | Period (s). NaN for pulses. |
-| `freq_hz` | Frequency (Hz). |
-| `snr` | Detection statistic. |
-| `dm` | Dispersion measure (\(\mathrm{pc\,cm}^{-3}\)). |
-| `accel` | Acceleration (\(\mathrm{m\,s}^{-2}\)). |
-| `nharm` | `1` = unfolded; `2`, `4`, … = harmonic fold. |
-| `bin` | Spectral bin, time-sample, or FFA integer period. |
-| `width_s` | Pulse / FFA width (s). NaN if unused. |
-| `kind` | `"fft"`, `"ffa"`, or `"pulse"`. |
-
-```python
-from sigpyproc.core.candidates import CandidateTable
-
-# Unitless numpy arrays (recommended for arithmetic)
-period = hits.values("period_s")
-
-# Astropy column with units
-hits.table["period_s"]
-
-# Row subset (always another CandidateTable)
-loud = hits[hits.values("snr") >= 10.0]
-first = hits[0]
-
-# Stack searches
-combined = hits + ffa_hits + pulses
-combined.to_csv("all.csv")
-loaded = CandidateTable.from_csv("all.csv")
-```
-
-There is no `.prd` / `.bst` writer. CSV is the format other tools can
-open.
-
----
-
 ## Command line
 
 Each `spp_*` tool is a standalone script — there is no umbrella `spp`
@@ -234,15 +250,17 @@ command. Search is one Click group:
 ```bash
 spp_search fft observation.tim --nfolds 4 --pmax 10 -o fft.csv
 spp_search pulses observation.tim --snr 6 --max-width 256 -o pulses.csv
+spp_search pulses observation.tim --engine fft --width 3 --width 8 -o fft_pulses.csv
+spp_search pulses observation.tim --method matched_filter -o original_pulses.csv
+spp_search pulses observation.dat --snr 5 --max-width 150 -o dat_pulses.csv
 spp_search ffa observation.tim --pmin-ms 1000 --pmax-ms 20000 -o ffa.csv
 spp_search cluster fft.csv --snr 8 -o best.csv
 ```
 
 Defaults write `<stem>_{fft,pulses,ffa,cluster}.csv`. Use `-o -` to
-print CSV on stdout. Full flag lists live in {doc}`/cmd`.
-
-`--nfolds` help text is explicit: *number of harmonic folds (2, 4, …,
-2\*\*N) in addition to the unfolded spectrum.*
+print CSV on stdout. Pulse CSVs contain only event fields, including event
+`time_s` and `width_bins`, rather than periodic-candidate columns. Full flag
+lists live in {doc}`/cmd`.
 
 ---
 
@@ -298,14 +316,4 @@ already wrote. The walk-through is {doc}`/tutorials/fake`.
 ## What this is not
 
 Search here is for **exploratory** work on a single time series. It is
-not a drop-in survey pipeline and it is not bit-identical to SIGPROC:
-
-- No `.prd` / `.bst` / `.fld` / `peak.sum` files
-- No birdie `.inc` lists or spectral masks
-- No `giant` PGPLOT GUI
-- No Tempo2 polyco folding
-- No multi-DM candidate association (cluster is period-only; slice on
-  `dm` yourself if you search several DMs)
-
-Those were left out on purpose. The objects above are the place to
-extend them.
+not a drop-in survey pipeline and it is not bit-identical to SIGPROC.

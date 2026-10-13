@@ -116,7 +116,9 @@ class TestFindPulses:
         snr = 12.0
         data[peak : peak + width] += np.float32(snr / np.sqrt(width))
         tim = TimeSeries(data, _header(nsamp, tsamp, dm=12.0))
-        cands = tim.find_pulses(snr_min=6.0, max_width=64, deadtime=8)
+        cands = tim.find_pulses(
+            method="matched_filter", snr_min=6.0, max_width=64, deadtime=8
+        )
         assert len(cands) >= 1
         assert abs(int(cands.table["bin"][0]) - peak) <= 2
         width_s = float(cands.values("width_s")[0])

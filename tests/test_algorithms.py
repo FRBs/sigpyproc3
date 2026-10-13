@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from sigpyproc.core import algorithms
+from sigpyproc.algorithms import period
 from sigpyproc.core.dispersion import DMPlan
 from sigpyproc.header import Header
 from sigpyproc.readers import FilReader
@@ -57,7 +57,7 @@ class TestFFARobustness:
 
     def test_array_level_matches_method(self) -> None:
         data = _pulse_train(0.05, duty=0.05, amp=4.0, seed=1)
-        direct = algorithms.ffa_search(
+        direct = period.ffa_search(
             data,
             TSAMP,
             0.04,
@@ -103,6 +103,20 @@ class TestPulseRobustness:
 
 
 class TestFFTRobustness:
+    @pytest.mark.parametrize("nsamples", [0, 1, 2])
+    def test_spectrum_without_interior_bins(self, nsamples: int) -> None:
+        candidates = period.pick_spectral_peaks(
+            np.zeros(nsamples),
+            1.0,
+            npeaks=10,
+            snr_min=6.0,
+            pmax=1.0,
+            dm=0.0,
+            accel=0.0,
+            nharm=1,
+        )
+        assert len(candidates) == 0
+
     @pytest.mark.parametrize("method", ["simple", "greedy"])
     def test_fft_search_recovers_duty_cycle_pulse_train(self, method: str) -> None:
         period = 0.05
