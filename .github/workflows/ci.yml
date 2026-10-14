@@ -95,8 +95,12 @@ jobs:
               os.utime(path, (stamp, stamp))
           EOF
 
+      - name: Run pytest (with coverage and durations)
+        if: runner.os == 'Linux' && matrix.python-version == '3.12'
+        run: uv run pytest --cov=src --cov-report=xml -v
+
       - name: Run pytest (with coverage)
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && matrix.python-version != '3.12'
         run: uv run pytest --cov=src --cov-report=xml -v
 
       - name: Run pytest

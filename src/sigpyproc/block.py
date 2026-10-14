@@ -430,9 +430,18 @@ class FilterbankBlock(BaseBlock):
         dm_delays = self.header.get_dmdelays(dm_arr, ref_freq=ref_freq)
         if only_valid_samples:
             new_ar = kernels.dmt_block_valid(self.data, dm_delays)
+            dropped = max(0, int(np.max(-dm_delays)))
+            tstart = self.header.mjd_after_nsamps(dropped)
         else:
             new_ar = kernels.dmt_block(self.data, dm_delays)
-        return DMTBlock(new_ar, self.header.new_header({"nchans": 1}), dm_arr)
+            tstart = self.header.tstart
+        return DMTBlock(
+            new_ar,
+            self.header.new_header(
+                {"nchans": 1, "nsamples": int(new_ar.shape[1]), "tstart": tstart},
+            ),
+            dm_arr,
+        )
 
     def to_file(self, filename: str | None = None) -> str:
         """Write the data to file.
@@ -454,8 +463,8 @@ class FilterbankBlock(BaseBlock):
                 f"to_{mjd_after:.12f}.fil"
             )
         updates = {"nbits": 32}
-        out_file = self.header.prep_outfile(filename, updates=updates, nbits=32)
-        out_file.cwrite(self.data.transpose().ravel())
+        with self.header.prep_outfile(filename, updates=updates, nbits=32) as out_file:
+            out_file.cwrite(self.data.transpose().ravel())
         return filename
 
 

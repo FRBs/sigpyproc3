@@ -360,15 +360,16 @@ class FourierSeries:
 
     def ifft(
         self,
-        ifftn: Callable[[np.ndarray], np.ndarray] | None = None,
+        ifftn: Callable[[np.ndarray, int], np.ndarray] | None = None,
     ) -> timeseries.TimeSeries:
         """Perform 1-D complex to real inverse FFT.
 
         Parameters
         ----------
         ifftn : Callable[[np.ndarray, int], np.ndarray], optional
-            The ifft function to use. Own ifft implementation can be used,
-            e.g. `pyfftw.interfaces.numpy_fft.irfft`, by default None.
+            Inverse transform ``(spectrum, n) -> time``. ``n`` is the stored
+            real length, which keeps odd lengths. By default
+            :func:`~sigpyproc.kernels.fourier.nb_irfft`.
 
         Returns
         -------
@@ -380,8 +381,12 @@ class FourierSeries:
         if not callable(ifftn):
             msg = f"Input ifftn is not callable: {ifftn}"
             raise TypeError(msg)
-        tim_ar = ifftn(self.data)
-        return timeseries.TimeSeries(tim_ar, self.header.new_header())
+        n_time = int(self.header.nsamples)
+        tim_ar = ifftn(self.data, n_time)
+        return timeseries.TimeSeries(
+            tim_ar,
+            self.header.new_header({"nsamples": int(tim_ar.size)}),
+        )
 
     def form_spec(self, *, interpolate: bool = False) -> PowerSpectrum:
         """Form the power spectrum.

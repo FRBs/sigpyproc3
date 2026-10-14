@@ -34,6 +34,25 @@ class TestFourierSeries:
         tim_ar = fs.ifft()
         np.testing.assert_allclose(tim_ar.data, tim_data, atol=0.01)
 
+    def test_odd_length_ifft_keeps_the_sample_count(self) -> None:
+        n = 9
+        samples = np.arange(n, dtype=np.float32)
+        header = Header(
+            filename="odd.tim",
+            data_type="time series",
+            nchans=1,
+            foff=0.0,
+            fch1=1400.0,
+            nbits=32,
+            tsamp=0.001,
+            tstart=50000.0,
+            nsamples=n,
+        )
+        spectrum = np.fft.rfft(samples).astype(np.complex64)
+        restored = FourierSeries(spectrum, header).ifft()
+        assert restored.data.size == n
+        np.testing.assert_allclose(restored.data, samples, atol=1e-5)
+
     def test_form_spec(self, fourier_data: np.ndarray, tim_header: dict) -> None:
         fs = FourierSeries(fourier_data, Header(**tim_header))
         spec = fs.form_spec()

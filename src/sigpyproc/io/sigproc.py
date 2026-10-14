@@ -998,13 +998,27 @@ def _compute_nsamples(header: dict[str, int | float | str]) -> int:
         raise ValueError(msg)
     nbits = int(header["nbits"])
     nchans = int(header["nchans"])
+    nifs = int(header.get("nifs", 1))
     datalen = int(header["datalen"])
-    if nbits <= 0 or nchans <= 0:
-        msg = f"Invalid header values: nbits={nbits}, nchans={nchans} (must be > 0)."
+    if nbits <= 0 or nchans <= 0 or nifs <= 0:
+        msg = (
+            f"Invalid header values: nbits={nbits}, nchans={nchans}, "
+            f"nifs={nifs} (must be > 0)."
+        )
         raise ValueError(msg)
 
-    # Samples derived purely from file size and header parameters.
-    nsamples_from_file = (8 * datalen) // nbits // nchans
+    # One sample is every channel of every IF. A trailing partial frame is not
+    # a sample: it is dropped, and the count is the whole samples on disk.
+    # Raising here would reject the truncated files ``read_plan`` already reads.
+    frame_bits = nbits * nchans * nifs
+    payload_bits = 8 * datalen
+    leftover = payload_bits % frame_bits
+    if leftover:
+        logger.warning(
+            f"Trailing {leftover} bits do not fill a sample "
+            f"({frame_bits} bits); ignoring that partial frame.",
+        )
+    nsamples_from_file = payload_bits // frame_bits
 
     if "nsamples" in header:
         nsamples_declared = int(header["nsamples"])

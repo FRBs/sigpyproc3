@@ -159,7 +159,17 @@ def remove_zerodm(
 ) -> None:
     in_arr_2d = in_arr.reshape(nsamps, nchans)
     out_arr_2d = out_arr.reshape(nsamps, nchans)
-    chanwts = bpass / bpass.sum()
+    total = np.float64(0.0)
+    for ichan in range(nchans):
+        total += bpass[ichan]
+    chanwts = np.empty(nchans, dtype=np.float64)
+    if abs(total) < np.float64(1e-8):
+        share = np.float64(1.0) / nchans
+        for ichan in range(nchans):
+            chanwts[ichan] = share
+    else:
+        for ichan in range(nchans):
+            chanwts[ichan] = bpass[ichan] / total
     for isamp in prange(nsamps):
         zerodm = np.float64(0.0)
         for ichan in range(nchans):

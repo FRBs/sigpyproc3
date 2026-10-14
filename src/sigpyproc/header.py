@@ -19,7 +19,7 @@ from sigpyproc import utils
 from sigpyproc.core import dispersion
 from sigpyproc.io import fbh5, params, pfits, sigproc
 from sigpyproc.io.bits import BitsInfo, check_packed_length
-from sigpyproc.io.fileio import FileWriter
+from sigpyproc.io.fileio import FileWriter, ensure_output_does_not_alias
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -348,7 +348,25 @@ class Header:
         converter=tuple,
     )
 
-    stream_info: sigproc.StreamInfo = attrs.field(default=sigproc.StreamInfo())
+    stream_info: sigproc.StreamInfo = attrs.field(factory=sigproc.StreamInfo)
+
+    def __attrs_post_init__(self) -> None:
+        if self.nchans < 1 or self.nifs < 1:
+            msg = f"nchans and nifs must be positive, got {self.nchans} and {self.nifs}"
+            raise ValueError(msg)
+        if self.nbits not in BitsInfo.nbits_to_dtype:
+            allowed = tuple(BitsInfo.nbits_to_dtype)
+            msg = f"nbits must be one of {allowed}, got {self.nbits}"
+            raise ValueError(msg)
+        if not np.isfinite(self.tsamp) or self.tsamp <= 0:
+            msg = f"tsamp must be positive and finite, got {self.tsamp}"
+            raise ValueError(msg)
+        if self.nsamples < 0:
+            msg = f"nsamples must be >= 0, got {self.nsamples}"
+            raise ValueError(msg)
+        if not np.isfinite(self.foff):
+            msg = f"foff must be finite, got {self.foff}"
+            raise ValueError(msg)
 
     @property
     def basename(self) -> str:
@@ -924,22 +942,35 @@ class Header:
         updates: dict[str, Any] | None = None,
         nbits: int | None = None,
         rescale: bool = False,
+        sources: Sequence[str] | None = None,
     ) -> FileWriter:
         """Prepare a file with Sigproc format data.
 
-        This is the preferred way to write a new Sigproc file.
+        This is the preferred way to write a new Sigproc file. The writer is not
+        opened until the output path has been checked against the input files.
+        Passing a path that is the same file as an input, including via a symlink
+        or hard link, raises :class:`ValueError` and leaves those bytes unchanged.
+        A different existing path is truncated. ``sources=()`` skips that check
+        for generators that are creating a file rather than transforming one.
+
+        The ``signed`` flag describes 8-bit storage only. It is cleared when the
+        output is not 8-bit or when ``rescale`` writes unsigned levels.
 
         Parameters
         ----------
         filename : str
             Name of new file.
         updates : dict, optional
-            Values to overide existing header values, by default None.
+            Values to overide existing header values, by default None. The
+            mapping is copied and is not modified.
         nbits : int, optional
             Number of bits per output sample, by default None.
         rescale : bool, optional
             Whether to rescale the data using the nbit-dependent values,
-            by default True.
+            by default False.
+        sources : sequence of str, optional
+            Input paths to protect. ``None`` uses this header's filename and its
+            stream entries. An empty sequence protects nothing.
 
         Returns
         -------
@@ -948,16 +979,31 @@ class Header:
         """
         if nbits is None:
             nbits = self.nbits
-        if updates is None:
-            updates = {}
+        updates = {} if updates is None else dict(updates)
         if nbits != self.nbits:
             updates["nbits"] = nbits
+        output_signed = (
+            bool(updates["signed"]) if "signed" in updates else bool(self.signed)
+        )
+        if nbits != 8 or rescale:
+            output_signed = False
+        if output_signed != bool(self.signed):
+            updates["signed"] = output_signed
+        protected: list[str] = []
+        if sources is None:
+            protected.append(self.filename)
+            protected.extend(entry.filename for entry in self.stream_info.entries)
+        else:
+            protected.extend(sources)
+        if protected:
+            ensure_output_does_not_alias(protected, [filename])
         new_hdr = self.new_header(updates)
         check_packed_length(new_hdr.nchans, nbits)
         out_file = FileWriter(
             filename,
             mode="w+",
             nbits=nbits,
+            signed=output_signed,
             rescale=rescale,
         )
         new_hdr_binary = sigproc.encode_header(new_hdr.to_sigproc())

@@ -82,7 +82,11 @@ def _splice_open(
         "fch1": fils[0].header.fch1,
         "foff": fils[0].header.foff,
     }
-    out_file = fils[0].header.prep_outfile(outfile_name, updates=updates)
+    out_file = fils[0].header.prep_outfile(
+        outfile_name,
+        updates=updates,
+        sources=[fil.header.filename for fil in fils],
+    )
     nsamps = fils[0].header.nsamples
     nread = 0
     while nread < nsamps:

@@ -1,6 +1,8 @@
 2.0.0 (Unreleased)
 ++++++++++++++++++
 
+- Streaming writes refuse an output path that is the same file as an input, including symlinks and hard links.
+- ``remove_zerodm`` restores the mean bandpass.
 - ``TimeSeries.find_pulses`` and ``spp_search pulses`` default to a modular PRESTO-inspired pipeline with configurable width banks and preprocessing, and width-dependent pruning.
 - Added mock FRB population generation with ``RandomBurstPopulation``, ``BurstDistribution``, and ``spp_fake population``.
 - Reads search-mode PSRFITS by row, without loading the SUBINT table. Stokes I is ``P0 + P1`` for coherence and ``PPQQ`` data, and channel order follows ``DAT_FREQ``.

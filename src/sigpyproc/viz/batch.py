@@ -141,18 +141,26 @@ def _batch_one(task: dict[str, Any]) -> str:
     from sigpyproc.readers import open_filterbank
 
     fil = open_filterbank(task["filename"])
-    raw_mask = task["mask"]
-    mask = _load_mask(raw_mask) if isinstance(raw_mask, (str, Path)) else raw_mask
-    state = WaterfallState(**task["state"])
-    fig = _render_single_block_fig(
-        fil,
-        state,
-        mask=mask,
-        theme=task["theme"],
-    )
-    out = str(task["out"])
-    fig.savefig(out, dpi=120)
-    return out
+    fig = None
+    try:
+        raw_mask = task["mask"]
+        mask = _load_mask(raw_mask) if isinstance(raw_mask, (str, Path)) else raw_mask
+        state = WaterfallState(**task["state"])
+        fig = _render_single_block_fig(
+            fil,
+            state,
+            mask=mask,
+            theme=task["theme"],
+        )
+        out = str(task["out"])
+        fig.savefig(out, dpi=120)
+        return out
+    finally:
+        fil.close()
+        if fig is not None:
+            import matplotlib.pyplot as plt
+
+            plt.close(fig)
 
 
 def _run_tasks(tasks: list[dict[str, Any]], jobs: int) -> list[str]:

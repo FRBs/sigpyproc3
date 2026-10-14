@@ -88,7 +88,7 @@ def test_waterfall_viewer_dm_control(filfile_8bit_1: str) -> None:
 
 
 def test_waterfall_viewer_display_toggles(filfile_8bit_1: str) -> None:
-    viewer = WaterfallViewer(filfile_8bit_1, batch=True)
+    viewer = WaterfallViewer(filfile_8bit_1, batch=True, gui=True)
     initial_cmap = viewer.state.cmap
     viewer.cycle_cmap()
     assert viewer.state.cmap != initial_cmap
@@ -118,10 +118,11 @@ def test_waterfall_viewer_display_toggles(filfile_8bit_1: str) -> None:
     labels = [button.label.get_text() for button in viewer._buttons]
     for name in ("Start", "Prev", "Next", "End", "Fit DM", "Help", "Save mask"):
         assert name in labels
+    viewer.close()
 
 
 def test_waterfall_viewer_bandpass_zapping(filfile_8bit_1: str) -> None:
-    viewer = WaterfallViewer(filfile_8bit_1, batch=True)
+    viewer = WaterfallViewer(filfile_8bit_1, batch=True, gui=True)
     freqs = viewer.fil.header.chan_freqs
 
     # Simulate bandpass press and release
@@ -133,10 +134,11 @@ def test_waterfall_viewer_bandpass_zapping(filfile_8bit_1: str) -> None:
     viewer.on_button_release(ev_release)  # type: ignore[arg-type]
     assert viewer._bp_pressed is False
     assert len(viewer.state.zapped_channels) > 0
+    viewer.close()
 
 
 def test_dm_fit_waits_until_armed(filfile_8bit_1: str) -> None:
-    viewer = WaterfallViewer(filfile_8bit_1, batch=True, gulp=256)
+    viewer = WaterfallViewer(filfile_8bit_1, batch=True, gui=True, gulp=256)
     first = DummyEvent(inaxes=viewer.ax_im, xdata=0.0, ydata=1400.0)
     second = DummyEvent(inaxes=viewer.ax_im, xdata=0.2, ydata=1200.0)
     viewer.on_button_press(first)  # type: ignore[arg-type]
@@ -148,6 +150,7 @@ def test_dm_fit_waits_until_armed(filfile_8bit_1: str) -> None:
     viewer.on_button_press(second)  # type: ignore[arg-type]
     assert viewer.state.dm > 0.0
     assert viewer.fit_curve.get_xdata().size > 0
+    viewer.close()
 
 
 def test_file_key_is_not_the_scaler(filfile_8bit_1: str) -> None:
@@ -158,10 +161,11 @@ def test_file_key_is_not_the_scaler(filfile_8bit_1: str) -> None:
 
 
 def test_waterfall_viewer_save_and_export(filfile_8bit_1: str, tmp_path: Path) -> None:
-    viewer = WaterfallViewer(filfile_8bit_1, batch=True)
+    viewer = WaterfallViewer(filfile_8bit_1, batch=True, gui=True)
     out_png = tmp_path / "test.png"
     viewer.fig.savefig(out_png)
     assert out_png.exists()
+    viewer.close()
 
 
 def test_export_mask_keeps_channel_mean(filfile_8bit_1: str, tmp_path: Path) -> None:

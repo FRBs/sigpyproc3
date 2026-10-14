@@ -114,6 +114,32 @@ class TestFoldedData:
         np.testing.assert_equal(cube.dm, 20.0)
         cube.update_period(2.0)
         np.testing.assert_equal(cube.period, 2.0)
+        assert cube.get_profile().tsamp == pytest.approx(cube.period / cube.nbins)
+
+    def test_repeated_updates_are_absolute(self, filfile_4bit: str) -> None:
+        header = Header.from_sigproc(filfile_4bit)
+        data = np.zeros((4, 8, 32), dtype=np.float32)
+        data[0, :, 0] = np.arange(8)
+        data[:, 0, 1] = 3
+        original = data.copy()
+        cube = FoldedData(data, header, period=0.5, dm=0.0)
+        cube.update_dm(20.0)
+        once = cube.data.copy()
+        cube.update_dm(20.0)
+        np.testing.assert_array_equal(cube.data, once)
+        other = FoldedData(original.copy(), header, period=0.5, dm=0.0)
+        other.update_dm(50.0)
+        cube.update_dm(50.0)
+        np.testing.assert_array_equal(cube.data, other.data)
+        cube.update_dm(0.0)
+        np.testing.assert_array_equal(cube.data, original)
+
+        cube.update_period(0.48)
+        shifted = cube.data.copy()
+        cube.update_period(0.48)
+        np.testing.assert_array_equal(cube.data, shifted)
+        cube.update_period(0.5)
+        np.testing.assert_array_equal(cube.data, original)
 
     def test_to_ascii_npz(self, filfile_4bit: str, tmpdir: str) -> None:
         fil = FilReader(filfile_4bit)

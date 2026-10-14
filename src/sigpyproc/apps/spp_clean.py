@@ -175,9 +175,22 @@ def zap_times(
     """Replace a time-sample range in a filterbank."""
     fil = open_filterbank(filfile)
     if in_place:
-        tmp_path = Path(filfile).with_suffix(Path(filfile).suffix + ".zap.tmp")
-        fil.zap_times([(start, end)], mode=mode, outfile_name=str(tmp_path), gulp=gulp)
-        tmp_path.replace(filfile)
+        src = Path(filfile)
+        tmp_path = src.with_name(src.name + ".zap.tmp")
+        try:
+            fil.zap_times(
+                [(start, end)],
+                mode=mode,
+                outfile_name=str(tmp_path),
+                gulp=gulp,
+            )
+            fil.close()
+            tmp_path.replace(src)
+        except Exception:
+            tmp_path.unlink(missing_ok=True)
+            raise
+        finally:
+            fil.close()
         click.echo(filfile)
         return
     path = fil.zap_times([(start, end)], mode=mode, outfile_name=outfile, gulp=gulp)

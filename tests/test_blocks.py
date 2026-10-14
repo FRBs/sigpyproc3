@@ -216,3 +216,27 @@ class TestDMTBlock:
         import matplotlib.pyplot as plt
 
         plt.close(fig)
+
+    def test_dmt_peaks_at_the_injected_dm(self) -> None:
+        from sigpyproc.simulation.pulsar import make_header
+
+        header = make_header(
+            nchans=8,
+            nbits=32,
+            tsamp=1e-4,
+            tobs=0.05,
+            fch1=1500.0,
+            foff=-5.0,
+        )
+        dm = 20.0
+        delays = np.asarray(header.get_dmdelays(dm), dtype=int)
+        assert int(delays.max()) < 80
+        data = np.zeros((header.nchans, header.nsamples), dtype=np.float32)
+        origin = 100
+        for ichan, delay in enumerate(delays):
+            data[ichan, origin + int(delay)] = 1.0
+        block = FilterbankBlock(data, header)
+        dmt = block.dmt_transform(dm, dmsteps=5, only_valid_samples=True)
+        trial = int(np.argmin(np.abs(np.asarray(dmt.dms) - dm)))
+        assert dmt.header.nsamples == dmt.data.shape[1]
+        assert dmt.data[trial].max() > dmt.data[0].max()

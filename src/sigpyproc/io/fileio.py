@@ -9,6 +9,7 @@ from __future__ import annotations
 import io
 import os
 from collections.abc import Buffer
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -16,10 +17,72 @@ import numpy as np
 from sigpyproc.io.bits import BitsInfo, pack, unpack
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterable
     from typing import Self
 
     from sigpyproc.io.sigproc import StreamInfo
+
+
+def ensure_output_does_not_alias(
+    sources: Iterable[str | Path],
+    destinations: Iterable[str | Path],
+) -> None:
+    """Refuse to open a destination that is an existing input file.
+
+    Comparison uses the resolved path and ``(st_dev, st_ino)``, so a symlink or
+    hard link to an input is refused as well. A destination that does not yet
+    exist is allowed, including when a generator's header uses that path as its
+    filename. An existing file that is not one of the sources may still be
+    truncated by the writer.
+
+    Parameters
+    ----------
+    sources : iterable of path
+        Files that must remain unchanged.
+    destinations : iterable of path
+        Files about to be opened for writing.
+
+    Raises
+    ------
+    ValueError
+        If a destination is the same file as a source.
+    """
+    protected: list[tuple[Path, tuple[int, int]]] = []
+    for source in sources:
+        src = Path(source)
+        try:
+            stat = src.stat()
+        except OSError:
+            continue
+        protected.append((src.resolve(), (stat.st_dev, stat.st_ino)))
+    if not protected:
+        return
+    paths = [item[0] for item in protected]
+    inodes = [item[1] for item in protected]
+    for destination in destinations:
+        dest = Path(destination)
+        try:
+            resolved = dest.resolve()
+        except OSError:
+            resolved = dest.absolute()
+        inode: tuple[int, int] | None = None
+        if dest.exists() or dest.is_symlink():
+            try:
+                stat = dest.stat()
+            except OSError:
+                stat = None
+            if stat is not None:
+                inode = (stat.st_dev, stat.st_ino)
+        same_path = resolved in paths
+        same_inode = inode is not None and inode in inodes
+        if same_path or same_inode:
+            msg = (
+                f"Refusing to write {dest} because it is the same file as an input. "
+                "Streaming transforms do not replace their inputs. Choose a different "
+                "output path. spp_clean zap-times --in-place writes a temporary file "
+                "and replaces the input only after that write succeeds."
+            )
+            raise ValueError(msg)
 
 
 def allocate_buffer(allocator: Callable[[int], Buffer], nbytes: int) -> Buffer:
@@ -61,7 +124,7 @@ def allocate_buffer(allocator: Callable[[int], Buffer], nbytes: int) -> Buffer:
         msg = f"Allocator did not return a buffer object, got {type(buffer)}"
         raise TypeError(msg)
 
-    allocated_nbytes = len(memoryview(buffer))
+    allocated_nbytes = memoryview(buffer).nbytes
     if allocated_nbytes != nbytes:
         msg = (
             f"Allocated buffer is not the expected size: "
@@ -358,9 +421,13 @@ class FileWriter(FileBase):
         file writing mode, by default "w"
     nbits : int, optional
         number of bits per sample in the file, by default 8
+    signed : bool, optional
+        Clip and store 8-bit samples as int8 in ``[-128, 127]``. Ignored unless
+        ``nbits`` is 8 and ``rescale`` is False. By default False, which clips
+        integer samples to the unsigned range.
     rescale : bool, optional
         whether to rescale the data using the nbit-dependent values,
-        by default False
+        by default False. Rescaling writes unsigned levels and ignores ``signed``.
 
     Raises
     ------
@@ -374,10 +441,12 @@ class FileWriter(FileBase):
         *,
         mode: str = "w",
         nbits: int = 8,
+        signed: bool = False,
         rescale: bool = False,
     ) -> None:
         super().__init__([file], mode)
         self.bitsinfo = BitsInfo(nbits)
+        self.signed = bool(signed) and nbits == 8 and not rescale
         self.rescale = rescale
 
     def cwrite(self, arr: np.ndarray) -> None:
@@ -390,19 +459,28 @@ class FileWriter(FileBase):
 
         Notes
         -----
-        Input data will be packed with a bitsize determined by the nbits
+        Input data will be packed with a bitsize determined by the nbits.
+        Signed 8-bit output is clipped to ``[-128, 127]`` and written as int8.
+        Other integer widths are clipped to the unsigned range. 32-bit output is
+        float32 and is not clipped. ``rescale=True`` quantises to unsigned levels.
         """
         arr = np.asarray(arr)
         if self.bitsinfo.nbits < 32 and self.rescale:
             # arr should be normalized first
             arr = self.bitsinfo.quantize(arr)
+        elif self.signed:
+            arr = np.clip(np.rint(arr), -128, 127).astype(np.int8)
         elif self.bitsinfo.nbits < 32:
             arr = np.clip(np.rint(arr), self.bitsinfo.digi_min, self.bitsinfo.digi_max)
             arr = arr.astype(self.bitsinfo.dtype, copy=False)
         else:
             arr = np.asarray(arr, dtype=self.bitsinfo.dtype)
         if self.bitsinfo.unpack:
-            packed = pack(arr, self.bitsinfo.nbits, bitorder=self.bitsinfo.bitorder)
+            packed = pack(
+                np.ascontiguousarray(arr, dtype=np.uint8),
+                self.bitsinfo.nbits,
+                bitorder=self.bitsinfo.bitorder,
+            )
             packed.tofile(self.file_obj)
         else:
             arr.tofile(self.file_obj)

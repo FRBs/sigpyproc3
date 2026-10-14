@@ -32,11 +32,13 @@ class SeriesViewer:
         *,
         theme: str = "light",
         batch: bool = False,
+        gui: bool | None = None,
     ) -> None:
         if batch:
             use_headless_backend()
         else:
             ensure_interactive_backend()
+        self._gui = (not batch) if gui is None else gui
 
         self.tim = tim
         self.theme = theme
@@ -47,8 +49,9 @@ class SeriesViewer:
         self.end_samp = min(len(self.tim.data), 16384)
         self.total_samps = len(self.tim.data)
 
-        self._build_figure()
-        self.update_detail()
+        if self._gui:
+            self._build_figure()
+            self.update_detail()
 
     def _init_keymap(self) -> None:
         self.keymap.bind(["right", "l"], self.pan_right, "Pan right", "Navigation")
@@ -110,6 +113,8 @@ class SeriesViewer:
             self.update_detail()
 
     def update_detail(self) -> None:
+        if not self._gui:
+            return
         nsamps = self.end_samp - self.start_samp
         if nsamps < 2:
             return
@@ -196,6 +201,8 @@ class SeriesViewer:
         plt.show()
 
     def close(self) -> None:
+        if not self._gui:
+            return
         import matplotlib.pyplot as plt
 
         plt.close(self.fig)
@@ -210,11 +217,13 @@ class SpectrumViewer:
         *,
         theme: str = "light",
         batch: bool = False,
+        gui: bool | None = None,
     ) -> None:
         if batch:
             use_headless_backend()
         else:
             ensure_interactive_backend()
+        self._gui = (not batch) if gui is None else gui
 
         self.spec = spec
         self.theme = theme
@@ -228,9 +237,10 @@ class SpectrumViewer:
             0, self.total_bins * self.df, self.total_bins, endpoint=False
         )
 
-        self._build_figure()
         self.logy = False
-        self.update_plot()
+        if self._gui:
+            self._build_figure()
+            self.update_plot()
 
     def _init_keymap(self) -> None:
         self.keymap.bind(["l"], self.toggle_logy, "Toggle Log-Y", "Display")
@@ -277,6 +287,8 @@ class SpectrumViewer:
 
     def update_plot(self) -> None:
         """Draw the spectrum, using a min/max envelope above 10000 bins."""
+        if not self._gui:
+            return
         if self.total_bins > 10000:
             nbins = 4000
             mins, maxs = kernels.minmax_envelope(self.data, 0, self.total_bins, nbins)
@@ -311,6 +323,8 @@ class SpectrumViewer:
 
     def toggle_logy(self) -> None:
         self.logy = not self.logy
+        if not self._gui:
+            return
         self.ax.set_yscale("log" if self.logy else "linear")
         self.fig.canvas.draw_idle()
 
@@ -325,6 +339,8 @@ class SpectrumViewer:
         plt.show()
 
     def close(self) -> None:
+        if not self._gui:
+            return
         import matplotlib.pyplot as plt
 
         plt.close(self.fig)

@@ -157,6 +157,8 @@ class FoldedData:
         self._hdr = hdr
         self._period = period
         self._dm = dm
+        self._period0 = period
+        self._dm0 = dm
         self._accel = accel
         self._check_input()
         self._tph_shifts = np.zeros(self.nsubints, dtype=np.int32)
@@ -210,7 +212,7 @@ class FoldedData:
         :class:`~sigpyproc.foldedcube.FoldSlice`
             a 2-D array containing the subintegration
         """
-        return FoldSlice(self.data[nsubint], self.header.tsamp)
+        return FoldSlice(self.data[nsubint], self._bin_tsamp)
 
     def get_subband(self, nsubband: int) -> FoldSlice:
         """Get a single subband from the data cube.
@@ -225,7 +227,7 @@ class FoldedData:
         :class:`~sigpyproc.foldedcube.FoldSlice`
             a 2-D array containing the subband
         """
-        return FoldSlice(self.data[:, nsubband], self.header.tsamp)
+        return FoldSlice(self.data[:, nsubband], self._bin_tsamp)
 
     def get_profile(self) -> Profile:
         """Get the summed pulse profile from the data cube.
@@ -235,7 +237,7 @@ class FoldedData:
         :class:`~sigpyproc.foldedcube.Profile`
             a 1-D array containing the power as a function of phase
         """
-        return Profile(np.sum(self.data, axis=(0, 1)), self.header.tsamp)
+        return Profile(np.sum(self.data, axis=(0, 1)), self._bin_tsamp)
 
     def get_time_phase(self) -> FoldSlice:
         """Return the data cube collapsed in frequency.
@@ -245,7 +247,7 @@ class FoldedData:
         :class:`~sigpyproc.foldedcube.FoldSlice`
             a 2-D array containing the time vs. phase plane
         """
-        return FoldSlice(np.sum(self.data, axis=1), self.header.tsamp)
+        return FoldSlice(np.sum(self.data, axis=1), self._bin_tsamp)
 
     def get_freq_phase(self) -> FoldSlice:
         """Return the data cube collapsed in time.
@@ -255,7 +257,7 @@ class FoldedData:
         :class:`~sigpyproc.foldedcube.FoldSlice`
             a 2-D array containing the frequency vs. phase plane
         """
-        return FoldSlice(self.data.sum(axis=0), self.header.tsamp)
+        return FoldSlice(self.data.sum(axis=0), self._bin_tsamp)
 
     def centre(self) -> FoldedData:
         """Roll the data cube to center the pulse."""
@@ -263,7 +265,12 @@ class FoldedData:
         on_pulse_region = prof.compute_mf().on_pulse
         pos = int(np.mean(on_pulse_region))
         new_ar = np.roll(self.data, -(pos - self.nbins // 2), axis=2)
-        return FoldedData(new_ar, self.header, self.period, self.dm)
+        centred = FoldedData(new_ar, self.header, self.period, self.dm, self._accel)
+        centred._period0 = self._period0
+        centred._dm0 = self._dm0
+        centred._fph_shifts = self._fph_shifts.copy()
+        centred._tph_shifts = self._tph_shifts.copy()
+        return centred
 
     def to_ascii(self, filename: str) -> str:
         """Write the summed profile as one float per line."""
@@ -321,41 +328,48 @@ class FoldedData:
                 )
         self._period = period
 
+    @property
+    def _bin_tsamp(self) -> float:
+        """Duration of one phase bin at the current period."""
+        return self.period / self.nbins
+
     def _get_dmdelays(self, newdm: float) -> np.ndarray:
-        delta_dm = newdm - self.dm
-        if delta_dm == 0:
-            drifts = -1 * self._fph_shifts
-            self._fph_shifts.fill(0)
-            return drifts
+        if newdm == self._dm:
+            return np.zeros(self.nsubbands, dtype=np.int32)
+        delta_dm = newdm - self._dm0
         chan_width = self.header.foff * self.header.nchans / self.nsubbands
         freqs = (
             np.arange(self.nsubbands, dtype=np.float64) * chan_width + self.header.fch1
         )
-        tsamp = self.period / self.nbins
-        drifts = dispersion.compute_dmdelays(
-            freqs,
-            delta_dm,
-            tsamp,
-            self.header.fch1,
-            in_samples=True,
+        drifts = np.asarray(
+            dispersion.compute_dmdelays(
+                freqs,
+                delta_dm,
+                self._period0 / self.nbins,
+                self.header.fch1,
+                in_samples=True,
+            ),
+            dtype=np.int32,
         )
         bin_drifts = drifts - self._fph_shifts
         self._fph_shifts = drifts
         return bin_drifts
 
     def _get_pdelays(self, newperiod: float) -> np.ndarray:
+        if newperiod == self._period:
+            return np.zeros(self.nsubints, dtype=np.int32)
         dbins = (
-            (newperiod / self._period - 1)
+            (newperiod / self._period0 - 1)
             * self.header.tobs
             * self.nbins
-            / self._period
+            / self._period0
         )
         if dbins == 0:
-            drifts = -1 * self._tph_shifts
-            self._tph_shifts.fill(0)
-            return drifts
-        drifts = np.arange(self.nsubints, dtype=np.float32)
-        drifts = np.round(drifts / (self.nsubints / dbins)).astype(np.int32)
+            drifts = np.zeros(self.nsubints, dtype=np.int32)
+        else:
+            drifts = np.round(
+                np.arange(self.nsubints, dtype=np.float64) / (self.nsubints / dbins),
+            ).astype(np.int32)
         bin_drifts = drifts - self._tph_shifts
         self._tph_shifts = drifts
         return bin_drifts

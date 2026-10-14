@@ -190,7 +190,7 @@ def fake_filterbank(
     width_eff = _effective_width(header, params, width)
     snr_chan = params.snr / np.sqrt(header.nchans)
 
-    with header.prep_outfile(outfile, rescale=False) as out:
+    with header.prep_outfile(outfile, rescale=False, sources=()) as out:
         start = 0
         while start < header.nsamples:
             nsamp = min(gulp, header.nsamples - start)

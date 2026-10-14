@@ -17,7 +17,7 @@ import numpy as np
 
 from sigpyproc.header import Header
 from sigpyproc.io import sigproc
-from sigpyproc.io.fileio import FileWriter
+from sigpyproc.io.fileio import FileWriter, ensure_output_does_not_alias
 from sigpyproc.io.pfits import PFITSFile, SubintHdr
 from sigpyproc.kernels.digitizer import (
     accumulate_stats,
@@ -853,17 +853,20 @@ def _output_header(
     centre = hdr_in.fch1 + 0.5 * hdr_in.foff * (nchan_in - 1)
     foff_out = -bw_abs / nchan_out
     fch1_out = centre + 0.5 * bw_abs - 0.5 * (bw_abs / nchan_out)
-    return hdr_in.new_header(
-        {
-            "nchans": nchan_out,
-            "foff": foff_out,
-            "fch1": fch1_out,
-            "tsamp": tsamp_out,
-            "nbits": nbits_out,
-            "nifs": npol_out,
-            "nsamples": nsamples_out,
-        },
-    )
+    updates: dict[str, int | float | bool] = {
+        "nchans": nchan_out,
+        "foff": foff_out,
+        "fch1": fch1_out,
+        "tsamp": tsamp_out,
+        "nbits": nbits_out,
+        "nifs": npol_out,
+        "nsamples": nsamples_out,
+    }
+    # quantise_rows and float_rows write unsigned levels or float32. Clear a
+    # signed flag inherited from 8-bit input; do not invent one that was absent.
+    if hdr_in.signed:
+        updates["signed"] = False
+    return hdr_in.new_header(updates)
 
 
 DSPSR_MAX_RAM_MB = 256.0
@@ -1019,7 +1022,13 @@ def digifil(
         )
     )
     exact = cfg.rescale_seconds != 0
-    out_file = FileWriter(outfile, mode="w+", nbits=pipeline.nbits_out)
+    ensure_output_does_not_alias([filename], [outfile])
+    out_file = FileWriter(
+        outfile,
+        mode="w+",
+        nbits=pipeline.nbits_out,
+        signed=hdr_out.signed,
+    )
     out_sig = hdr_out.to_sigproc()
     out_file.write(sigproc.encode_header(out_sig))
     for raw in src.blocks(block, exact=exact):

@@ -43,6 +43,16 @@ _BULK_BYTES = 32 * 1024 * 1024
 _STREAM_GULP_BYTES = 8 * 1024 * 1024
 
 
+def _check_plan_args(gulp: int, start: int) -> None:
+    """Reject a read plan that would reach a kernel with a bad window."""
+    if gulp < 1:
+        msg = f"gulp must be >= 1, got {gulp}"
+        raise ValueError(msg)
+    if start < 0:
+        msg = f"start must be >= 0, got {start}"
+        raise ValueError(msg)
+
+
 def _chan_start(header: Header, fch1: float, nchans: int) -> int:
     """Return the first channel index of a contiguous sub-band."""
     if nchans < 1 or nchans > header.nchans or header.foff == 0:
@@ -453,6 +463,7 @@ class FilReader(Filterbank):
         quiet: bool = False,
         allocator: Callable[[int], Buffer] | None = None,
     ) -> Iterator[tuple[int, int, np.ndarray]]:
+        _check_plan_args(gulp, start)
         if nsamps is None:
             nsamps = self.header.nsamples - start
         if description is None:
@@ -658,6 +669,7 @@ class PFITSReader(Filterbank):
         quiet: bool = False,
         allocator: Callable[[int], Buffer] | None = None,  # noqa: ARG002
     ) -> Iterator[tuple[int, int, np.ndarray]]:
+        _check_plan_args(gulp, start)
         if nsamps is None:
             nsamps = self.header.nsamples - start
         if description is None:
@@ -805,13 +817,13 @@ class PulseExtractor:
         logger.debug(
             f"nstart_file = {self.nstart_file}, nsamps_file = {self.nsamps_file}",
         )
-        fil = FilReader(self.filfile)
-        block = fil.read_block(
-            start=self.nstart_file,
-            nsamps=self.nsamps_file,
-            fch1=self.toa_freq,
-            nchans=self.nchans,
-        )
+        with FilReader(self.filfile) as fil:
+            block = fil.read_block(
+                start=self.nstart_file,
+                nsamps=self.nsamps_file,
+                fch1=self.toa_freq,
+                nchans=self.nchans,
+            )
         if self.nstart < 0 or self.nstart + self.nsamps > self.sub_hdr.nsamples:
             offset = abs(min(0, self.nstart))
             logger.info(f"Padding with {pad_mode}. start offset = {offset}")

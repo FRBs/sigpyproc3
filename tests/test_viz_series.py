@@ -28,7 +28,7 @@ class DummyEvent:
 
 def test_series_viewer(timfile: str, tmp_path: Path) -> None:
     tim = TimeSeries.from_tim(timfile)
-    viewer = SeriesViewer(tim, batch=True)
+    viewer = SeriesViewer(tim, batch=True, gui=True)
     assert viewer.total_samps == len(tim.data)
     assert viewer.start_samp == 0
 
@@ -62,12 +62,13 @@ def test_series_viewer(timfile: str, tmp_path: Path) -> None:
     out_png = tmp_path / "series.png"
     viewer.fig.savefig(out_png)
     assert out_png.exists()
+    viewer.close()
 
 
 def test_spectrum_viewer(fftfile: str, tmp_path: Path) -> None:
     fs = FourierSeries.from_fft(fftfile)
     spec = fs.form_spec()
-    viewer = SpectrumViewer(spec, batch=True)
+    viewer = SpectrumViewer(spec, batch=True, gui=True)
     assert viewer.total_bins == len(spec.data)
 
     # Click harmonic markers
@@ -86,6 +87,7 @@ def test_spectrum_viewer(fftfile: str, tmp_path: Path) -> None:
     out_png = tmp_path / "spectrum.png"
     viewer.fig.savefig(out_png)
     assert out_png.exists()
+    viewer.close()
 
 
 def test_timeseries_view_method(timfile: str, monkeypatch: pytest.MonkeyPatch) -> None:

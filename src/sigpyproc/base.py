@@ -53,6 +53,7 @@ class Filterbank(ABC):
 
     def __init__(self) -> None:
         self._chan_stats: ChannelStats | None = None
+        self._chan_stats_window: tuple[int, int, str] | None = None
 
     @property
     @abstractmethod
@@ -247,15 +248,17 @@ class Filterbank(ABC):
         **plan_kwargs : dict
             Keyword arguments for :func:`read_plan`.
         """
-        bag = ChannelStats(self.header.nchans, self.header.nsamples)
+        n_in, _tstart = self._sample_window(start, nsamps)
+        bag = ChannelStats(self.header.nchans, n_in)
         for _, ii, data in self.read_plan(
             gulp=gulp,
             start=start,
-            nsamps=nsamps,
+            nsamps=n_in,
             **plan_kwargs,
         ):
             bag.push_data(data, ii, mode="full")
         self._chan_stats = bag
+        self._chan_stats_window = (start, n_in, "full")
 
     def compute_stats_basic(
         self,
@@ -279,15 +282,17 @@ class Filterbank(ABC):
         **plan_kwargs : dict
             Keyword arguments for :func:`read_plan`.
         """
-        bag = ChannelStats(self.header.nchans, self.header.nsamples)
+        n_in, _tstart = self._sample_window(start, nsamps)
+        bag = ChannelStats(self.header.nchans, n_in)
         for _, ii, data in self.read_plan(
             gulp=gulp,
             start=start,
-            nsamps=nsamps,
+            nsamps=n_in,
             **plan_kwargs,
         ):
             bag.push_data(data, ii, mode="basic")
         self._chan_stats = bag
+        self._chan_stats_window = (start, n_in, "basic")
 
     def collapse(
         self,
@@ -636,23 +641,32 @@ class Filterbank(ABC):
         """
         if outfile_name is None:
             outfile_name = f"{self.header.basename}_masked.fil"
+        if gulp < 1:
+            msg = f"gulp must be >= 1, got {gulp}"
+            raise ValueError(msg)
+        chan_mask = np.asarray(chan_mask, dtype=bool)
+        if chan_mask.shape != (self.header.nchans,):
+            msg = (
+                f"chan_mask length {chan_mask.size} does not match "
+                f"nchans {self.header.nchans}"
+            )
+            raise ValueError(msg)
 
         n_in, tstart = self._sample_window(start, nsamps)
-        chan_mask = np.array(chan_mask).astype("bool")
         mask_value = np.float32(mask_value).astype(self.header.dtype)
-        out_file = self.header.prep_outfile(
+        kernel_func = kernels.mask_channels_par if parallel else kernels.mask_channels
+        with self.header.prep_outfile(
             outfile_name,
             updates={"nsamples": n_in, "tstart": tstart},
-        )
-        kernel_func = kernels.mask_channels_par if parallel else kernels.mask_channels
-        for nsamps_r, _ii, data in self.read_plan(
-            gulp=gulp,
-            start=start,
-            nsamps=n_in,
-            **plan_kwargs,
-        ):
-            kernel_func(data, chan_mask, mask_value, self.header.nchans, nsamps_r)
-            out_file.cwrite(data)
+        ) as out_file:
+            for nsamps_r, _ii, data in self.read_plan(
+                gulp=gulp,
+                start=start,
+                nsamps=n_in,
+                **plan_kwargs,
+            ):
+                kernel_func(data, chan_mask, mask_value, self.header.nchans, nsamps_r)
+                out_file.cwrite(data)
         return outfile_name
 
     def zap_times(
@@ -1171,6 +1185,7 @@ class Filterbank(ABC):
 
         n_in, tstart = self._sample_window(start, nsamps)
         bpass = self.bandpass(
+            method="mean",
             gulp=gulp,
             start=start,
             nsamps=n_in,
@@ -1602,9 +1617,11 @@ class Filterbank(ABC):
             msg = f"Clean method must be 'mad' or 'iqrm', got {method}"
             raise ValueError(msg)
 
-        if self.chan_stats is None:
-            # 1st pass to compute channel statistics (upto kurtosis)
-            self.compute_stats(gulp=gulp, start=start, nsamps=nsamps, **plan_kwargs)
+        n_in, _tstart = self._sample_window(start, nsamps)
+        window = (start, n_in, "full")
+        if self.chan_stats is None or self._chan_stats_window != window:
+            # Statistics from another window or a basic-only pass are not reused.
+            self.compute_stats(gulp=gulp, start=start, nsamps=n_in, **plan_kwargs)
 
         if not isinstance(self.chan_stats, ChannelStats):
             msg = "Channel statistics not computed properly"

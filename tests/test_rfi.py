@@ -18,7 +18,8 @@ class TestRFI:
 
     def test_iqrm_mask(self) -> None:
         input_arr = np.array([1, 2, 3, 4, 5, 20], dtype=np.uint8)
-        desired = np.array([0, 0, 0, 0, 0, 1], dtype=bool)
+        # Radius 1 flags the impulse and the sample whose forward difference is that impulse.
+        desired = np.array([0, 0, 0, 0, 1, 1], dtype=bool)
         np.testing.assert_array_equal(rfi.iqrm_mask(input_arr, 3, 1), desired)
         with pytest.raises(ValueError):
             rfi.iqrm_mask(input_arr, -1)
@@ -93,3 +94,22 @@ class TestRFIMask:
         fig = mask.plot()
         assert fig is not None
         assert isinstance(fig, plt.Figure)
+
+
+def test_iqrm_ignores_input_strides() -> None:
+    values = np.array([1.0, 5.0, 2.0, 9.0, 3.0, 8.0, 4.0, 7.0, 6.0, 0.0])
+    carrier = np.zeros(values.size * 3)
+    carrier[::3] = values
+    view = carrier[::3]
+    assert view.strides != values.strides
+    np.testing.assert_array_equal(view, values)
+    direct = rfi.iqrm_mask(values, threshold=2.5, radius=2)
+    strided = rfi.iqrm_mask(view, threshold=2.5, radius=2)
+    reversed_view = rfi.iqrm_mask(values[::-1][::-1], threshold=2.5, radius=2)
+    np.testing.assert_array_equal(strided, direct)
+    np.testing.assert_array_equal(reversed_view, direct)
+
+
+def test_iqrm_constant_data_is_unmasked() -> None:
+    mask = rfi.iqrm_mask(np.ones(12), threshold=3, radius=2)
+    assert not mask.any()
