@@ -16,7 +16,7 @@ A modern, object-oriented Python library for FRB and pulsar data analysis.
 **sigpyproc** provides high-performance tools for manipulating pulsar and fast radio burst (FRB) data, combining a clean object-oriented API with [Numba](https://numba.pydata.org/)-accelerated kernels for time-critical workloads. Originally developed as a Python alternative to the
 [SIGPROC filterbank](http://sigproc.sourceforge.net) toolbox, the project has evolved into an independent framework for structured pulsar/FRB data manipulation.
 
-It is a modern extension of SIGPROC, not a clone. Search lives on `TimeSeries` / `PowerSpectrum` / `CandidateTable` (`TimeSeries.search`, `find_pulses`, `ffa`) with an `spp_search` CLI and CSV output. That is enough for exploratory FFT, FFA, and single-pulse work; it is not a drop-in survey pipeline (no `.prd` / `.bst` files, birdie lists, or PGPLOT). The library still focuses on:
+It is a modern extension of SIGPROC, not a clone. Search lives on `TimeSeries` / `PowerSpectrum` / `CandidateTable` (`TimeSeries.search`, `find_pulses`) with an `spp_search` CLI and CSV output. Periodic search is an FFT. Single-pulse search is a boxcar. That is enough for exploratory work; it is not a drop-in survey pipeline (no `.prd` / `.bst` files, birdie lists, or PGPLOT). The library still focuses on:
 
 - Precise data inspection, data format conversion and header manipulation
 - Fine-grained control/visualization of filterbank and time series data
@@ -29,7 +29,7 @@ This makes it particularly well suited for exploratory research, validation work
 ## Features
 
 - **Object-Oriented Design** — Explicit data objects for [SIGPROC filterbank](http://sigproc.sourceforge.net), [PSRFITS](https://www.atnf.csiro.au/research/pulsar/psrfits_definition/Psrfits.html), `TimeSeries`, `FourierSeries`, and `CandidateTable`.
-- **Search, as an API** — FFT + harmonic folds, Fast Folding Analysis, and a boxcar single-pulse search, all returning one CSV-friendly candidate table. See {doc}`/tutorials/search`.
+- **Search, as an API** — FFT harmonic folds for periodic signals, and a boxcar single-pulse search, both returning one CSV-friendly candidate table. See {doc}`/tutorials/search`.
 - **High Performance** — Critical paths implemented with Numba for speed without sacrificing clarity.
 - **Structured Metadata** — Explicit header schemas for metadata handling.
 - **Modern Stack** — Built with `uv`, enforced with `ruff`, and maintained with strict `ty` type checking.
@@ -59,7 +59,7 @@ Load a `.fil`, inspect the header, dedisperse, and fold.
 :link: tutorials/search
 :link-type: doc
 
-FFT, FFA, single pulses, and `CandidateTable` — how to use the search API.
+FFT, single pulses, and `CandidateTable` — how to use the search API.
 :::
 
 :::{grid-item-card} 📡 Simulate a pulse

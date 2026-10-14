@@ -151,3 +151,40 @@ class TestFoldedData:
         loaded = np.load(npz)
         np.testing.assert_array_equal(loaded["data"], cube.data)
         np.testing.assert_equal(float(loaded["period"]), cube.period)
+        restored = FoldedData.from_npz(npz)
+        np.testing.assert_array_equal(restored.data, cube.data)
+        assert restored.period == pytest.approx(cube.period)
+        assert restored.dm == pytest.approx(cube.dm)
+        assert restored.accel == pytest.approx(cube.accel)
+        assert restored.header.foff == pytest.approx(cube.header.foff)
+        assert restored.header.tsamp == pytest.approx(cube.header.tsamp)
+
+    def test_centre_puts_the_peak_in_the_middle(self, filfile_4bit: str) -> None:
+        header = Header.from_sigproc(filfile_4bit)
+        data = np.zeros((2, 4, 8), dtype=np.float32)
+        data[:, :, 1] = 5
+        data[:, :, 0] = 1
+        cube = FoldedData(data, header, period=0.5, dm=10.0, accel=2.0)
+        centred = cube.centre()
+        assert int(np.argmax(centred.get_profile().data)) == centred.nbins // 2
+        assert centred.accel == pytest.approx(2.0)
+        assert centred.dm == pytest.approx(10.0)
+
+    def test_flat_profile_is_not_rolled(self, filfile_4bit: str) -> None:
+        header = Header.from_sigproc(filfile_4bit)
+        data = np.ones((2, 2, 8), dtype=np.float32)
+        cube = FoldedData(data, header, period=0.5, dm=0.0)
+        np.testing.assert_array_equal(cube.centre().data, data)
+
+    def test_zero_mean_slice_stays_finite(self) -> None:
+        data = np.array([[1.0, -1.0, 1.0, -1.0], [1.0, 2.0, 3.0, 4.0]], dtype=np.float32)
+        normalized = FoldSlice(data, tsamp=0.001).normalize()
+        assert np.isfinite(normalized.data).all()
+        np.testing.assert_array_equal(normalized.data[0], 0)
+        assert normalized.data[1].mean() == pytest.approx(1)
+
+    def test_invalid_period_is_rejected(self, filfile_4bit: str) -> None:
+        header = Header.from_sigproc(filfile_4bit)
+        data = np.ones((2, 2, 8), dtype=np.float32)
+        with pytest.raises(ValueError, match="period"):
+            FoldedData(data, header, period=0.0, dm=0.0)

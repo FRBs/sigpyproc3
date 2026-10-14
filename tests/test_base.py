@@ -151,6 +151,8 @@ class TestFilterbank:
             chanpersub=chanpersub,
         )
         nchans_out = nchans if chanpersub is None else chanpersub
+        expected_files = 1 if chanpersub is None else nchans // chanpersub
+        assert len(subfiles) == expected_files
         for subfile in subfiles:
             subfile_path = Path(subfile)
             assert subfile_path.is_file()
@@ -172,6 +174,35 @@ class TestFilterbank:
                     nchans=nchans + 1,
                     chanpersub=chanpersub,
                 )
+
+    def test_extract_uses_the_selected_epoch(
+        self,
+        filfile_4bit: str,
+        tmp_path: Path,
+    ) -> None:
+        fil = FilReader(filfile_4bit)
+        start = 20
+        sub = fil.extract_bands(
+            chanstart=0,
+            nchans=8,
+            chanpersub=4,
+            outfile_base=str(tmp_path / "band"),
+            start=start,
+            nsamps=30,
+        )
+        assert len(sub) == 2
+        loaded = FilReader(sub[0])
+        assert loaded.header.nsamples == 30
+        assert loaded.header.tstart == pytest.approx(fil.header.mjd_after_nsamps(start))
+        chans = fil.extract_chans(
+            np.array([0, 1]),
+            outfile_base=str(tmp_path / "chan"),
+            start=start,
+            nsamps=30,
+        )
+        tim = TimeSeries.from_tim(chans[0])
+        assert tim.header.nsamples == 30
+        assert tim.header.tstart == pytest.approx(fil.header.mjd_after_nsamps(start))
 
     def test_requantize(self, filfile_8bit_1: str, tmpfile: str) -> None:
         fil = FilReader(filfile_8bit_1)

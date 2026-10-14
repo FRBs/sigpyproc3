@@ -6,6 +6,7 @@ data cubes, respectively.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -13,6 +14,8 @@ import numpy as np
 from sigpyproc.core import dispersion
 from sigpyproc.core.filters import MatchedFilter
 from sigpyproc.header import Header
+
+_FOLD_NPZ_VERSION = 1
 
 if TYPE_CHECKING:
     from numpy.typing import ArrayLike
@@ -36,7 +39,13 @@ class Profile:
 
     def __init__(self, data: ArrayLike, tsamp: float) -> None:
         self._data = np.asarray(data, dtype=np.float32)
-        self._tsamp = tsamp
+        self._tsamp = float(tsamp)
+        if self._data.ndim != 1 or self._data.size == 0:
+            msg = "A profile must be a non-empty 1-D array"
+            raise ValueError(msg)
+        if not np.isfinite(self._tsamp) or self._tsamp <= 0:
+            msg = f"tsamp must be positive and finite, got {tsamp}"
+            raise ValueError(msg)
 
     @property
     def data(self) -> np.ndarray:
@@ -79,7 +88,13 @@ class FoldSlice:
 
     def __init__(self, data: np.ndarray, tsamp: float) -> None:
         self._data = np.asarray(data, dtype=np.float32)
-        self._tsamp = tsamp
+        self._tsamp = float(tsamp)
+        if self._data.ndim != 2 or self._data.shape[1] == 0 or self._data.shape[0] == 0:
+            msg = "A fold slice must be a non-empty 2-D array"
+            raise ValueError(msg)
+        if not np.isfinite(self._tsamp) or self._tsamp <= 0:
+            msg = f"tsamp must be positive and finite, got {tsamp}"
+            raise ValueError(msg)
 
     @property
     def data(self) -> np.ndarray:
@@ -104,7 +119,13 @@ class FoldSlice:
         :class:`~sigpyproc.foldedcube.FoldSlice`
             normalised version of slice
         """
-        norm_data = self.data / np.mean(self.data, axis=1, keepdims=True)
+        means = np.mean(self.data, axis=1, keepdims=True)
+        norm_data = np.divide(
+            self.data,
+            means,
+            out=np.zeros_like(self.data),
+            where=means != 0,
+        )
         return FoldSlice(norm_data, self.tsamp)
 
     def get_profile(self) -> Profile:
@@ -159,7 +180,7 @@ class FoldedData:
         self._dm = dm
         self._period0 = period
         self._dm0 = dm
-        self._accel = accel
+        self._accel = float(accel)
         self._check_input()
         self._tph_shifts = np.zeros(self.nsubints, dtype=np.int32)
         self._fph_shifts = np.zeros(self.nsubbands, dtype=np.int32)
@@ -183,6 +204,11 @@ class FoldedData:
     def dm(self) -> float:
         """The DM (`float`, read-only)."""
         return self._dm
+
+    @property
+    def accel(self) -> float:
+        """The folding acceleration (`float`, read-only)."""
+        return self._accel
 
     @property
     def nsubints(self) -> int:
@@ -260,12 +286,24 @@ class FoldedData:
         return FoldSlice(self.data.sum(axis=0), self._bin_tsamp)
 
     def centre(self) -> FoldedData:
-        """Roll the data cube to center the pulse."""
-        prof = self.get_profile()
-        on_pulse_region = prof.compute_mf().on_pulse
-        pos = int(np.mean(on_pulse_region))
-        new_ar = np.roll(self.data, -(pos - self.nbins // 2), axis=2)
-        centred = FoldedData(new_ar, self.header, self.period, self.dm, self._accel)
+        """Roll the cube so the brightest phase bin sits at the centre.
+
+        The shift is circular. A flat profile is left where it is.
+        """
+        profile = np.sum(self.data, axis=(0, 1))
+        finite = profile[np.isfinite(profile)]
+        if finite.size == 0 or np.max(finite) == np.min(finite):
+            shift = 0
+        else:
+            pos = int(np.nanargmax(profile))
+            shift = self.nbins // 2 - pos
+        centred = FoldedData(
+            np.roll(self.data, shift, axis=2),
+            self.header,
+            self.period,
+            self.dm,
+            self._accel,
+        )
         centred._period0 = self._period0
         centred._dm0 = self._dm0
         centred._fph_shifts = self._fph_shifts.copy()
@@ -278,19 +316,97 @@ class FoldedData:
         return filename
 
     def to_npz(self, filename: str) -> str:
-        """Write the fold cube and scalar metadata to a ``.npz`` file."""
+        """Write a versioned fold archive and return the path actually written.
+
+        NumPy appends ``.npz`` when the name does not already end with it.
+        """
+        path = Path(filename)
+        if not path.name.endswith(".npz"):
+            path = path.with_name(path.name + ".npz")
+        header = self.header
         np.savez(
-            filename,
+            path,
+            version=np.int32(_FOLD_NPZ_VERSION),
             data=self.data,
             period=np.float64(self.period),
             dm=np.float64(self.dm),
             accel=np.float64(self._accel),
-            tsamp=np.float64(self.header.tsamp),
+            period0=np.float64(self._period0),
+            dm0=np.float64(self._dm0),
+            tph_shifts=self._tph_shifts,
+            fph_shifts=self._fph_shifts,
+            filename=np.str_(header.filename),
+            data_type=np.str_(header.data_type),
+            nchans=np.int32(header.nchans),
+            foff=np.float64(header.foff),
+            fch1=np.float64(header.fch1),
+            nbits=np.int32(header.nbits),
+            tsamp=np.float64(header.tsamp),
+            tstart=np.float64(header.tstart),
+            nsamples=np.int32(header.nsamples),
+            nifs=np.int32(header.nifs),
         )
-        return filename
+        return str(path)
+
+    @classmethod
+    def from_npz(cls, filename: str) -> FoldedData:
+        """Load a fold archive written by :meth:`to_npz`.
+
+        Parameters
+        ----------
+        filename : str
+            Path of the ``.npz`` archive.
+
+        Returns
+        -------
+        FoldedData
+            Cube with the saved data, header coordinates, and correction basis.
+
+        Raises
+        ------
+        ValueError
+            If the archive version is missing or not supported.
+        """
+        with np.load(filename) as archive:
+            if "version" not in archive.files:
+                msg = f"{filename} has no fold archive version"
+                raise ValueError(msg)
+            version = int(archive["version"])
+            if version != _FOLD_NPZ_VERSION:
+                msg = f"Unsupported fold archive version {version}"
+                raise ValueError(msg)
+            data = np.array(archive["data"], dtype=np.float32, copy=True)
+            period = float(archive["period"])
+            dm = float(archive["dm"])
+            accel = float(archive["accel"])
+            period0 = float(archive["period0"])
+            dm0 = float(archive["dm0"])
+            tph_shifts = np.array(archive["tph_shifts"], dtype=np.int32, copy=True)
+            fph_shifts = np.array(archive["fph_shifts"], dtype=np.int32, copy=True)
+            header = Header(
+                filename=str(archive["filename"]),
+                data_type=str(archive["data_type"]),
+                nchans=int(archive["nchans"]),
+                foff=float(archive["foff"]),
+                fch1=float(archive["fch1"]),
+                nbits=int(archive["nbits"]),
+                tsamp=float(archive["tsamp"]),
+                tstart=float(archive["tstart"]),
+                nsamples=int(archive["nsamples"]),
+                nifs=int(archive["nifs"]),
+            )
+        cube = cls(data, header, period, dm, accel)
+        cube._period0 = period0
+        cube._dm0 = dm0
+        cube._tph_shifts = tph_shifts
+        cube._fph_shifts = fph_shifts
+        return cube
 
     def replace_nan(self) -> None:
-        self.data[np.isnan(self.data)] = np.nanmedian(self.data)
+        """Replace NaNs with the median of the finite samples, or 0 if none."""
+        finite = self.data[np.isfinite(self.data)]
+        fill = float(np.median(finite)) if finite.size else 0.0
+        self.data[np.isnan(self.data)] = fill
 
     def update_dm(self, dm: float) -> None:
         """Install a new DM in the data cube.
@@ -378,6 +494,15 @@ class FoldedData:
         if not isinstance(self.header, Header):
             msg = "Input header is not a Header instance"
             raise TypeError(msg)
-        if self.data.ndim != 3:
-            msg = "Input data is not 3 dimensional"
+        if self.data.ndim != 3 or any(size == 0 for size in self.data.shape):
+            msg = "Folded data must be a non-empty 3-D cube"
+            raise ValueError(msg)
+        if not np.isfinite(self._period) or self._period <= 0:
+            msg = f"period must be positive and finite, got {self._period}"
+            raise ValueError(msg)
+        if not np.isfinite(self._dm):
+            msg = f"dm must be finite, got {self._dm}"
+            raise ValueError(msg)
+        if not np.isfinite(self._accel):
+            msg = f"accel must be finite, got {self._accel}"
             raise ValueError(msg)

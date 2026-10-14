@@ -1,7 +1,7 @@
 """Search candidate tables.
 
 A modern stand-in for SIGPROC ``.prd`` / ``.bst`` bookkeeping: candidates
-from FFT search, FFA, and single-pulse detection live in one
+from FFT search and single-pulse detection live in one
 :class:`~astropy.table.QTable` with SI units. There is no ``.prd`` writer
 and no PGPLOT.
 """

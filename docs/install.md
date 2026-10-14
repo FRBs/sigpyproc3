@@ -32,7 +32,7 @@ python -c "import sigpyproc; print(sigpyproc.__version__)"
 
 After installation, browse the {doc}`generated/sigpyproc` for the full API reference,
 or jump to {doc}`/tutorials/quickstart` (filterbanks) and
-{doc}`/tutorials/search` (FFT / FFA / pulses).
+{doc}`/tutorials/search` (FFT / pulses).
 
 ---
 

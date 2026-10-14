@@ -33,6 +33,28 @@ class TestFilterbankBlock:
         assert block.dm == 0
         assert isinstance(block, FilterbankBlock)
 
+    def test_normalise_and_pad_keep_dm(self, filfile_8bit_1: str) -> None:
+        header = Header.from_sigproc(filfile_8bit_1).new_header(
+            {"nchans": 4, "nsamples": 16},
+        )
+        data = np.arange(4 * 16, dtype=np.float32).reshape(4, 16)
+        block = FilterbankBlock(data, header, dm=12.5)
+        assert block.normalise().dm == pytest.approx(12.5)
+        padded = block.pad_samples(20, 3)
+        assert padded.dm == pytest.approx(12.5)
+        assert padded.header.nsamples == 20
+        assert padded.header.tstart == pytest.approx(header.mjd_after_nsamps(-3))
+        np.testing.assert_array_equal(padded.data[:, 3:19], data)
+
+    def test_dmt_normalise_keeps_the_grid(self, filfile_8bit_1: str) -> None:
+        header = Header.from_sigproc(filfile_8bit_1).new_header({"nsamples": 8})
+        dms = np.array([0.0, 5.0, 10.0], dtype=np.float32)
+        data = np.arange(24, dtype=np.float32).reshape(3, 8)
+        block = DMTBlock(data, header, dms)
+        normalised = block.normalise()
+        assert isinstance(normalised, DMTBlock)
+        np.testing.assert_array_equal(normalised.dms, dms)
+
     def test_downsample(self, filfile_8bit_1: str) -> None:
         tfactor = 4
         ffactor = 2

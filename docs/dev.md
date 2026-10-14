@@ -53,10 +53,10 @@ New functionality typically involves:
 3. Writing tests
 4. Documenting the public API
 
-Search (`TimeSeries.search` / `find_pulses` / `ffa`, `PowerSpectrum.find_peaks`)
+Search (`TimeSeries.search` / `find_pulses`, `PowerSpectrum.find_peaks`)
 is called from those objects. Algorithms operate on plain arrays in the
 `sigpyproc.algorithms` package. Its two public frontends are `box.py` for
-single-pulse searches and `period.py` for FFA and spectral peak picking.
+single-pulse searches and `period.py` for spectral peak picking.
 `box.py` selects the method and delegates to the PRESTO-inspired stages in
 `sps.py` or the CPU Heimdall stages in `heimdall.py`. Shared validation,
 width banks, and candidate utilities live in `common.py`. Numerical kernels

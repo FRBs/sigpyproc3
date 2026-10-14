@@ -1080,43 +1080,6 @@ class TestSppSearch:
         lines = Path(out).read_text().strip().splitlines()
         assert len(lines) == 2  # header + loudest only
 
-    def test_ffa(self, tmpdir: str) -> None:
-        nsamp = 2048
-        tsamp = 0.001
-        path = Path(tmpdir) / "ffa.tim"
-        rng = np.random.default_rng(8)
-        data = rng.normal(0.0, 1.0, nsamp).astype(np.float32)
-        header = Header(
-            filename=path.name,
-            rawdatafile=path.name,
-            data_type="time series",
-            nchans=1,
-            foff=1.0,
-            fch1=1400.0,
-            nbits=32,
-            tsamp=tsamp,
-            tstart=50000.0,
-            nsamples=nsamp,
-        )
-        TimeSeries(data, header).to_tim(str(path))
-        out = str(Path(tmpdir) / "ffa.csv")
-        runner = CliRunner()
-        result = runner.invoke(
-            spp_search.main,
-            [
-                "ffa",
-                str(path),
-                "--pmin-ms",
-                "20",
-                "--pmax-ms",
-                "40",
-                "-o",
-                out,
-            ],
-        )
-        assert result.exit_code == 0
-        assert Path(out).is_file()
-
     def test_fft_stdout(self, tmpdir: str) -> None:
         tim = _write_search_tim(Path(tmpdir) / "inj.tim")
         runner = CliRunner()

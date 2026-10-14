@@ -25,6 +25,21 @@ if TYPE_CHECKING:
     from sigpyproc.core.candidates import CandidateTable
 
 
+def _lyne_on_fundamental(folded: np.ndarray) -> np.ndarray:
+    """Move each Lyne stretch onto the fundamental-bin axis.
+
+    Fold ``i`` stretches by ``H = 2**(i+1)``, so a sum stored at bin ``k``
+    belongs at fundamental bin ``k // H``. When several bins land on one
+    fundamental, the largest sum is kept.
+    """
+    placed = np.zeros_like(folded)
+    bins = np.arange(folded.shape[1])
+    for ifold in range(folded.shape[0]):
+        stretch = 2 ** (ifold + 1)
+        np.maximum.at(placed[ifold], bins // stretch, folded[ifold])
+    return placed
+
+
 class PowerSpectrum:
     """An array class to handle Fourier Power spectrum.
 
@@ -175,6 +190,8 @@ class PowerSpectrum:
             msg = f"method must be one of {tuple(kernels_by_method)}, got {method!r}"
             raise ValueError(msg)
         summed = kernel(self.data, nfolds)
+        if method == "lyne":
+            summed = _lyne_on_fundamental(summed)
         return [
             PowerSpectrum(summed[ifold], self.header.new_header())
             for ifold in range(nfolds)
@@ -275,12 +292,52 @@ class PowerSpectrum:
             Power spectrum object.
         """
         header = Header.from_sigproc(filename)
-        data = np.fromfile(
+        payload = np.fromfile(
             filename,
-            dtype=np.float32,
+            dtype=np.dtype("<f4"),
             offset=header.stream_info.entries[0].hdrlen,
         )
-        return cls(data, header)
+        if header.data_type != "amplitude spectrum":
+            msg = f"{filename} is not a sigpyproc amplitude spectrum"
+            raise ValueError(msg)
+        expect = header.nsamples // 2 + 1
+        if payload.size != expect:
+            msg = (
+                f"{filename} has {payload.size} bins, expected {expect} "
+                f"for nsamples={header.nsamples}"
+            )
+            raise ValueError(msg)
+        return cls(payload, header)
+
+    def to_spec(self, filename: str | None = None) -> str:
+        """Write this power spectrum, keeping the real transform length.
+
+        Parameters
+        ----------
+        filename : str, optional
+            Output path, by default ``basename.spec``.
+
+        Returns
+        -------
+        str
+            Output ``.spec`` file name.
+        """
+        if filename is None:
+            filename = f"{self.header.basename}.spec"
+        values = np.ascontiguousarray(self.data.astype("<f4", copy=False))
+        with self.header.prep_outfile(
+            filename,
+            updates={
+                "nbits": 32,
+                "nchans": 1,
+                "nifs": 1,
+                "data_type": "amplitude spectrum",
+            },
+            nbits=32,
+            write_nsamples=True,
+        ) as outfile:
+            outfile.cwrite(values)
+        return filename
 
     def view(self, **kwargs: Any) -> Any:  # noqa: ANN401
         """Open the interactive power spectrum viewer.
@@ -532,8 +589,19 @@ class FourierSeries:
         """
         if filename is None:
             filename = f"{self.header.basename}.spec"
-        with self.header.prep_outfile(filename, nbits=32) as outfile:
-            outfile.cwrite(self.data.view(np.float32))
+        payload = np.ascontiguousarray(self.data.astype("<c8", copy=False)).view("<f4")
+        with self.header.prep_outfile(
+            filename,
+            updates={
+                "nbits": 32,
+                "nchans": 1,
+                "nifs": 1,
+                "data_type": "complex spectrum",
+            },
+            nbits=32,
+            write_nsamples=True,
+        ) as outfile:
+            outfile.cwrite(payload)
         return filename
 
     @classmethod
@@ -585,17 +653,45 @@ class FourierSeries:
 
         Notes
         -----
-        This is not setup to handle ``.spec`` files such as are
-        created by Sigproc seek module. To do this would require
-        a new header parser for that file format.
+        A sigpyproc complex spectrum stores the real transform length in
+        ``nsamples`` and the bins as little-endian interleaved floats.
+        An older sigpyproc ``.spec`` that still carries the time-series data
+        type is read as an even-length transform: the float count ``N`` is
+        ``2 * (n/2 + 1)`` bins, so ``n = N - 2``. Odd lengths need the
+        declared ``nsamples``. Sigproc seek ``.spec`` files are a different
+        format and are not read here.
         """
         header = Header.from_sigproc(filename)
-        data = np.fromfile(
+        payload = np.fromfile(
             filename,
-            dtype=np.float32,
+            dtype=np.dtype("<f4"),
             offset=header.stream_info.entries[0].hdrlen,
         )
-        return cls(data.view(np.complex64), header)
+        if header.data_type == "complex spectrum":
+            data = payload.view(np.dtype("<c8"))
+        elif header.data_type == "amplitude spectrum":
+            msg = f"{filename} is a power spectrum, not a complex spectrum"
+            raise ValueError(msg)
+        else:
+            if payload.size % 2:
+                msg = f"{filename} has a truncated complex spectrum"
+                raise ValueError(msg)
+            n_time = payload.size - 2
+            if n_time < 1:
+                msg = f"{filename} does not contain a complex spectrum"
+                raise ValueError(msg)
+            data = payload.view(np.dtype("<c8"))
+            header = header.new_header(
+                {"nsamples": n_time, "data_type": "complex spectrum"},
+            )
+        expect = header.nsamples // 2 + 1
+        if data.size != expect:
+            msg = (
+                f"{filename} has {data.size} bins, expected {expect} "
+                f"for nsamples={header.nsamples}"
+            )
+            raise ValueError(msg)
+        return cls(np.array(data, dtype=np.complex64, copy=True), header)
 
     def view(self, **kwargs: Any) -> Any:  # noqa: ANN401
         """Open the interactive spectrum viewer for this Fourier series.

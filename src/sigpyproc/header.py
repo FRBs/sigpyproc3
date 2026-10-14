@@ -943,6 +943,7 @@ class Header:
         nbits: int | None = None,
         rescale: bool = False,
         sources: Sequence[str] | None = None,
+        write_nsamples: bool = False,
     ) -> FileWriter:
         """Prepare a file with Sigproc format data.
 
@@ -971,6 +972,9 @@ class Header:
         sources : sequence of str, optional
             Input paths to protect. ``None`` uses this header's filename and its
             stream entries. An empty sequence protects nothing.
+        write_nsamples : bool, optional
+            Write ``nsamples`` into the Sigproc header. Spectrum files need this
+            so the real transform length is not inferred from the bin payload.
 
         Returns
         -------
@@ -1006,7 +1010,10 @@ class Header:
             signed=output_signed,
             rescale=rescale,
         )
-        new_hdr_binary = sigproc.encode_header(new_hdr.to_sigproc())
+        new_hdr_binary = sigproc.encode_header(
+            new_hdr.to_sigproc(),
+            allow_nsamples_overwrite=write_nsamples,
+        )
         out_file.write(new_hdr_binary)
         return out_file
 
@@ -1192,6 +1199,8 @@ class Header:
     @classmethod
     def from_fbh5(cls, filename: str) -> Header:
         """Parse the metadata from a filterbank HDF5 file.
+
+        Only the header is read. Samples are not streamed from HDF5.
 
         Parameters
         ----------

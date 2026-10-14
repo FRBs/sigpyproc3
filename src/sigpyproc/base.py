@@ -916,16 +916,15 @@ class Filterbank(ABC):
         ValueError
             If chans are out of range (chan < 0 or chan > total channels).
         """
-        if chans is None:
-            chans = np.arange(self.header.nchans)
-        chans = np.array(chans).astype("int")
-        nchans_extract = len(chans)
-        if np.all(np.logical_or(chans >= self.header.nchans, chans < 0)):
-            msg = f"Selected channels out of range: {chans.min()} to {chans.max()}"
+        if batch_size < 1:
+            msg = f"batch_size must be >= 1, got {batch_size}"
             raise ValueError(msg)
+        chans = _channel_index(chans, self.header.nchans)
+        nsamps_out, tstart = self._sample_window(start, nsamps)
         if outfile_base is None:
             outfile_base = self.header.basename
-        filenames = [f"{outfile_base}_chan{chan:04d}.tim" for chan in chans]
+        filenames = [f"{outfile_base}_chan{int(chan):04d}.tim" for chan in chans]
+        nchans_extract = len(chans)
 
         # Process in batches to avoid file open/close limits
         for batch_start in range(0, nchans_extract, batch_size):
@@ -944,6 +943,8 @@ class Filterbank(ABC):
                                 "data_type": "time series",
                                 "fch1": self.header.fch1
                                 + float(chan) * self.header.foff,
+                                "tstart": tstart,
+                                "nsamples": nsamps_out,
                             },
                             nbits=32,
                         ),
@@ -1015,6 +1016,9 @@ class Filterbank(ABC):
         """
         if chanpersub is None:
             chanpersub = nchans
+        if batch_size < 1:
+            msg = f"batch_size must be >= 1, got {batch_size}"
+            raise ValueError(msg)
         if chanpersub <= 1 or chanpersub > nchans:
             msg = f"chanpersub must be > 1 and <= nchans. Got {chanpersub}"
             raise ValueError(msg)
@@ -1025,8 +1029,9 @@ class Filterbank(ABC):
             msg = f"Number of channels must be divisible by sub-band size. Got {nchans}"
             raise ValueError(msg)
 
-        nsub = (self.header.nchans - chanstart) // chanpersub
+        nsub = nchans // chanpersub
         fstart = self.header.fch1 + chanstart * self.header.foff
+        nsamps_out, tstart = self._sample_window(start, nsamps)
 
         if outfile_base is None:
             outfile_base = self.header.basename
@@ -1047,6 +1052,8 @@ class Filterbank(ABC):
                                 "nchans": chanpersub,
                                 "fch1": fstart
                                 + (batch_start + i) * chanpersub * self.header.foff,
+                                "tstart": tstart,
+                                "nsamples": nsamps_out,
                             },
                             nbits=self.header.nbits,
                         ),
@@ -1536,6 +1543,9 @@ class Filterbank(ABC):
         if outfile_base is None:
             outfile_base = self.header.basename
         paths = [f"{outfile_base}_DM{dm:08.3f}.tim" for dm in plan.dms]
+        if len(paths) != len(set(paths)):
+            msg = "DM trials are not unique when written to 3 decimal places"
+            raise ValueError(msg)
         writers = []
         for path, dm, lead_i in zip(paths, plan.dms, lead, strict=True):
             hdr = self.header.dedispersed_header(float(dm)).new_header(
@@ -1677,6 +1687,26 @@ class Filterbank(ABC):
         if not kwargs.get("batch"):
             viewer.show()
         return viewer
+
+
+def _channel_index(chans: np.ndarray | None, nchans: int) -> np.ndarray:
+    """Return a unique integer channel list, or every channel when ``chans`` is None."""
+    if chans is None:
+        return np.arange(nchans)
+    selected = np.asarray(chans)
+    if selected.ndim != 1 or selected.size == 0:
+        msg = "chans must be a non-empty 1-D list of channel indices"
+        raise ValueError(msg)
+    if not np.issubdtype(selected.dtype, np.integer):
+        msg = "chans must be integers"
+        raise ValueError(msg)
+    if np.any((selected < 0) | (selected >= nchans)):
+        msg = f"Selected channels out of range: {selected.min()} to {selected.max()}"
+        raise ValueError(msg)
+    if np.unique(selected).size != selected.size:
+        msg = "chans must not contain duplicates"
+        raise ValueError(msg)
+    return selected
 
 
 def _validate_tree(

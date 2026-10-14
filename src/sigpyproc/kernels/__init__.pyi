@@ -60,8 +60,6 @@ from .filterbank import remove_zerodm as remove_zerodm
 from .filterbank import remove_zerodm_par as remove_zerodm_par
 from .filterbank import robust_chan_norm as robust_chan_norm
 from .folding import CONST_C_VAL as CONST_C_VAL
-from .folding import ffa_profile_snr as ffa_profile_snr
-from .folding import ffa_stage as ffa_stage
 from .folding import fold as fold
 from .folding import resample_tim as resample_tim
 from .fourier import circular_pad_goodsize as circular_pad_goodsize

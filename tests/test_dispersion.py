@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from sigpyproc.core.dispersion import DMPlan, compute_dmdelays, compute_dmsmearing
 from sigpyproc.header import Header
@@ -34,6 +35,18 @@ class TestDispersion:
         assert delays_samp.shape == (dm.size, freqs.size)
         assert delays_samp.dtype == np.int32
         np.testing.assert_equal(delays_samp[:, 0], np.zeros(dm.size))
+
+    def test_one_channel_vector_keeps_a_frequency_axis(self) -> None:
+        freqs = np.array([1400.0])
+        dm = np.array([0.0, 10.0, 20.0])
+        delays = compute_dmdelays(freqs, dm, 0.001, freqs[0])
+        assert delays.shape == (3, 1)
+        scalar = compute_dmdelays(freqs, 10.0, 0.001, freqs[0])
+        assert scalar.shape == (1,)
+
+    def test_overflowing_delay_is_rejected(self) -> None:
+        with pytest.raises(ValueError, match="32-bit"):
+            compute_dmdelays(np.array([1400.0, 400.0]), 1e18, 1e-12, 1400.0)
 
     def test_compute_dmsmearing(self) -> None:
         freqs = np.arange(1000, dtype=np.float32) * (-1.0) + 1400

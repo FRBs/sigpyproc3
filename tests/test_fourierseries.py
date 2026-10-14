@@ -163,3 +163,34 @@ class TestPowerSpectrum:
         folds = spec.harmonic_fold(nfolds)
         assert isinstance(folds[0], PowerSpectrum)
         np.testing.assert_equal(len(folds), nfolds)
+
+    def test_spec_roundtrip_keeps_the_real_length(
+        self,
+        tim_header: dict,
+        tmp_path: Path,
+    ) -> None:
+        from sigpyproc.timeseries import TimeSeries
+
+        for n_time in (16, 9):
+            header = Header(**tim_header).new_header({"nsamples": n_time})
+            series = TimeSeries(np.arange(n_time, dtype=np.float32), header).rfft()
+            path = series.to_spec(str(tmp_path / f"complex_{n_time}.spec"))
+            loaded = FourierSeries.from_spec(path)
+            assert loaded.header.nsamples == n_time
+            assert loaded.binwidth == pytest.approx(series.binwidth)
+            np.testing.assert_allclose(loaded.data, series.data, atol=1e-5)
+            power = series.form_spec()
+            power_path = power.to_spec(str(tmp_path / f"power_{n_time}.spec"))
+            restored = PowerSpectrum.from_spec(power_path)
+            assert restored.header.nsamples == n_time
+            assert 1 / restored.header.tobs == pytest.approx(1 / power.header.tobs)
+            np.testing.assert_allclose(restored.data, power.data, atol=1e-5)
+
+    def test_lyne_sum_is_reported_at_the_fundamental(self, tim_header: dict) -> None:
+        spec = np.zeros(64, dtype=np.float32)
+        spec[10] = 1
+        spec[20] = 4
+        header = Header(**tim_header).new_header({"nsamples": 64})
+        folded = PowerSpectrum(spec, header).harmonic_fold(1, method="lyne")[0]
+        assert int(np.argmax(folded.data)) == 10
+        assert folded.data[10] >= folded.data[20]

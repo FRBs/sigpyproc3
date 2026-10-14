@@ -3,6 +3,10 @@
 SUBINT rows are addressed from the FITS binary-table byte layout. The table is
 never materialised through ``astropy.io.fits`` ``HDU.data``, which would read
 every sub-integration, including the DATA cells, on first touch.
+
+One SEARCH-mode file with at least two channels is supported. Fold mode,
+single-channel files, multi-file streams, irregular frequency tables, gapped
+sub-integrations and writing PSRFITS are not.
 """
 
 from __future__ import annotations
@@ -255,8 +259,12 @@ class _SearchTable:
         if header.get("FITSTYPE") != "PSRFITS":
             msg = f"File {filename} is not a PSRFITS file."
             raise ValueError(msg)
-        if header.get("OBS_MODE") != "SEARCH":
-            msg = f"File {filename} is not a search-mode file."
+        mode = header.get("OBS_MODE")
+        if mode != "SEARCH":
+            msg = (
+                f"File {filename} has OBS_MODE={mode!r}. "
+                "Only a single SEARCH-mode file is supported."
+            )
             raise ValueError(msg)
         if sub_header.get("EXTNAME", "SUBINT") != "SUBINT":
             msg = f"File {filename} has no SUBINT table."
@@ -279,14 +287,28 @@ class _SearchTable:
         if self.nbits not in {1, 2, 4, 8, 16}:
             msg = f"Unsupported NBITS={self.nbits}"
             raise ValueError(msg)
+        if self.nchan < 2:
+            msg = (
+                f"{filename} has NCHAN={self.nchan}; "
+                "search files need at least two channels"
+            )
+            raise ValueError(msg)
+        if min(self.npol, self.nsblk, self.nsubint) < 1:
+            msg = (
+                f"{filename} has NPOL={self.npol}, NSBLK={self.nsblk}, "
+                f"NAXIS2={self.nsubint}; each must be positive"
+            )
+            raise ValueError(msg)
         if self.nbits < 8 and (self.nchan * self.nbits) % 8 != 0:
             msg = f"NCHAN={self.nchan} is not a whole number of {self.nbits}-bit bytes"
             raise ValueError(msg)
+        self._check_nstot()
         self.tdim = self._data_tdim()
         self._fh: BinaryIO | None = Path(filename).open("rb")  # noqa: SIM115
         try:
             self.freqs = self._read_freqs()
             self.scalars = self._read_scalars()
+            self._check_subint_spacing()
         except Exception:
             self.close()
             raise
@@ -366,23 +388,86 @@ class _SearchTable:
             if not np.allclose(first, other, rtol=0.0, atol=_FREQ_ATOL_MHZ):
                 msg = f"DAT_FREQ of subint {isub} differs from subint 0"
                 raise ValueError(msg)
-        if first.size >= 2:
-            step = np.diff(first)
-            if np.max(np.abs(step - step[0])) > _FREQ_ATOL_MHZ:
-                logger.warning(
-                    "DAT_FREQ in %s is not uniform to %s MHz",
-                    self.filename,
-                    _FREQ_ATOL_MHZ,
-                )
-            chan_bw = float(self.sub_header.get("CHAN_BW", step[0]))
-            if abs(chan_bw - float(step[0])) > _CHAN_BW_ATOL_MHZ:
-                logger.warning(
-                    "CHAN_BW=%s MHz disagrees with DAT_FREQ step %s MHz in %s",
-                    chan_bw,
-                    float(step[0]),
-                    self.filename,
-                )
+        if not np.all(np.isfinite(first)):
+            msg = f"DAT_FREQ in {self.filename} is not finite"
+            raise ValueError(msg)
+        self._require_uniform_freqs(first)
         return FrequencyChannels(first)
+
+    def _require_uniform_freqs(self, freqs: np.ndarray) -> None:
+        """Reject an irregular channel grid. ``CHAN_BW`` is only a cross-check."""
+        step = np.diff(freqs)
+        if np.max(np.abs(step - step[0])) > _FREQ_ATOL_MHZ:
+            msg = f"DAT_FREQ in {self.filename} is not uniform to {_FREQ_ATOL_MHZ} MHz"
+            raise ValueError(msg)
+        if "CHAN_BW" not in self.sub_header:
+            return
+        chan_bw = float(self.sub_header["CHAN_BW"])
+        if abs(chan_bw - float(step[0])) > _CHAN_BW_ATOL_MHZ:
+            logger.warning(
+                "CHAN_BW=%s MHz disagrees with DAT_FREQ step %s MHz in %s",
+                chan_bw,
+                float(step[0]),
+                self.filename,
+            )
+
+    def _check_nstot(self) -> None:
+        """Reject ``NSTOT`` that points past the stored rows.
+
+        A shorter ``NSTOT`` is a partial final row and is kept. ``NSUBOFFS``
+        is not applied: ``STT_*`` is already the time of the first sample.
+        """
+        if "NSTOT" not in self.sub_header:
+            return
+        nstot = int(self.sub_header["NSTOT"])
+        capacity = self.nsblk * self.nsubint
+        if nstot < 0 or nstot > capacity:
+            msg = (
+                f"NSTOT={nstot} is outside 0..{capacity} "
+                f"(NSBLK*NAXIS2) in {self.filename}"
+            )
+            raise ValueError(msg)
+
+    def _check_subint_spacing(self) -> None:
+        """Reject a gap or overlap between SUBINT rows."""
+        if self.nsubint < 2:
+            return
+        if "OFFS_SUB" not in self.scalars:
+            msg = (
+                f"{self.filename} has {self.nsubint} sub-integrations and no "
+                "OFFS_SUB; split files and row gaps are not supported"
+            )
+            raise ValueError(msg)
+        if "TBIN" not in self.sub_header:
+            msg = f"{self.filename} has no TBIN"
+            raise ValueError(msg)
+        tsamp = float(self.sub_header["TBIN"])
+        if not np.isfinite(tsamp) or tsamp <= 0:
+            msg = f"TBIN={tsamp} in {self.filename} is not a positive sample interval"
+            raise ValueError(msg)
+        centres = np.asarray(self.scalars["OFFS_SUB"], dtype=np.float64).reshape(-1)
+        if centres.size != self.nsubint or not np.all(np.isfinite(centres)):
+            msg = (
+                f"OFFS_SUB in {self.filename} does not have "
+                f"{self.nsubint} finite centres"
+            )
+            raise ValueError(msg)
+        if "TSUBINT" in self.scalars:
+            duration = np.asarray(self.scalars["TSUBINT"], dtype=np.float64).reshape(-1)
+        else:
+            duration = np.full(self.nsubint, self.nsblk * tsamp)
+        if duration.size != self.nsubint or np.any(
+            ~np.isfinite(duration) | (duration <= 0)
+        ):
+            msg = f"TSUBINT in {self.filename} must be positive for every row"
+            raise ValueError(msg)
+        expected = 0.5 * (duration[:-1] + duration[1:])
+        if np.any(np.abs(np.diff(centres) - expected) > 0.5 * tsamp):
+            msg = (
+                f"{self.filename} sub-integrations are not contiguous. "
+                "Split files and row gaps are not supported."
+            )
+            raise ValueError(msg)
 
     def _freq_row(self, isub: int) -> np.ndarray:
         values = self.column_array(isub, "DAT_FREQ")
@@ -1174,9 +1259,15 @@ class PFITSFile:
         :class:`~sigpyproc.utils.FrequencyChannels`
             Centre frequency for each channel in MHz (``NCHAN``).
         """
-        freqs = self._table.column_array(isub, "DAT_FREQ")
-        freqs = np.asarray(freqs[: self.sub_hdr.nchans], dtype=np.float64)
-        return FrequencyChannels(freqs)
+        freqs = np.asarray(
+            self._table.column_array(isub, "DAT_FREQ"),
+            dtype=np.float64,
+        ).reshape(-1)
+        nchan = self.sub_hdr.nchans
+        if freqs.size < nchan:
+            msg = f"DAT_FREQ has {freqs.size} values, NCHAN is {nchan}"
+            raise ValueError(msg)
+        return FrequencyChannels(freqs[:nchan])
 
     def read_weights(self, isub: int) -> np.ndarray:
         """Read channel weight (DAT_WTS) column from the SUBINT table.
@@ -1191,8 +1282,17 @@ class PFITSFile:
         ndarray
             Weights for each channel in the range 0-1 (``NCHAN``).
         """
-        weights = self._table.column_array(isub, "DAT_WTS")
-        return np.asarray(weights[: self.sub_hdr.nchans], dtype=np.float32)
+        nchan = self.sub_hdr.nchans
+        try:
+            weights = self._table.column_array(isub, "DAT_WTS")
+        except KeyError as exc:
+            msg = "SUBINT has no DAT_WTS column"
+            raise ValueError(msg) from exc
+        weights = np.asarray(weights, dtype=np.float32).reshape(-1)
+        if weights.size < nchan:
+            msg = f"DAT_WTS has {weights.size} values, NCHAN is {nchan}"
+            raise ValueError(msg)
+        return weights[:nchan]
 
     def read_scales(self, isub: int) -> np.ndarray:
         """Read channel data scale factor (DAT_SCL) column from the SUBINT table.

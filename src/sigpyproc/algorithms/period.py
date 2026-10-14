@@ -9,15 +9,11 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from sigpyproc import kernels
 from sigpyproc.core import stats
 from sigpyproc.core.candidates import CandidateTable
 
 if TYPE_CHECKING:
     from numpy.typing import ArrayLike
-
-FFA_MAX_NSAMP = 1 << 24
-FFA_WIDTH_REBINS = (1, 2, 4, 8, 16)
 
 
 def _spectral_running_window(nfreq: int) -> int:
@@ -105,98 +101,4 @@ def pick_spectral_peaks(
         }
         for r_i, s_i, f_i in zip(peak_bins, peak_snr, freq, strict=True)
     ]
-    return CandidateTable.from_rows(rows).sort_by_snr()
-
-
-def ffa_search(
-    data: ArrayLike,
-    tsamp: float,
-    pmin: float,
-    pmax: float,
-    *,
-    snr_min: float,
-    zero_pad: bool,
-    dm: float,
-    accel: float,
-) -> CandidateTable:
-    """Fast Folding Analysis of one time series (Staelin 1969 / Mueller).
-
-    For every integer trial period ``P`` (in bins) between ``pmin`` and
-    ``pmax``, the series is reshaped to ``(nsamp // P, P)`` and folded with
-    the FFA tree in ``sigpyproc.kernels.folding.ffa_stage``. The robust
-    SNR of each output profile is computed and the best one is kept.
-
-    The input is capped at ``FFA_MAX_NSAMP`` samples. One candidate is kept
-    per integer trial period. The fractional FFA offset is used only when it
-    clearly outranks the unshifted fold (by more than 10 %): wide pulses make
-    every tree shift look equally loud, so the integer period is then the
-    honest answer.
-
-    Parameters
-    ----------
-    data : array_like
-        Time series samples, already rebinned if required.
-    tsamp : float
-        Sampling interval in seconds of ``data``.
-    pmin : float
-        Shortest trial period in seconds.
-    pmax : float
-        Longest trial period in seconds.
-    snr_min : float
-        Minimum profile SNR.
-    zero_pad : bool
-        Pad the series with zeros to the next power of two (after the cap).
-    dm : float
-        Dispersion measure stored on each row.
-    accel : float
-        Acceleration stored on each row.
-
-    Returns
-    -------
-    CandidateTable
-        FFA candidates (``kind="ffa"``), one per integer trial period.
-    """
-    arr = np.asarray(data, dtype=np.float32)
-    if arr.size > FFA_MAX_NSAMP:
-        arr = arr[:FFA_MAX_NSAMP]
-    if zero_pad:
-        n_pow2 = 1 << (arr.size - 1).bit_length()
-        if n_pow2 > arr.size:
-            arr = np.pad(arr, (0, n_pow2 - arr.size))
-
-    pmin_bins = max(2, round(pmin / tsamp))
-    pmax_bins = min(arr.size // 2, round(pmax / tsamp))
-    if pmax_bins < pmin_bins:
-        return CandidateTable.empty()
-
-    rows: list[dict[str, object]] = []
-    for p_bins in range(pmin_bins, pmax_bins + 1):
-        n_rows = arr.size // p_bins
-        if n_rows < 2:
-            continue
-        block = np.ascontiguousarray(arr[: n_rows * p_bins].reshape(n_rows, p_bins))
-        profiles = kernels.ffa_stage(block)
-        snrs = kernels.ffa_profile_snr(profiles)
-        j_best = int(np.argmax(snrs))
-        snr_best = float(snrs[j_best])
-        if snr_best < snr_min:
-            continue
-        n_pad = profiles.shape[0]
-        if snr_best <= 1.1 * float(snrs[0]):
-            p_eff = p_bins * tsamp
-        else:
-            p_eff = (p_bins + j_best / n_pad) * tsamp
-        rows.append(
-            {
-                "period_s": p_eff,
-                "freq_hz": 1.0 / p_eff,
-                "snr": snr_best,
-                "dm": dm,
-                "accel": accel,
-                "nharm": 1,
-                "bin": p_bins,
-                "width_s": tsamp,
-                "kind": "ffa",
-            },
-        )
     return CandidateTable.from_rows(rows).sort_by_snr()

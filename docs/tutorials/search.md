@@ -6,11 +6,11 @@
 Search is a **library-first** API. The `spp_search` CLI is a thin wrapper
 around {py:class}`~sigpyproc.timeseries.TimeSeries` and
 {py:class}`~sigpyproc.core.candidates.CandidateTable`. This is a modern
-extension of SIGPROC, not a clone of `seek` / `best` / `ffa` / `peak`.
+extension of SIGPROC, not a clone of `seek` / `best` / `peak`.
 ```
 
-sigpyproc can now look for **periodic signals** (FFT and Fast Folding
-Analysis) and **single pulses** in a time series, and keep the hits in
+sigpyproc can look for **periodic signals** with an FFT and **single
+pulses** with a boxcar in a time series, and keep the hits in
 one candidate table. Input is a SIGPROC `.tim` file or an in-memory
 {py:class}`~sigpyproc.timeseries.TimeSeries` — typically the output of
 {py:meth}`~sigpyproc.base.Filterbank.dedisperse`.
@@ -27,7 +27,6 @@ This page is the “how to use it” companion to {doc}`/tutorials/quickstart`.
 | `find` | same as `spp_search fft` | Historical `find` was renamed `seek`; we do not ship `spp_find`. |
 | `best` | {py:meth}`~sigpyproc.core.candidates.CandidateTable.cluster` / `spp_search cluster` | Harmonic families only. No PGPLOT, no `.bst` / `.fld`. |
 | `peak` | {py:meth}`~sigpyproc.timeseries.TimeSeries.find_pulses` / `spp_search pulses` | Selectable PRESTO-inspired and original matched-filter boxcar searches. |
-| `ffa` | {py:meth}`~sigpyproc.timeseries.TimeSeries.ffa` / `spp_search ffa` | Staelin / Mueller tree. Periods in **seconds** on the API. |
 | `giant` | — | Interactive PGPLOT viewer; out of scope. |
 
 The public interchange format is **CSV**, not `.prd`.
@@ -118,8 +117,8 @@ print(hits.table["nharm"][:5])
 - `greedy`: follow the louder neighbour as the harmonic order increases.
 
 Folded spectra stay on the original Fourier grid. A narrow pulse can still
-peak on a harmonic of the true period. {py:meth}`~sigpyproc.timeseries.TimeSeries.ffa`
-and `find_pulses` remain the tools for that case.
+peak on a harmonic of the true period. `find_pulses` is the boxcar search
+for a single event.
 
 ### Cluster harmonic families
 
@@ -215,33 +214,6 @@ native.to_pulse_csv("heimdall.csv", ts.header.tsamp)
 
 ---
 
-## Fast Folding Analysis
-
-{py:meth}`~sigpyproc.timeseries.TimeSeries.ffa` is the long-period
-companion to the FFT search. Periods on the **Python API are in
-seconds**. The CLI accepts SIGPROC-style milliseconds and converts
-immediately.
-
-```python
-ffa_hits = ts.ffa(pmin=1.0, pmax=1.5, snr_min=8.0, npeaks=20)
-print(ffa_hits.values("period_s")[:5])
-```
-
-Useful flags:
-
-- `nrebin` — mean-downsample first (wider effective pulse)
-- `search_width=True` — loop rebin in `{1, 2, 4, 8, 16}` (exclusive
-  with `nrebin != 1`, as in `ffa.f -w` / `-rb`)
-- `zero_pad=True` — pad to the next power of two after the \(2^{24}\)
-  sample cap
-
-One candidate is kept **per integer trial period**. The fractional FFA
-tree offset is used only when it clearly outranks the unshifted fold —
-for a wide pulse every shift looks equally loud, and the integer period
-is the honest answer.
-
----
-
 ## Command line
 
 Each `spp_*` tool is a standalone script — there is no umbrella `spp`
@@ -253,11 +225,10 @@ spp_search pulses observation.tim --snr 6 --max-width 256 -o pulses.csv
 spp_search pulses observation.tim --engine fft --width 3 --width 8 -o fft_pulses.csv
 spp_search pulses observation.tim --method matched_filter -o original_pulses.csv
 spp_search pulses observation.dat --snr 5 --max-width 150 -o dat_pulses.csv
-spp_search ffa observation.tim --pmin-ms 1000 --pmax-ms 20000 -o ffa.csv
 spp_search cluster fft.csv --snr 8 -o best.csv
 ```
 
-Defaults write `<stem>_{fft,pulses,ffa,cluster}.csv`. Use `-o -` to
+Defaults write `<stem>_{fft,pulses,cluster}.csv`. Use `-o -` to
 print CSV on stdout. Pulse CSVs contain only event fields, including event
 `time_s` and `width_bins`, rather than periodic-candidate columns. Full flag
 lists live in {doc}`/cmd`.

@@ -278,9 +278,13 @@ def _write_search(
     freq_rows = np.broadcast_to(freqs, (nsub, nchan)).copy()
     scale_rows = np.broadcast_to(scales.ravel(), (nsub, npol * nchan)).copy()
     offset_rows = np.broadcast_to(offsets.ravel(), (nsub, npol * nchan)).copy()
-    weight_rows = np.broadcast_to(weights, (nsub, nchan)).copy()
-    tsub = np.full(nsub, nsblk * 1e-3)
-    offs = tsub / 2
+    weights = np.asarray(weights, dtype=np.float32).reshape(-1)
+    weight_rows = np.broadcast_to(weights, (nsub, weights.size)).copy()
+    # Row centres of a contiguous observation. TBIN below is the same 1 ms.
+    tbin = 1e-3
+    duration = nsblk * tbin
+    tsub = np.full(nsub, duration)
+    offs = (np.arange(nsub, dtype=np.float64) + 0.5) * duration
     dim = str(tdim).replace(" ", "")
     if nbits == 16:
         ordered = np.stack(
@@ -306,7 +310,7 @@ def _write_search(
         fits.Column(name="TSUBINT", format="1D", array=tsub),
         fits.Column(name="OFFS_SUB", format="1D", array=offs),
         fits.Column(name="DAT_FREQ", format=f"{nchan}D", array=freq_rows),
-        fits.Column(name="DAT_WTS", format=f"{nchan}E", array=weight_rows),
+        fits.Column(name="DAT_WTS", format=f"{weights.size}E", array=weight_rows),
         fits.Column(name="DAT_OFFS", format=f"{npol * nchan}E", array=offset_rows),
         fits.Column(name="DAT_SCL", format=f"{npol * nchan}E", array=scale_rows),
         data_column,
@@ -317,7 +321,7 @@ def _write_search(
     table.header["NBITS"] = nbits
     table.header["NCHAN"] = nchan
     table.header["NSBLK"] = nsblk
-    table.header["TBIN"] = 1e-3
+    table.header["TBIN"] = tbin
     table.header["CHAN_BW"] = chan_bw
     table.header["SIGNINT"] = signint
     table.header["ZERO_OFF"] = zero_off
@@ -508,3 +512,119 @@ class TestSearchLayout:
         )
         with pytest.raises(ValueError, match="NOPE"):
             pfits.PFITSFile(str(bad))
+
+    def test_one_channel_is_rejected(self, tmp_path: Path) -> None:
+        path = tmp_path / "one.sf"
+        _write_search(
+            path,
+            np.zeros((1, 4, 1, 1), dtype=np.uint8),
+            nbits=8,
+            pol_type="INTEN",
+            chan0=1400.0,
+            chan_bw=-0.25,
+        )
+        with pytest.raises(ValueError, match="at least two channels"):
+            pfits.PFITSFile(str(path))
+
+    def test_short_weights_are_rejected(self, tmp_path: Path) -> None:
+        path = tmp_path / "short.sf"
+        _write_search(
+            path,
+            np.zeros((1, 4, 1, 4), dtype=np.uint8),
+            nbits=8,
+            pol_type="INTEN",
+            chan0=100.0,
+            chan_bw=1.0,
+            weights=np.ones(2, dtype=np.float32),
+        )
+        with pfits.PFITSFile(str(path)) as src:
+            with pytest.raises(ValueError, match="DAT_WTS"):
+                src.read_weights(0)
+            with pytest.raises(ValueError, match="DAT_WTS"):
+                src.read_subint_pol(0)
+
+    def test_irregular_frequencies_are_rejected(self, tmp_path: Path) -> None:
+        path = tmp_path / "irregular.sf"
+        _write_search(
+            path,
+            np.zeros((1, 4, 1, 4), dtype=np.uint8),
+            nbits=8,
+            pol_type="INTEN",
+            chan0=100.0,
+            chan_bw=1.0,
+        )
+        _assign_column(path, "DAT_FREQ", np.array([[100.0, 101.0, 104.0, 103.0]]))
+        with pytest.raises(ValueError, match="not uniform"):
+            pfits.PFITSFile(str(path))
+
+    def test_row_gap_is_rejected(self, tmp_path: Path) -> None:
+        nsblk = 4
+        path = tmp_path / "gap.sf"
+        _write_search(
+            path,
+            np.zeros((2, nsblk, 1, 2), dtype=np.uint8),
+            nbits=8,
+            pol_type="INTEN",
+            chan0=100.0,
+            chan_bw=1.0,
+        )
+        duration = nsblk * 1e-3
+        centres = np.array([0.5 * duration, 0.5 * duration + 10.0])
+        _assign_column(path, "OFFS_SUB", centres)
+        with pytest.raises(ValueError, match="not contiguous"):
+            pfits.PFITSFile(str(path))
+
+    def test_fold_mode_is_rejected(self, tmp_path: Path) -> None:
+        path = tmp_path / "fold.sf"
+        _write_search(
+            path,
+            np.zeros((1, 4, 1, 2), dtype=np.uint8),
+            nbits=8,
+            pol_type="INTEN",
+            chan0=100.0,
+            chan_bw=1.0,
+        )
+        with fits.open(path, mode="update") as hdul:
+            hdul[0].header["OBS_MODE"] = "PSR"
+        with pytest.raises(ValueError, match="SEARCH"):
+            pfits.PFITSFile(str(path))
+
+    def test_nstot_past_the_rows_is_rejected(self, tmp_path: Path) -> None:
+        path = tmp_path / "long.sf"
+        _write_search(
+            path,
+            np.zeros((1, 4, 1, 2), dtype=np.uint8),
+            nbits=8,
+            pol_type="INTEN",
+            chan0=100.0,
+            chan_bw=1.0,
+        )
+        with fits.open(path, mode="update") as hdul:
+            hdul["SUBINT"].header["NSTOT"] = 100
+        with pytest.raises(ValueError, match="NSTOT"):
+            pfits.PFITSFile(str(path))
+
+    def test_partial_nstot_is_kept(self, tmp_path: Path) -> None:
+        path = tmp_path / "partial.sf"
+        _write_search(
+            path,
+            np.zeros((1, 8, 1, 2), dtype=np.uint8),
+            nbits=8,
+            pol_type="INTEN",
+            chan0=100.0,
+            chan_bw=1.0,
+        )
+        with fits.open(path, mode="update") as hdul:
+            hdul["SUBINT"].header["NSTOT"] = 3
+        with pfits.PFITSFile(str(path)) as src:
+            assert src.sub_hdr.nsamples == 3
+
+
+def _assign_column(path: Path, name: str, values: np.ndarray) -> None:
+    """Replace one SUBINT column and write the file again."""
+    with fits.open(path) as hdul:
+        table = hdul["SUBINT"].data
+        table[name][:] = values
+        copied = fits.HDUList([hdu.copy() for hdu in hdul])
+    copied.writeto(path, overwrite=True)
+    copied.close()
