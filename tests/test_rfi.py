@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import h5py
 import numpy as np
 import pytest
 from matplotlib import pyplot as plt
@@ -18,7 +19,7 @@ class TestRFI:
 
     def test_iqrm_mask(self) -> None:
         input_arr = np.array([1, 2, 3, 4, 5, 20], dtype=np.uint8)
-        # Radius 1 flags the impulse and the sample whose forward difference is that impulse.
+        # Radius 1 flags the impulse and the preceding sample.
         desired = np.array([0, 0, 0, 0, 1, 1], dtype=bool)
         np.testing.assert_array_equal(rfi.iqrm_mask(input_arr, 3, 1), desired)
         with pytest.raises(ValueError):
@@ -113,3 +114,46 @@ def test_iqrm_ignores_input_strides() -> None:
 def test_iqrm_constant_data_is_unmasked() -> None:
     mask = rfi.iqrm_mask(np.ones(12), threshold=3, radius=2)
     assert not mask.any()
+
+
+def test_mask_round_trip_keeps_coordinates(tmp_path: Path) -> None:
+    header = Header(
+        filename="coord.fil",
+        data_type="filterbank",
+        nchans=4,
+        foff=-0.5,
+        fch1=1400.0,
+        nbits=8,
+        tsamp=1e-3,
+        tstart=51000.0,
+        nsamples=32,
+        source="B1937+21",
+        dm=12.5,
+    )
+    zeros = np.zeros(4)
+    mask = rfi.RFIMask(3.0, header, zeros, zeros, zeros, zeros, zeros, zeros)
+    path = mask.to_file(str(tmp_path / "mask.h5"))
+    loaded = rfi.RFIMask.from_file(path)
+    assert loaded.header.source == "B1937+21"
+    assert loaded.header.dm == pytest.approx(12.5)
+    assert loaded.header.fch1 == pytest.approx(1400.0)
+    assert loaded.header.foff == pytest.approx(-0.5)
+    assert loaded.header.tstart == pytest.approx(51000.0)
+    with h5py.File(path, "r") as handle:
+        assert "header_extra" not in handle.attrs
+
+
+def test_obs_time_precision_stays_within_astropy(tmp_path: Path) -> None:
+    header = Header(
+        filename=str(tmp_path / "fine.fil"),
+        data_type="filterbank",
+        nchans=2,
+        foff=-1.0,
+        fch1=1400.0,
+        nbits=8,
+        tsamp=1e-18,
+        tstart=50000.0,
+        nsamples=4,
+    )
+    assert header.obs_time.precision <= 9
+    assert header.mjd_after_nsamps(2) == pytest.approx(header.tstart)

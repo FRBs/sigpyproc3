@@ -56,6 +56,15 @@ class InjectedPulse:
         if self.delays.shape != (self.profile.shape[0],):
             msg = "delays must have one entry per channel"
             raise ValueError(msg)
+        if not np.isfinite(self.scale):
+            msg = f"scale must be finite, got {self.scale}"
+            raise ValueError(msg)
+        if not np.all(np.isfinite(self.profile)):
+            msg = "profile must be finite"
+            raise ValueError(msg)
+        if not np.all(np.isfinite(self.delays)):
+            msg = "delays must be finite"
+            raise ValueError(msg)
 
 
 class Injector:

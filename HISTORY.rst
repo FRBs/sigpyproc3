@@ -1,6 +1,8 @@
 2.0.0 (Unreleased)
 ++++++++++++++++++
 
+
+- CLI logs go to stderr. ``--quiet`` turns progress bars off.
 - Streaming writes refuse an output path that is the same file as an input, including symlinks and hard links.
 - ``remove_zerodm`` restores the mean bandpass.
 - ``TimeSeries.find_pulses`` and ``spp_search pulses`` default to a modular PRESTO-inspired pipeline with configurable width banks and preprocessing, and width-dependent pruning.

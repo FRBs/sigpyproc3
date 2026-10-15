@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 
 from sigpyproc import fourierseries, kernels
-from sigpyproc.algorithms import box, period
+from sigpyproc.algorithms import box
 from sigpyproc.core import stats
 from sigpyproc.core.candidates import CandidateTable
 from sigpyproc.foldedcube import FoldedData
@@ -47,6 +47,39 @@ PadMode = Literal[
     "wrap",
     "empty",
 ]
+
+
+def _require_resample_in_range(n: int, accel: float, tsamp: float) -> None:
+    """Reject an acceleration whose sample mapping leaves the output array.
+
+    The native resampler writes ``index = int(ii + drift)`` with bounds
+    checks off. The drift is a quadratic, so its extremes are the ends and
+    the vertex. ``int`` truncates toward zero, which keeps a float in
+    ``(-1, nsamps)`` inside the array.
+    """
+    if n < 2:
+        msg = "resample needs at least two samples"
+        raise ValueError(msg)
+    if not np.isfinite(accel) or not np.isfinite(tsamp) or tsamp <= 0:
+        msg = f"accel and tsamp must be finite, with tsamp > 0, got {accel}, {tsamp}"
+        raise ValueError(msg)
+    nsamps = n - 1 if accel > 0 else n
+    partial = (accel * tsamp) / (2 * 299792458.0)
+    mid = nsamps // 2
+
+    def at(ii: int) -> float:
+        return float(ii + partial * (ii - mid) ** 2 - partial * mid**2)
+
+    points = [0, nsamps - 1]
+    if partial != 0.0:
+        vertex = mid - 1.0 / (2.0 * partial)
+        lo = max(0, int(np.floor(vertex)) - 1)
+        hi = min(nsamps - 1, int(np.ceil(vertex)) + 1)
+        points.extend(range(lo, hi + 1))
+    values = [at(ii) for ii in points]
+    if min(values) <= -1.0 or max(values) >= nsamps:
+        msg = "acceleration mapping does not fit the time series"
+        raise ValueError(msg)
 
 
 class TimeSeries:
@@ -367,6 +400,7 @@ class TimeSeries:
         TimeSeries
             Resampled time series.
         """
+        _require_resample_in_range(self.data.size, accel, self.header.tsamp)
         tim_ar = kernels.resample_tim(self.data, accel, self.header.tsamp)
         hdr_changes = {"nsamples": tim_ar.size, "accel": accel}
         return TimeSeries(tim_ar, self.header.new_header(hdr_changes))
@@ -470,6 +504,15 @@ class TimeSeries:
         """
         if nfolds < 0:
             msg = "nfolds must be >= 0"
+            raise ValueError(msg)
+        if npeaks < 1:
+            msg = f"npeaks must be >= 1, got {npeaks}"
+            raise ValueError(msg)
+        if not np.isfinite(pmax) or pmax <= 0 or not np.isfinite(snr_min):
+            msg = f"pmax must be positive and snr_min finite, got {pmax}, {snr_min}"
+            raise ValueError(msg)
+        if not np.isfinite(accel):
+            msg = f"accel must be finite, got {accel}"
             raise ValueError(msg)
         series = self.resample(accel) if accel != 0.0 else self
         spec0 = series.rfft().deredden().form_spec(interpolate=interpolate)

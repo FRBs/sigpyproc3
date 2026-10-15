@@ -2,14 +2,16 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sigpyproc.fourierseries import FourierSeries
+import numpy as np
+import pytest
+
+from sigpyproc.fourierseries import FourierSeries, PowerSpectrum
+from sigpyproc.simulation.pulsar import make_header
 from sigpyproc.timeseries import TimeSeries
 from sigpyproc.viz.series import SeriesViewer, SpectrumViewer
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-    import pytest
 
 
 class DummyEvent:
@@ -112,3 +114,22 @@ def test_fourierseries_and_powerspectrum_view_methods(
     viewer_spec = spec.view(batch=True)
     assert isinstance(viewer_spec, SpectrumViewer)
     assert shown == []
+
+
+def test_spectrum_spacing_uses_the_transform_length(tmp_path: Path) -> None:
+    header = make_header(
+        filename="tone.spec",
+        nchans=1,
+        nbits=32,
+        tsamp=1e-3,
+        tobs=0.016,
+        tstart=50000.0,
+    )
+    data = np.zeros(9, dtype=np.float32)
+    data[1] = 1.0
+    viewer = SpectrumViewer(PowerSpectrum(data, header), batch=True)
+    assert viewer.df == pytest.approx(62.5)
+    assert viewer.freqs[1] == pytest.approx(62.5)
+    out = tmp_path / "tone.png"
+    assert viewer.save_png(str(out)) == str(out)
+    assert out.exists()

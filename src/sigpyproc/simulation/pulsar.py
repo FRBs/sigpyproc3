@@ -79,6 +79,20 @@ class PulsarParams:
         if self.period is not None and self.pulse_time is not None:
             msg = "period and pulse_time are mutually exclusive"
             raise ValueError(msg)
+        if self.pdot != 0.0 and self.accel != 0.0:
+            msg = "pdot and accel are mutually exclusive"
+            raise ValueError(msg)
+        for name in ("dm", "snr", "pdot", "accel"):
+            value = getattr(self, name)
+            if not np.isfinite(value):
+                msg = f"{name} must be finite, got {value}"
+                raise ValueError(msg)
+        if self.snr <= 0:
+            msg = f"snr must be positive, got {self.snr}"
+            raise ValueError(msg)
+        if self.dm < 0:
+            msg = f"dm must be >= 0, got {self.dm}"
+            raise ValueError(msg)
 
     def resolved_width(self) -> float:
         """Intrinsic width in seconds after applying the pulsar default."""

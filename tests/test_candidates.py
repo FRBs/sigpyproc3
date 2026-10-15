@@ -3,6 +3,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from astropy import units as u
 from astropy.table import QTable
 
 from sigpyproc.core.candidates import (
@@ -193,3 +194,43 @@ class TestPulseCSV:
             cands = CandidateTable.from_rows([{"kind": "pulse", "width_s": width}])
             with pytest.raises(ValueError, match="whole numbers"):
                 cands.to_pulse_csv(StringIO(), 0.001)
+
+    def test_quantities_are_converted_before_export_and_clustering(
+        self, tmp_path: Path
+    ) -> None:
+        loud = CandidateTable.from_rows(
+            [
+                {
+                    "period_s": 1000 * u.ms,
+                    "freq_hz": 1 * u.Hz,
+                    "snr": 20.0,
+                    "dm": (1 * u.pc / u.m**3),
+                    "width_s": 2 * u.ms,
+                    "accel": 100 * u.cm / u.s**2,
+                    "bin_origin": "center",
+                },
+            ],
+        )
+        quiet = CandidateTable.from_rows(
+            [{"period_s": 1.0 * u.s, "snr": 9.0, "bin_origin": "start"}],
+        )
+        np.testing.assert_allclose(loud.values("period_s"), 1.0)
+        np.testing.assert_allclose(loud.values("dm"), 1e-6)
+        np.testing.assert_allclose(loud.values("width_s"), 0.002)
+        np.testing.assert_allclose(loud.values("accel"), 1.0)
+        assert loud.table["bin_origin"][0] == "center"
+        clustered = (loud + quiet).cluster(snr_min=1.0)
+        assert len(clustered) == 1
+        np.testing.assert_allclose(clustered.values("snr"), 20.0)
+
+        path = tmp_path / "units.csv"
+        loud.to_csv(path)
+        loaded = CandidateTable.from_csv(path)
+        np.testing.assert_allclose(loaded.values("period_s"), 1.0)
+        np.testing.assert_allclose(loaded.values("accel"), 1.0)
+        assert loaded.table["bin_origin"][0] == "center"
+
+        with pytest.raises(ValueError, match="period_s"):
+            CandidateTable.from_rows([{"period_s": 1.0 * u.m, "snr": 1.0}])
+        with pytest.raises(ValueError, match="scalar"):
+            CandidateTable.from_rows([{"period_s": [1.0, 2.0] * u.s, "snr": 1.0}])

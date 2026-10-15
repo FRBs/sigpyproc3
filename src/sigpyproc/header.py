@@ -569,7 +569,10 @@ class Header:
         :class:`~astropy.time.Time`
             Observation time in Astropy Time format.
         """
-        precision = int(np.ceil(abs(np.log10(self.tsamp))))
+        # Display digits only. The MJD value itself stays full precision.
+        # Astropy rejects a precision past nine fractional digits.
+        digits = int(np.ceil(abs(np.log10(self.tsamp))))
+        precision = min(max(digits, 0), 9)
         return Time(self.tstart, format="mjd", scale="utc", precision=precision)
 
     @property

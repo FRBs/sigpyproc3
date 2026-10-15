@@ -102,6 +102,31 @@ class PulseParams:
     os_fact: int = attrs.field(default=10, validator=attrs.validators.ge(1))
     noise: float = attrs.field(default=1.0, validator=attrs.validators.gt(0.0))
 
+    def __attrs_post_init__(self) -> None:
+        if not np.isfinite(self.dm) or self.dm < 0:
+            msg = f"dm must be finite and >= 0, got {self.dm}"
+            raise ValueError(msg)
+        if not np.isfinite(self.snr) or self.snr <= 0:
+            msg = f"snr must be finite and positive, got {self.snr}"
+            raise ValueError(msg)
+        if not np.isfinite(self.width) or self.width <= 0:
+            msg = f"width must be finite and positive, got {self.width}"
+            raise ValueError(msg)
+        if self.shape not in {"gaussian", "boxcar"}:
+            msg = f"shape must be 'gaussian' or 'boxcar', got {self.shape!r}"
+            raise ValueError(msg)
+        if self.spec_kind not in SPEC_KINDS:
+            msg = f"spec_kind must be one of {SPEC_KINDS}, got {self.spec_kind!r}"
+            raise ValueError(msg)
+        for name in ("disp_ind", "scatt_idx", "spec_idx"):
+            value = getattr(self, name)
+            if not np.isfinite(value):
+                msg = f"{name} must be finite, got {value}"
+                raise ValueError(msg)
+        if isinstance(self.os_fact, bool) or not isinstance(self.os_fact, int):
+            msg = f"os_fact must be an integer >= 1, got {self.os_fact!r}"
+            raise TypeError(msg)
+
 
 @attrs.frozen(auto_attribs=True, kw_only=True)
 class PulseStats:
@@ -138,7 +163,12 @@ def _header_payload(header: Header) -> dict[str, Any]:
         "backend": header.backend,
         "dm": float(header.dm),
         "nifs": int(header.nifs),
+        "signed": bool(header.signed),
+        "period": float(header.period),
+        "accel": float(header.accel),
     }
+    if header.frame:
+        payload["frame"] = header.frame
     if header.rawdatafile:
         payload["rawdatafile"] = header.rawdatafile
     return payload
@@ -620,10 +650,23 @@ class SpectralStructure:
         seed: int | None = None,
     ) -> None:
         self.freqs = np.asarray(freqs, dtype=np.float32)
+        if self.freqs.ndim != 1 or self.freqs.size < 1:
+            msg = "freqs must be a non-empty 1-D array"
+            raise ValueError(msg)
+        if not np.all(np.isfinite(self.freqs)) or np.any(self.freqs <= 0):
+            msg = "freqs must be finite and positive"
+            raise ValueError(msg)
         self.kind = kind
         self.spec_index = spec_index
+        if not np.isfinite(self.spec_index):
+            msg = f"spec_index must be finite, got {spec_index}"
+            raise ValueError(msg)
         self.rng = np.random.default_rng(seed)
-        self.power_law_wt = (self.freqs / self.freqs[0]) ** self.spec_index
+        if self.freqs.size < 2:
+            # One channel has no bandwidth, so every shape is unity.
+            self.power_law_wt = np.ones_like(self.freqs)
+        else:
+            self.power_law_wt = (self.freqs / self.freqs[0]) ** self.spec_index
         self._spec_generators: dict[str, Callable[[], np.ndarray]] = {
             "flat": self._spec_flat,
             "power_law": self._spec_power_law,
@@ -634,6 +677,9 @@ class SpectralStructure:
             "gaussian_blobs": self._spec_gaussian_blobs,
             "random": self._spec_random,
         }
+        if self.kind not in self._spec_generators:
+            msg = f"unknown spectral kind {self.kind!r}"
+            raise ValueError(msg)
 
     @property
     def nchans(self) -> int:
@@ -643,6 +689,8 @@ class SpectralStructure:
     @property
     def foff(self) -> float:
         """Frequency step between the first two channels."""
+        if self.freqs.size < 2:
+            return 0.0
         return float(self.freqs[1] - self.freqs[0])
 
     def generate(self) -> np.ndarray:
@@ -651,8 +699,13 @@ class SpectralStructure:
         Returns
         -------
         ndarray
-            Gain of each channel.
+            Gain of each channel. A single channel is unity for every kind.
         """
+        if self.kind not in self._spec_generators:
+            msg = f"unknown spectral kind {self.kind!r}"
+            raise ValueError(msg)
+        if self.freqs.size < 2:
+            return np.ones(self.freqs.size, dtype=np.float32)
         if self.kind == "power_law":
             spec = self.power_law_wt
             return (spec / np.mean(spec)).astype(np.float32)

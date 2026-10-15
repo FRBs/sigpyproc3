@@ -345,7 +345,7 @@ class PowerSpectrum:
         Parameters
         ----------
         **kwargs : dict
-            Keyword arguments passed to :class:`~sigpyproc.viz.spectrum.SpectrumViewer`.
+            Keyword arguments passed to :class:`~sigpyproc.viz.series.SpectrumViewer`.
 
         Returns
         -------
@@ -487,6 +487,24 @@ class FourierSeries:
         FourierSeries
             Whitened fourier series.
         """
+        if start_width < 2 or end_width < start_width:
+            msg = (
+                "whitening windows must satisfy 2 <= start_width <= end_width, "
+                f"got {start_width} and {end_width}"
+            )
+            raise ValueError(msg)
+        if not np.isfinite(end_freq) or end_freq <= 0:
+            msg = f"end_freq must be finite and positive, got {end_freq}"
+            raise ValueError(msg)
+        if self.data.size < start_width + 2:
+            msg = (
+                f"spectrum length {self.data.size} is shorter than the "
+                f"whitening window {start_width}"
+            )
+            raise ValueError(msg)
+        power = self.data.real**2 + self.data.imag**2
+        if not np.any(power > 0):
+            return FourierSeries(np.array(self.data), self.header.new_header())
         end_freq_bin = round(end_freq / self.binwidth)
         out_ar = kernels.fs_running_median(
             self.data,
@@ -697,12 +715,12 @@ class FourierSeries:
         """Open the interactive spectrum viewer for this Fourier series.
 
         Forms a power spectrum and launches
-        :class:`~sigpyproc.viz.spectrum.SpectrumViewer`.
+        :class:`~sigpyproc.viz.series.SpectrumViewer`.
 
         Parameters
         ----------
         **kwargs : dict
-            Keyword arguments passed to :class:`~sigpyproc.viz.spectrum.SpectrumViewer`.
+            Keyword arguments passed to :class:`~sigpyproc.viz.series.SpectrumViewer`.
 
         Returns
         -------

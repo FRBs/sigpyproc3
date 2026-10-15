@@ -100,6 +100,7 @@ Contributing, extending kernels, and architectural details.
 
 install
 cmd
+capabilities
 generated/sigpyproc
 dev
 changes

@@ -271,8 +271,11 @@ best = cands.cluster(snr_min=8.0)
 print(best.values("period_s")[0], best.values("snr")[0])
 ```
 
-The recovered period should sit within about one Fourier bin of
-\(0.05\,\mathrm{s}\) (\(\Delta P \approx P^{2} / T_{\mathrm{obs}}\)).
+`cluster` keeps the loudest member of a harmonic family. For this
+rectangular pulse that member is often a harmonic, not \(0.05\,\mathrm{s}\).
+Look through `cands` for the injected period. A match within about one
+Fourier bin is \(P^{2} / T_{\mathrm{obs}}\). Do not read the first row of
+`best` as the fundamental.
 
 To invent a filterbank instead of a time series, use
 {py:func}`~sigpyproc.simulation.pulsar.fake_filterbank` /

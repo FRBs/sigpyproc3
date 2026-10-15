@@ -276,7 +276,7 @@ class FilterbankBlock(BaseBlock):
         t0 = 0.0
         t1 = self.nsamples * self.header.tsamp
         freqs = self.header.chan_freqs
-        image, f_lo, f_hi = frequency_oriented(prep, freqs)
+        image, f_lo, f_hi = frequency_oriented(prep, freqs, foff=self.header.foff)
         extent = (t0, t1, f_lo, f_hi)
 
         fig = plt.figure(figsize=figsize, layout="constrained")

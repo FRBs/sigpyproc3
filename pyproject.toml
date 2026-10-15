@@ -1,5 +1,5 @@
 [build-system]
-requires = ["uv_build>=0.12.0"]
+requires = ["uv_build>=0.12.0,<0.13"]
 build-backend = "uv_build"
 
 [project]
@@ -160,7 +160,7 @@ omit = ["tests/*", "docs/*", "*__init__.py", "*_types.py"]
 
 [tool.coverage.report]
 show_missing = true
-#fail_under = 85
+fail_under = 90
 ignore_errors = true
 exclude_lines = [
     'raise NotImplementedError',

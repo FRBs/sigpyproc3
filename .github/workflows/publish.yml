@@ -1,0 +1,39 @@
+# Build a release wheel and check its metadata.
+#
+# This workflow does not upload to PyPI or TestPyPI. Publishing stays a
+# separate maintainer action after the tag, the changelog, and the trusted
+# publisher are reviewed. An uploaded file cannot be replaced; ship a new
+# version instead.
+
+name: Release build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: build and check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv & Python
+        uses: astral-sh/setup-uv@v10.2.0
+        with:
+          python-version: "3.12"
+
+      - name: Build
+        run: uv build
+
+      - name: Check metadata
+        run: uvx twine check dist/*
+
+      - name: Record checksums
+        run: sha256sum dist/* | tee dist/SHA256SUMS
+
+      - name: Upload the artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sigpyproc-dist
+          path: dist/*
+          if-no-files-found: error

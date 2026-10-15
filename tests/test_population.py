@@ -6,9 +6,10 @@ import numpy as np
 import pytest
 
 from sigpyproc.header import Header
-from sigpyproc.simulation.furby import Furby
-from sigpyproc.simulation.inject import Injector, read_pulse_catalogue
+from sigpyproc.simulation.furby import Furby, PulseParams, SpectralStructure
+from sigpyproc.simulation.inject import InjectedPulse, Injector, read_pulse_catalogue
 from sigpyproc.simulation.population import BurstDistribution, RandomBurstPopulation
+from sigpyproc.simulation.pulsar import PulsarParams
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -133,3 +134,23 @@ class TestRandomBurstPopulation:
             assert 100.0 <= dm <= 200.0
             assert 0.001 <= tau0 <= 0.005
             assert spec_kind in pop.distribution.spec_kinds
+
+
+def test_simulation_rejects_invalid_physical_values() -> None:
+    with pytest.raises(ValueError, match="width"):
+        PulseParams(dm=1.0, snr=5.0, width=-1e-3)
+    with pytest.raises(ValueError, match="count"):
+        RandomBurstPopulation().draw_bursts(-3, tobs=1.0)
+    with pytest.raises(ValueError, match="positive"):
+        BurstDistribution(snr_range=(0.0, 10.0))
+    with pytest.raises(ValueError, match="pdot and accel"):
+        PulsarParams(period=0.1, pdot=1e-12, accel=2.0)
+    spec = SpectralStructure(np.array([1400.0]), kind="gaussian", seed=1)
+    np.testing.assert_array_equal(spec.generate(), [1.0])
+    assert spec.foff == 0.0
+    with pytest.raises(ValueError, match="delays"):
+        InjectedPulse(
+            profile=np.ones((2, 4), dtype=np.float32),
+            delays=np.array([0.0, np.nan]),
+            start=0,
+        )

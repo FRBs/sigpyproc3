@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from sigpyproc.fourierseries import PowerSpectrum
+from sigpyproc.fourierseries import FourierSeries, PowerSpectrum
 from sigpyproc.header import Header
 from sigpyproc.timeseries import TimeSeries
 
@@ -133,3 +133,17 @@ class TestFindPulses:
             tim.find_pulses(max_width=0)
         with pytest.raises(ValueError, match="deadtime"):
             tim.find_pulses(deadtime=-1)
+
+
+def test_resample_rejects_a_mapping_outside_the_array() -> None:
+    tim = TimeSeries(np.ones(64, dtype=np.float32), _header(64, tsamp=1.0))
+    with pytest.raises(ValueError, match="does not fit"):
+        tim.resample(1e16)
+
+
+def test_zero_spectrum_deredden_stays_finite() -> None:
+    series = FourierSeries(np.zeros(64, dtype=np.complex64), _header(128))
+    whitened = series.deredden()
+    assert np.all(np.isfinite(whitened.data))
+    with pytest.raises(ValueError, match="window"):
+        series.deredden(start_width=0)

@@ -95,7 +95,7 @@ jobs:
               os.utime(path, (stamp, stamp))
           EOF
 
-      - name: Run pytest (with coverage and durations)
+      - name: Run pytest (with coverage)
         if: runner.os == 'Linux' && matrix.python-version == '3.12'
         run: uv run pytest --cov=src --cov-report=xml -v
 
@@ -116,3 +116,39 @@ jobs:
           fail_ci_if_error: true
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  installed-wheel:
+    name: installed wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv & Python
+        uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Build the wheel
+        run: uv build
+
+      - name: Check distribution metadata
+        run: uvx twine check dist/*
+
+      - name: Import from the installed wheel
+        run: |
+          uv venv /tmp/sigpyproc-wheel
+          uv pip install --python /tmp/sigpyproc-wheel/bin/python dist/*.whl
+          cd /tmp
+          /tmp/sigpyproc-wheel/bin/python - <<'PY'
+          import inspect
+          import pathlib
+
+          import sigpyproc
+          from sigpyproc.timeseries import TimeSeries
+
+          location = pathlib.Path(inspect.getfile(sigpyproc))
+          if "site-packages" not in location.parts:
+              raise SystemExit(f"imported from the checkout: {location}")
+          assert TimeSeries is not None
+          PY

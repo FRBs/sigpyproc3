@@ -83,6 +83,7 @@ sigpyproc.simulation
 
    ~sigpyproc.simulation.furby
    ~sigpyproc.simulation.inject
+   ~sigpyproc.simulation.population
    ~sigpyproc.simulation.pulsar
 
 sigpyproc.viz
@@ -92,4 +93,9 @@ sigpyproc.viz
    :toctree:
    :template: autosummary/module.rst
 
+   ~sigpyproc.viz.batch
+   ~sigpyproc.viz.keymap
+   ~sigpyproc.viz.scaling
+   ~sigpyproc.viz.series
    ~sigpyproc.viz.styles
+   ~sigpyproc.viz.waterfall

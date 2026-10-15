@@ -229,8 +229,8 @@ class TestSpectralStructure:
         plt.close(fig)
 
     def test_invalid_kind(self, freqs: np.ndarray) -> None:
-        with pytest.raises(KeyError):
-            furby.SpectralStructure(freqs, kind="invalid").generate()
+        with pytest.raises(ValueError, match="unknown spectral kind"):
+            furby.SpectralStructure(freqs, kind="invalid")
 
     def test_power_law_flux_ratio(self, freqs: np.ndarray) -> None:
         spec_struct = furby.SpectralStructure(freqs, kind="power_law", spec_index=-2.0)

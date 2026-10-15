@@ -10,6 +10,59 @@ import rich_click as click
 from sigpyproc.apps._logging import logging_options, setup_cli_logging
 
 
+def _echo_paths(paths: list[str]) -> None:
+    for path in paths:
+        click.echo(path)
+
+
+def _batch_series(
+    files: tuple[str, ...],
+    suffix: str,
+    *,
+    theme: str,
+    start: int,
+    gulp: int,
+    outdir: str,
+) -> list[str]:
+    from sigpyproc.timeseries import TimeSeries
+    from sigpyproc.viz.series import SeriesViewer
+
+    written: list[str] = []
+    for name in files:
+        tim = (
+            TimeSeries.from_tim(name) if suffix == ".tim" else TimeSeries.from_dat(name)
+        )
+        viewer = SeriesViewer(tim, theme=theme, batch=True)
+        viewer.start_samp = max(0, start)
+        viewer.end_samp = min(len(tim.data), viewer.start_samp + max(gulp, 1))
+        out = Path(outdir) / f"{tim.header.basename}_timeseries.png"
+        written.append(viewer.save_png(str(out)))
+    return written
+
+
+def _batch_spectra(
+    files: tuple[str, ...],
+    suffix: str,
+    *,
+    theme: str,
+    outdir: str,
+) -> list[str]:
+    from sigpyproc.fourierseries import FourierSeries, PowerSpectrum
+    from sigpyproc.viz.series import SpectrumViewer
+
+    written: list[str] = []
+    for name in files:
+        spec = (
+            FourierSeries.from_fft(name).form_spec()
+            if suffix == ".fft"
+            else PowerSpectrum.from_spec(name)
+        )
+        viewer = SpectrumViewer(spec, theme=theme, batch=True)
+        out = Path(outdir) / f"{spec.header.basename}_spec.png"
+        written.append(viewer.save_png(str(out)))
+    return written
+
+
 @logging_options
 @click.command(
     context_settings={"help_option_names": ["-h", "--help"], "show_default": True},
@@ -100,9 +153,23 @@ def main(
     """Visualize pulsar/FRB filterbanks, time series, and power spectra."""
     setup_cli_logging(verbose, quiet=quiet)
 
-    first_ext = Path(files[0]).suffix.lower()
+    exts = {Path(name).suffix.lower() for name in files}
+    if len(exts) != 1:
+        msg = f"batch inputs must share one suffix, got {sorted(exts)}"
+        raise click.UsageError(msg)
+    first_ext = exts.pop()
+    if not batch and first_ext in {".tim", ".dat", ".fft", ".spec"} and len(files) > 1:
+        msg = "pass one time series or spectrum, or use --batch to render every file"
+        raise click.UsageError(msg)
 
     if first_ext in (".tim", ".dat"):
+        if batch:
+            _echo_paths(
+                _batch_series(
+                    files, first_ext, theme=theme, start=start, gulp=gulp, outdir=outdir
+                ),
+            )
+            return
         from sigpyproc.timeseries import TimeSeries
         from sigpyproc.viz.series import SeriesViewer
 
@@ -111,11 +178,13 @@ def main(
             if first_ext == ".tim"
             else TimeSeries.from_dat(files[0])
         )
-        viewer = SeriesViewer(tim)
-        viewer.show()
+        SeriesViewer(tim, theme=theme).show()
         return
 
     if first_ext in (".fft", ".spec"):
+        if batch:
+            _echo_paths(_batch_spectra(files, first_ext, theme=theme, outdir=outdir))
+            return
         from sigpyproc.fourierseries import FourierSeries, PowerSpectrum
         from sigpyproc.viz.series import SpectrumViewer
 
@@ -124,8 +193,7 @@ def main(
             if first_ext == ".fft"
             else PowerSpectrum.from_spec(files[0])
         )
-        viewer_spec = SpectrumViewer(spec)
-        viewer_spec.show()
+        SpectrumViewer(spec, theme=theme).show()
         return
 
     # Filterbank / PSRFITS / FBH5 files
@@ -133,25 +201,34 @@ def main(
         from sigpyproc.readers import open_filterbank
         from sigpyproc.viz.batch import render_waterfall_batch
 
-        fil = open_filterbank(files[0])
-        render_waterfall_batch(
-            fil,
-            outdir,
-            start=start,
-            stop=stop,
-            gulp=gulp,
-            dm=dm,
-            tfactor=tfactor,
-            ffactor=ffactor,
-            mask=mask,
-            scaler=scale,
-            cmap=cmap,
-            theme=theme,
-            zerodm=zerodm,
-            flatten=flatten,
-            out_format=out_format,
-            jobs=jobs,
-        )
+        written = []
+        for name in files:
+            fil = open_filterbank(name)
+            try:
+                written.extend(
+                    render_waterfall_batch(
+                        fil,
+                        outdir,
+                        start=start,
+                        stop=stop,
+                        gulp=gulp,
+                        dm=dm,
+                        tfactor=tfactor,
+                        ffactor=ffactor,
+                        mask=mask,
+                        scaler=scale,
+                        cmap=cmap,
+                        theme=theme,
+                        zerodm=zerodm,
+                        flatten=flatten,
+                        out_format=out_format,
+                        jobs=jobs,
+                    ),
+                )
+            finally:
+                fil.close()
+        for path in written:
+            click.echo(path)
         return
 
     from sigpyproc.viz.waterfall import WaterfallViewer

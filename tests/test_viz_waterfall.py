@@ -251,3 +251,24 @@ def test_render_waterfall_batch_pdf_multi(filfile_8bit_1: str, tmp_path: Path) -
     )
     assert len(out_files) == 1
     assert Path(out_files[0]).exists()
+
+
+def test_save_npz_uses_the_selected_block(filfile_8bit_1: str, tmp_path: Path) -> None:
+    fil = open_filterbank(filfile_8bit_1)
+    viewer = WaterfallViewer(fil, batch=True, start=20, gulp=32)
+    out = tmp_path / "block.npz"
+    viewer.save_npz(str(out))
+    loaded = np.load(out, allow_pickle=False)
+    assert loaded["nsamples"] == 32
+    assert loaded["tstart"] == pytest.approx(fil.header.mjd_after_nsamps(20))
+    assert loaded["tsamp"] == pytest.approx(fil.header.tsamp)
+    assert loaded["foff"] == pytest.approx(fil.header.foff)
+    assert loaded["dm"] == pytest.approx(0.0)
+    half = abs(fil.header.foff) / 2
+    products = viewer.model.products(viewer.state)
+    assert products.extent[2] == pytest.approx(
+        float(np.min(fil.header.chan_freqs)) - half
+    )
+    assert products.extent[3] == pytest.approx(
+        float(np.max(fil.header.chan_freqs)) + half
+    )

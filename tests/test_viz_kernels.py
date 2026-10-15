@@ -34,11 +34,34 @@ def test_decimate_2d_max_spike() -> None:
 
 
 def test_decimate_2d_nan_handling() -> None:
+    """A partly masked tile is the mean of the finite samples."""
     data = np.ones((4, 4), dtype=np.float32)
     data[0, :] = np.nan
     dec = kernels.decimate_2d(data, 2, 2, mode=0)
-    assert np.isnan(dec[0, :]).all()
-    assert np.isclose(dec[1, :], 1.0).all()
+    python = kernels.decimate_2d.py_func(data, 2, 2, mode=0)
+    np.testing.assert_allclose(dec, 1.0)
+    np.testing.assert_allclose(python, dec)
+
+    partial = np.array([[np.nan, 1.0], [1.0, 1.0]], dtype=np.float32)
+    mean = kernels.decimate_2d(partial, 1, 1, mode=0)
+    np.testing.assert_allclose(mean, 1.0)
+    assert np.isnan(kernels.decimate_2d(np.full((2, 2), np.nan), 1, 1, mode=0)).all()
+
+    spiked = np.array([[np.nan, 1.0], [-3.0, 2.0]], dtype=np.float32)
+    np.testing.assert_allclose(kernels.decimate_2d(spiked, 1, 1, mode=1), 2.0)
+    np.testing.assert_allclose(kernels.decimate_2d(spiked, 1, 1, mode=2), -3.0)
+
+
+def test_minmax_envelope_skips_nans() -> None:
+    x = np.array([np.nan, 1.0, 3.0, np.nan], dtype=np.float32)
+    mins, maxs = kernels.minmax_envelope(x, 0, 4, 1)
+    np.testing.assert_allclose(mins, 1.0)
+    np.testing.assert_allclose(maxs, 3.0)
+    empty_mins, empty_maxs = kernels.minmax_envelope(
+        np.array([np.nan, np.nan]), 0, 2, 1
+    )
+    assert np.isnan(empty_mins).all()
+    assert np.isnan(empty_maxs).all()
 
 
 def test_minmax_envelope() -> None:

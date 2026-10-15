@@ -388,7 +388,7 @@ class WaterfallModel:
                     mode=state.lod_mode,
                 )
 
-        image, f_lo, f_hi = frequency_oriented(decimated, freqs)
+        image, f_lo, f_hi = frequency_oriented(decimated, freqs, foff=hdr.foff)
         extent = (t0, t1, f_lo, f_hi)
 
         def _finite(value: float, fallback: float = 0.0) -> float:
@@ -1449,13 +1449,33 @@ class WaterfallViewer:
         self.fig.savefig(out, dpi=150)
         print(f"Saved {out}")
 
-    def save_npz(self) -> None:
-        """Save the current processed block to ``.npz``."""
+    def save_npz(self, filename: str | None = None) -> str:
+        """Save the current processed block to a pickle-free ``.npz``.
+
+        The arrays are the block that is on screen, including its epoch,
+        sampling interval, frequency grid, and DM. They are not the original
+        file header.
+        """
         blk, _ = self.model.get_block(self.state)
-        out = f"{self.fil.header.basename}_t{self.state.start}_dm{self.state.dm}.npz"
-        hdr_dict = self.fil.header.to_dict()
-        np.savez(out, data=blk.data, header=np.array([hdr_dict], dtype=object))
-        print(f"Saved {out}")
+        out = filename or (
+            f"{self.fil.header.basename}_t{self.state.start}_dm{self.state.dm}.npz"
+        )
+        hdr = blk.header
+        np.savez(
+            out,
+            data=np.asarray(blk.data, dtype=np.float32),
+            tstart=np.float64(hdr.tstart),
+            tsamp=np.float64(hdr.tsamp),
+            fch1=np.float64(hdr.fch1),
+            foff=np.float64(hdr.foff),
+            nchans=np.int64(hdr.nchans),
+            nsamples=np.int64(blk.data.shape[1]),
+            dm=np.float64(blk.dm),
+            source=np.asarray(hdr.source),
+        )
+        if filename is None:
+            print(f"Saved {out}")
+        return out
 
     def export_fil(self) -> None:
         """Write the current processed block as a 32-bit filterbank."""

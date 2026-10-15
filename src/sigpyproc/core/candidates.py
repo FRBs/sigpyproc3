@@ -39,6 +39,7 @@ _COLUMN_UNITS: dict[str, u.UnitBase] = {
     "freq_hz": u.Hz,
     "dm": u.pc / u.cm**3,
     "width_s": u.s,
+    "accel": u.m / u.s**2,
 }
 _KIND_MAX = 8
 
@@ -46,12 +47,68 @@ _KIND_MAX = 8
 def _cell_float(row: Mapping[str, object], key: str) -> float | None:
     if key not in row or row[key] is None:
         return None
-    return float(np.asarray(row[key]).reshape(-1)[0])
+    array = np.asarray(row[key])
+    if array.size != 1:
+        msg = f"{key} must be a scalar, got shape {array.shape}"
+        raise ValueError(msg)
+    return float(array.reshape(-1)[0])
+
+
+def _scalar_in(value: object, unit: u.UnitBase, name: str) -> float:
+    """Return one number in ``unit``.
+
+    A quantity is converted. A bare number is already in ``unit``. A
+    non-scalar cell is rejected.
+    """
+    if isinstance(value, u.Quantity):
+        if value.size != 1:
+            msg = f"{name} must be a scalar, got shape {value.shape}"
+            raise ValueError(msg)
+        try:
+            return float(value.to_value(unit))
+        except u.UnitConversionError as exc:
+            msg = f"{name} unit {value.unit} is not compatible with {unit}"
+            raise ValueError(msg) from exc
+    array = np.asarray(value)
+    if array.size != 1:
+        msg = f"{name} must be a scalar, got shape {array.shape}"
+        raise ValueError(msg)
+    return float(array.reshape(-1)[0])
+
+
+def _optional_unit(
+    row: Mapping[str, object],
+    key: str,
+    unit: u.UnitBase,
+) -> float | None:
+    if key not in row or row[key] is None:
+        return None
+    return _scalar_in(row[key], unit, key)
 
 
 def _cell_int(row: Mapping[str, object], key: str, default: int) -> int:
     value = _cell_float(row, key)
     return default if value is None else int(value)
+
+
+def _extra_names(rows: Sequence[Mapping[str, object]]) -> list[str]:
+    names: list[str] = []
+    for row in rows:
+        for key in row:
+            if key not in CANDIDATE_NAMES and key not in names:
+                names.append(key)
+    return names
+
+
+def _extra_column(rows: Sequence[Mapping[str, object]], name: str) -> np.ndarray:
+    raw = [row.get(name) for row in rows]
+    if any(isinstance(item, str) for item in raw):
+        text = ["" if item is None else str(item) for item in raw]
+        return np.array(text, dtype="U32")
+    out = np.empty(len(rows), dtype=np.float64)
+    for i, item in enumerate(raw):
+        out[i] = np.nan if item is None else _cell_float({name: item}, name)
+    return out
 
 
 def _plain(col: object) -> np.ndarray:
@@ -69,9 +126,29 @@ def _empty_qtable() -> QTable:
 
 
 def _attach_units(table: QTable) -> QTable:
+    """Store schema columns in seconds, Hz, pc cm^-3, and m s^-2.
+
+    CSV files keep the numeric value in that unit and do not store the unit
+    object. ``bin_origin``, when present, is ``center`` or ``start`` and is
+    not implied by ``kind``.
+    """
     for name, unit in _COLUMN_UNITS.items():
-        if name in table.colnames and getattr(table[name], "unit", None) is None:
-            table[name] = _plain(table[name]) * unit
+        if name not in table.colnames:
+            continue
+        column = table[name]
+        if isinstance(column, u.Quantity):
+            try:
+                converted = column.to(unit)
+            except u.UnitConversionError as exc:
+                msg = f"column {name} has unit {column.unit}, expected {unit}"
+                raise ValueError(msg) from exc
+            values = np.asarray(converted.value)
+        else:
+            values = np.asarray(column)
+        if values.ndim > 1:
+            msg = f"column {name} must be 1-D, got shape {values.shape}"
+            raise ValueError(msg)
+        table[name] = values * unit
     return table
 
 
@@ -97,8 +174,12 @@ class CandidateTable:
     table : ~astropy.table.QTable
         Table whose columns include ``period_s``, ``freq_hz``, ``snr``,
         ``dm``, ``accel``, ``nharm``, ``bin``, ``width_s``, and ``kind``.
-        Units are attached to ``period_s``, ``freq_hz``, ``dm``, and
-        ``width_s``.
+        ``period_s``, ``freq_hz``, ``dm``, ``width_s``, and ``accel`` are
+        stored in seconds, Hz, pc cm^-3, seconds, and m s^-2. A compatible
+        quantity is converted; an incompatible unit is rejected. CSV export
+        writes those canonical numbers and does not keep the unit object.
+        Optional columns, including ``bin_origin`` (``center`` or ``start``),
+        are kept. ``kind`` does not encode the bin convention.
 
     Attributes
     ----------
@@ -177,8 +258,8 @@ class CandidateTable:
         width = np.empty(len(rows), dtype=np.float64)
         kind = np.empty(len(rows), dtype="U8")
         for i, row in enumerate(rows):
-            period_s = _cell_float(row, "period_s")
-            freq_hz = _cell_float(row, "freq_hz")
+            period_s = _optional_unit(row, "period_s", u.s)
+            freq_hz = _optional_unit(row, "freq_hz", u.Hz)
             if period_s is None and freq_hz is not None:
                 freq[i] = freq_hz
                 period[i] = (1.0 / freq_hz) if freq_hz != 0.0 else np.nan
@@ -190,11 +271,13 @@ class CandidateTable:
                 freq[i] = np.nan if freq_hz is None else freq_hz
             snr_val = _cell_float(row, "snr")
             snr[i] = np.float32(np.nan if snr_val is None else snr_val)
-            dm[i] = _cell_float(row, "dm") or 0.0
-            accel[i] = _cell_float(row, "accel") or 0.0
+            dm_val = _optional_unit(row, "dm", u.pc / u.cm**3)
+            dm[i] = 0.0 if dm_val is None else dm_val
+            accel_val = _optional_unit(row, "accel", u.m / u.s**2)
+            accel[i] = 0.0 if accel_val is None else accel_val
             nharm[i] = _cell_int(row, "nharm", 1)
             bins[i] = _cell_int(row, "bin", -1)
-            width_val = _cell_float(row, "width_s")
+            width_val = _optional_unit(row, "width_s", u.s)
             width[i] = np.nan if width_val is None else width_val
             raw_kind = "fft" if row.get("kind") is None else str(row["kind"])
             kind[i] = raw_kind[:_KIND_MAX]
@@ -203,11 +286,13 @@ class CandidateTable:
         table["freq_hz"] = freq * u.Hz
         table["snr"] = snr
         table["dm"] = dm * (u.pc / u.cm**3)
-        table["accel"] = accel
+        table["accel"] = accel * (u.m / u.s**2)
         table["nharm"] = nharm
         table["bin"] = bins
         table["width_s"] = width * u.s
         table["kind"] = kind
+        for name in _extra_names(rows):
+            table[name] = _extra_column(rows, name)
         return cls(table)
 
     @classmethod
@@ -282,7 +367,7 @@ class CandidateTable:
         table["freq_hz"] = np.asarray(raw["freq_hz"], dtype=np.float64) * u.Hz
         table["snr"] = np.asarray(raw["snr"], dtype=np.float32)
         table["dm"] = np.asarray(raw["dm"], dtype=np.float64) * (u.pc / u.cm**3)
-        table["accel"] = np.asarray(raw["accel"], dtype=np.float64)
+        table["accel"] = np.asarray(raw["accel"], dtype=np.float64) * (u.m / u.s**2)
         table["nharm"] = np.asarray(raw["nharm"], dtype=np.int32)
         table["bin"] = np.asarray(raw["bin"], dtype=np.int64)
         table["width_s"] = np.asarray(raw["width_s"], dtype=np.float64) * u.s
@@ -362,7 +447,7 @@ class CandidateTable:
                 "width_s": self.values("width_s"),
             }
         )
-        for name in HEIMDALL_CANDIDATE_NAMES:
+        for name in (*HEIMDALL_CANDIDATE_NAMES, "bin_origin"):
             if name in self.table.colnames:
                 plain[name] = self.table[name]
         if hasattr(path, "write"):

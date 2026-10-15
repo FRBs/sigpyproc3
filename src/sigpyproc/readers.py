@@ -17,6 +17,7 @@ from rich.progress import track
 
 from sigpyproc.base import Filterbank
 from sigpyproc.block import FilterbankBlock
+from sigpyproc.core.logging import progress_disabled
 from sigpyproc.header import Header
 from sigpyproc.io.bits import check_packed_length
 from sigpyproc.io.fileio import FileReader, allocate_buffer
@@ -281,8 +282,17 @@ class FilReader(Filterbank):
         self.close()
 
     def _maybe_signed(self, data: np.ndarray) -> np.ndarray:
+        """Return samples in the dtype the streaming kernels accept.
+
+        Signed 8-bit storage is decoded to float32. A 16-bit gulp is copied
+        to float32, which holds every ``uint16`` value exactly. Packed and
+        unsigned 8-bit samples stay ``uint8``. 32-bit samples are already
+        float32.
+        """
         if self.header.signed and self.header.nbits == 8:
-            return data.view(np.int8).astype(np.float32)
+            return np.ascontiguousarray(data.view(np.int8), dtype=np.float32)
+        if self.header.nbits == 16:
+            return np.ascontiguousarray(data, dtype=np.float32)
         return data
 
     def read_block(
@@ -381,7 +391,7 @@ class FilReader(Filterbank):
         return FilterbankBlock(data, new_header, dm=dm)
 
     def _dedisp_dtype(self) -> np.dtype[np.generic]:
-        if self.header.signed and self.header.nbits == 8:
+        if self.header.nbits == 16 or (self.header.signed and self.header.nbits == 8):
             return np.dtype(np.float32)
         return self.bitsinfo.dtype
 
@@ -500,7 +510,11 @@ class FilReader(Filterbank):
         if lastread != 0:
             blocks.append((nreads, lastread * self.header.nchans, 0))
 
-        for ii, block, skip in track(blocks, description=description, disable=quiet):
+        for ii, block, skip in track(
+            blocks,
+            description=description,
+            disable=quiet or progress_disabled(),
+        ):
             logger.debug(
                 f"read_plan: Reading block {ii}/{nreads}, {block} elements, "
                 f"with skipback={skip}",
@@ -689,7 +703,11 @@ class PFITSReader(Filterbank):
             blocks.append((nreads, lastread, 0))
 
         pos = start
-        for ii, block, skip in track(blocks, description=description, disable=quiet):
+        for ii, block, skip in track(
+            blocks,
+            description=description,
+            disable=quiet or progress_disabled(),
+        ):
             data = self._read_samples(pos, block)
             pos += block + skip
             yield block, ii, data.ravel()

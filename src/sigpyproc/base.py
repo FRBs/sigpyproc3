@@ -325,7 +325,15 @@ class Filterbank(ABC):
         -------
         :class:`~sigpyproc.timeseries.TimeSeries`
             A zero-DM time series.
+
+        Raises
+        ------
+        ValueError
+            If ``method`` is not ``"mean"`` or ``"sum"``.
         """
+        if method not in {"mean", "sum"}:
+            msg = f"method must be 'mean' or 'sum', got {method!r}"
+            raise ValueError(msg)
         tim_len, tstart = self._sample_window(start, nsamps)
         tim_ar = np.zeros(tim_len, dtype=np.float32)
         kernel_func = kernels.extract_tim_par if parallel else kernels.extract_tim
@@ -386,7 +394,15 @@ class Filterbank(ABC):
         -------
         :class:`~sigpyproc.timeseries.TimeSeries`
             Bandpass of the data.
+
+        Raises
+        ------
+        ValueError
+            If ``method`` is not ``"mean"`` or ``"sum"``.
         """
+        if method not in {"mean", "sum"}:
+            msg = f"method must be 'mean' or 'sum', got {method!r}"
+            raise ValueError(msg)
         bpass_ar = np.zeros(self.header.nchans, dtype=np.float32)
         kernel_func = kernels.extract_bpass_par if parallel else kernels.extract_bpass
         num_samples = 0
@@ -396,7 +412,12 @@ class Filterbank(ABC):
             nsamps=nsamps,
             **plan_kwargs,
         ):
-            kernel_func(data, bpass_ar, self.header.nchans, nsamps_r)
+            kernel_func(
+                data,
+                bpass_ar,
+                self.header.nchans,
+                nsamps_r,
+            )
             num_samples += nsamps_r
         if method == "mean":
             bpass_ar /= num_samples
@@ -596,7 +617,11 @@ class Filterbank(ABC):
             nsamps=n_in,
             **plan_kwargs,
         ):
-            out_ar = kernel_func(data, self.header.nchans, nsamps_r)
+            out_ar = kernel_func(
+                data,
+                self.header.nchans,
+                nsamps_r,
+            )
             out_file.cwrite(out_ar)
         out_file.close()
         return outfile_name
@@ -653,7 +678,11 @@ class Filterbank(ABC):
             raise ValueError(msg)
 
         n_in, tstart = self._sample_window(start, nsamps)
-        mask_value = np.float32(mask_value).astype(self.header.dtype)
+        # Signed 8-bit and 16-bit reads arrive as float32. See FilReader.
+        if self.header.nbits >= 16 or (self.header.nbits == 8 and self.header.signed):
+            mask_scalar = np.float32(mask_value)
+        else:
+            mask_scalar = np.uint8(np.clip(np.rint(mask_value), 0, 255))
         kernel_func = kernels.mask_channels_par if parallel else kernels.mask_channels
         with self.header.prep_outfile(
             outfile_name,
@@ -665,7 +694,13 @@ class Filterbank(ABC):
                 nsamps=n_in,
                 **plan_kwargs,
             ):
-                kernel_func(data, chan_mask, mask_value, self.header.nchans, nsamps_r)
+                kernel_func(
+                    data,
+                    chan_mask,
+                    mask_scalar,
+                    self.header.nchans,
+                    nsamps_r,
+                )
                 out_file.cwrite(data)
         return outfile_name
 
@@ -1198,18 +1233,25 @@ class Filterbank(ABC):
             nsamps=n_in,
             **plan_kwargs,
         ).data
-        out_ar = np.empty(gulp * self.header.nchans, dtype=self.header.dtype)
+        if self.header.nbits >= 16 or (self.header.nbits == 8 and self.header.signed):
+            out_dtype = np.dtype(np.float32)
+        else:
+            out_dtype = self.header.dtype
+        out_ar = np.empty(gulp * self.header.nchans, dtype=out_dtype)
         out_file = self.header.prep_outfile(
             outfile_name,
             nbits=self.header.nbits,
             updates={"nsamples": n_in, "tstart": tstart},
         )
         kernel_func = kernels.remove_zerodm_par if parallel else kernels.remove_zerodm
-        clip_max = (
-            int(np.iinfo(self.header.dtype).max)
-            if np.issubdtype(self.header.dtype, np.integer)
-            else 0
-        )
+        # Signed 8-bit output is clipped by the writer. The kernel's clip is
+        # an unsigned range, which would turn negatives into zero.
+        if self.header.nbits == 8 and self.header.signed:
+            clip_max = 0
+        elif np.issubdtype(self.header.dtype, np.integer):
+            clip_max = int(np.iinfo(self.header.dtype).max)
+        else:
+            clip_max = 0
         for nsamps_r, _, data in self.read_plan(
             gulp=gulp,
             start=start,
@@ -1567,7 +1609,13 @@ class Filterbank(ABC):
                 **plan_kwargs,
             ):
                 valid = nsamps_r - max_delay
-                kernels.dedisperse_many(data, out, delays, nchans, nsamps_r)
+                kernels.dedisperse_many(
+                    data,
+                    out,
+                    delays,
+                    nchans,
+                    nsamps_r,
+                )
                 for idm, writer in enumerate(writers):
                     writer.cwrite(out[idm, :valid])
         finally:

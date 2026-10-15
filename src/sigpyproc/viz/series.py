@@ -190,10 +190,19 @@ class SeriesViewer:
         self.end_samp = min(self.total_samps, 16384)
         self.update_detail()
 
-    def save_png(self) -> None:
-        out = f"{self.tim.header.basename}_timeseries.png"
-        self.fig.savefig(out, dpi=150)
-        print(f"Saved {out}")
+    def save_png(self, filename: str | None = None) -> str:
+        """Write the current window to PNG and return the path.
+
+        Batch viewers have no widget figure. They draw this window with Agg.
+        """
+        out = filename or f"{self.tim.header.basename}_timeseries.png"
+        if self._gui:
+            self.fig.savefig(out, dpi=150)
+        else:
+            _save_series_png(self, out)
+        if filename is None:
+            print(f"Saved {out}")
+        return out
 
     def show(self) -> None:
         import matplotlib.pyplot as plt
@@ -232,7 +241,10 @@ class SpectrumViewer:
 
         self.data = np.asarray(self.spec.data, dtype=np.float32)
         self.total_bins = len(self.data)
-        self.df = 1.0 / (self.total_bins * 2.0 * self.spec.header.tsamp)
+        # Bin width is the inverse of the real transform length, not twice
+        # the number of stored rfft bins (that is one bin too long).
+        length = self.spec.header.nsamples * self.spec.header.tsamp
+        self.df = 1.0 / length if length else np.nan
         self.freqs = np.linspace(
             0, self.total_bins * self.df, self.total_bins, endpoint=False
         )
@@ -328,10 +340,16 @@ class SpectrumViewer:
         self.ax.set_yscale("log" if self.logy else "linear")
         self.fig.canvas.draw_idle()
 
-    def save_png(self) -> None:
-        out = f"{self.spec.header.basename}_spec.png"
-        self.fig.savefig(out, dpi=150)
-        print(f"Saved {out}")
+    def save_png(self, filename: str | None = None) -> str:
+        """Write the spectrum to PNG and return the path."""
+        out = filename or f"{self.spec.header.basename}_spec.png"
+        if self._gui:
+            self.fig.savefig(out, dpi=150)
+        else:
+            _save_spectrum_png(self, out)
+        if filename is None:
+            print(f"Saved {out}")
+        return out
 
     def show(self) -> None:
         import matplotlib.pyplot as plt
@@ -344,3 +362,41 @@ class SpectrumViewer:
         import matplotlib.pyplot as plt
 
         plt.close(self.fig)
+
+
+def _save_series_png(viewer: SeriesViewer, out: str) -> None:
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from matplotlib.figure import Figure
+
+    from sigpyproc.viz._backend import paint_theme
+
+    fig = Figure(figsize=(10, 4))
+    FigureCanvasAgg(fig)
+    ax = fig.add_subplot(111)
+    start = max(0, viewer.start_samp)
+    stop = viewer.end_samp if viewer.end_samp > start else viewer.total_samps
+    y = np.asarray(viewer.tim.data[start:stop])
+    t = (start + np.arange(y.size)) * viewer.tim.header.tsamp
+    ax.plot(t, y, color="#1f77b4", lw=0.8)
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Power")
+    ax.set_title(viewer.tim.header.basename)
+    paint_theme(fig, [ax], viewer.theme)
+    fig.savefig(out, dpi=120)
+
+
+def _save_spectrum_png(viewer: SpectrumViewer, out: str) -> None:
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from matplotlib.figure import Figure
+
+    from sigpyproc.viz._backend import paint_theme
+
+    fig = Figure(figsize=(10, 4))
+    FigureCanvasAgg(fig)
+    ax = fig.add_subplot(111)
+    ax.plot(viewer.freqs, viewer.data, color="#d62728", lw=0.8)
+    ax.set_xlabel("Frequency (Hz)")
+    ax.set_ylabel("Power")
+    ax.set_title(viewer.spec.header.basename)
+    paint_theme(fig, [ax], viewer.theme)
+    fig.savefig(out, dpi=120)
