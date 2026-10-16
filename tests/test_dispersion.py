@@ -115,3 +115,46 @@ class TestDMPlan:
             tol=1.25,
         )
         np.testing.assert_allclose(from_hdr.dms, from_units.dms, rtol=1e-5)
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"freqs": []},
+        {"freqs": [[1400.0]]},
+        {"freqs": [0.0]},
+        {"freqs": [np.nan]},
+        {"freqs": [-1.0]},
+        {"tsamp": 0.0},
+        {"tsamp": np.inf},
+        {"ref_freq": 0.0},
+        {"ref_freq": np.nan},
+        {"index": 0.0},
+        {"index": np.inf},
+        {"dm": np.nan},
+        {"dm": [[1.0]]},
+    ],
+)
+def test_invalid_dispersion_geometry_is_rejected(changes: dict) -> None:
+    kwargs = {"freqs": [1400.0, 1300.0], "dm": 10.0, "tsamp": 0.001, "ref_freq": 1400.0}
+    kwargs.update(changes)
+    with pytest.raises(ValueError):
+        compute_dmdelays(**kwargs)
+
+
+@pytest.mark.parametrize(
+    "changes", [{"dm_max": -1.0}, {"nchan": 0}, {"bw_mhz": 0.0}, {"tol": 0.0}]
+)
+def test_invalid_dm_recurrences_fail_instead_of_looping(changes: dict) -> None:
+    kwargs = {
+        "dm_min": 0.0,
+        "dm_max": 1.0,
+        "tsamp_us": 64.0,
+        "ti_us": 40.0,
+        "bw_mhz": 0.4,
+        "cfreq_ghz": 1.4,
+        "nchan": 16,
+    }
+    kwargs.update(changes)
+    with pytest.raises(ValueError):
+        DMPlan.from_sigproc_units(**kwargs)

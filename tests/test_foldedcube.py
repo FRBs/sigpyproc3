@@ -177,7 +177,9 @@ class TestFoldedData:
         np.testing.assert_array_equal(cube.centre().data, data)
 
     def test_zero_mean_slice_stays_finite(self) -> None:
-        data = np.array([[1.0, -1.0, 1.0, -1.0], [1.0, 2.0, 3.0, 4.0]], dtype=np.float32)
+        data = np.array(
+            [[1.0, -1.0, 1.0, -1.0], [1.0, 2.0, 3.0, 4.0]], dtype=np.float32
+        )
         normalized = FoldSlice(data, tsamp=0.001).normalize()
         assert np.isfinite(normalized.data).all()
         np.testing.assert_array_equal(normalized.data[0], 0)
@@ -188,3 +190,117 @@ class TestFoldedData:
         data = np.ones((2, 2, 8), dtype=np.float32)
         with pytest.raises(ValueError, match="period"):
             FoldedData(data, header, period=0.0, dm=0.0)
+
+
+def _synthetic_series_header(nsamples: int = 128) -> Header:
+    return Header(
+        filename="synthetic.tim",
+        data_type="time series",
+        nchans=1,
+        foff=1.0,
+        fch1=1400.0,
+        nbits=32,
+        tsamp=0.001,
+        tstart=50000.0,
+        nsamples=nsamples,
+    )
+
+
+def _correction_cube(nsamples: int = 128) -> FoldedData:
+    return FoldedData(
+        np.arange(64, dtype=np.float32).reshape(4, 2, 8),
+        _synthetic_series_header(nsamples).new_header({"nchans": 2}),
+        0.5,
+        10.0,
+        3.0,
+    )
+
+
+@pytest.mark.parametrize("target", [0.0, -1.0, np.nan, np.inf, -np.inf])
+def test_period_rejection_preserves_correction_state(target: float) -> None:
+    cube = _correction_cube()
+    cube.update_period(0.48)
+    before = cube.data.copy()
+    history = cube._tph_shifts.copy()
+    with pytest.raises(ValueError, match="period"):
+        cube.update_period(target)
+    assert cube.period == 0.48
+    np.testing.assert_array_equal(cube.data, before)
+    np.testing.assert_array_equal(cube._tph_shifts, history)
+
+
+@pytest.mark.parametrize("target", [np.nan, np.inf, -np.inf, 1e30])
+def test_dm_rejection_preserves_correction_state(target: float) -> None:
+    cube = _correction_cube()
+    before = cube.data.copy()
+    with pytest.raises(ValueError, match=r"finite|32-bit"):
+        cube.update_dm(target)
+    assert cube.dm == 10.0
+    np.testing.assert_array_equal(cube.data, before)
+    np.testing.assert_array_equal(cube._fph_shifts, 0)
+
+
+@pytest.mark.parametrize("nsamples", [2**31 - 1, 2**31, 3_000_000_000])
+def test_long_fold_archives_keep_duration_and_future_corrections(
+    tmp_path: Path,
+    nsamples: int,
+) -> None:
+    cube = _correction_cube(nsamples)
+    cube.update_period(0.49999)
+    cube.update_dm(11.0)
+    cube = cube.centre()
+    path = cube.to_npz(str(tmp_path / "fold"))
+    assert path.endswith("fold.npz")
+    restored = FoldedData.from_npz(path)
+    assert restored.header.nsamples == nsamples
+    assert restored.header.tobs == cube.header.tobs
+    assert restored.accel == 3.0
+    for item in (cube, restored):
+        item.update_period(0.5)
+        item.update_dm(10.0)
+    np.testing.assert_array_equal(restored.data, cube.data)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("period0", np.array(0.0), "original period"),
+        ("period0", np.array(np.nan), "original period"),
+        ("dm0", np.array(np.inf), "original period"),
+        ("tph_shifts", np.zeros(3, dtype=np.int32), "shift vectors"),
+        ("fph_shifts", np.zeros(2, dtype=np.float32), "shift vectors"),
+        ("fph_shifts", np.zeros((2, 1), dtype=np.int32), "shift vectors"),
+        ("version", np.array(99), "version"),
+    ],
+)
+def test_fold_archive_rejects_malformed_state(
+    tmp_path: Path,
+    field: str,
+    value: np.ndarray,
+    message: str,
+) -> None:
+    path = _correction_cube().to_npz(str(tmp_path / "original"))
+    with np.load(path, allow_pickle=False) as source:
+        contents = dict(source)
+    contents[field] = value
+    changed = tmp_path / "invalid.npz"
+    np.savez(changed, **contents)
+    with pytest.raises(ValueError, match=message):
+        FoldedData.from_npz(str(changed))
+
+
+def test_old_integer_archive_and_missing_fields(tmp_path: Path) -> None:
+    path = _correction_cube().to_npz(str(tmp_path / "original"))
+    with np.load(path, allow_pickle=False) as source:
+        contents = dict(source)
+    contents["nsamples"] = np.int32(128)
+    contents["tph_shifts"] = contents["tph_shifts"].astype(np.int32)
+    np.savez(path, **contents)
+    assert FoldedData.from_npz(path).header.nsamples == 128
+    del contents["period0"]
+    np.savez(path, **contents)
+    with pytest.raises(ValueError, match="missing fields"):
+        FoldedData.from_npz(path)
+    np.savez(path, data=np.ones(8))
+    with pytest.raises(ValueError, match="version"):
+        FoldedData.from_npz(path)

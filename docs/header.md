@@ -23,7 +23,9 @@ A `.fil` or `.tim` file is read and written again with these rules:
    keys.
 4. An operation changes only the keys it must change, such as `nchans`, `foff`,
    `fch1`, `tsamp`, `nbits`, `nifs` or `tstart`.
-5. `nsamples` is never written. Readers derive it from the file size.
+5. For filterbanks and time series, readers derive `nsamples` from file size.
+   Spectrum files explicitly store the real transform length in `nsamples`;
+   their bin payload alone cannot distinguish odd and even real lengths.
 6. `src_raj` and `src_dej` are written back as stored when the coordinate is unchanged.
 
 ## Creating a Sigproc file from another format or from code

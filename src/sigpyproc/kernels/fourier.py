@@ -44,6 +44,9 @@ def fs_running_median(
     for ii in range(nspecs):
         powbuf[ii] = spec_arr[ii].real ** 2 + spec_arr[ii].imag ** 2
 
+    # A zero local noise estimate carries no scale information. Leave that
+    # segment's amplitudes unchanged rather than divide by zero.
+
     out_arr[0] = 1.0 + 0j
     rindex, windex, binnum = 1, 1, 1
     buflen = start_width
@@ -61,7 +64,8 @@ def fs_running_median(
 
         slope = (mean_new - mean_old) / (numread_old + numread_new)
         for i in range(numread_old):
-            norm = 1 / np.sqrt(mean_old + slope * ((numread_old + numread_new) / 2 - i))
+            power = mean_old + slope * ((numread_old + numread_new) / 2 - i)
+            norm = 1 / np.sqrt(power) if power > 0 else 1.0
             out_arr[windex + i] = spec_arr[windex + i] * norm
 
         windex += numread_old
@@ -72,7 +76,7 @@ def fs_running_median(
             buflen = end_width
         numread_old, mean_old = numread_new, mean_new
 
-    norm = 1 / np.sqrt(mean_old)
+    norm = 1 / np.sqrt(mean_old) if mean_old > 0 else 1.0
     out_arr[windex : windex + numread_old] = (
         spec_arr[windex : windex + numread_old] * norm
     )

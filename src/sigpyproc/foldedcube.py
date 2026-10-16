@@ -182,8 +182,8 @@ class FoldedData:
         self._dm0 = dm
         self._accel = float(accel)
         self._check_input()
-        self._tph_shifts = np.zeros(self.nsubints, dtype=np.int32)
-        self._fph_shifts = np.zeros(self.nsubbands, dtype=np.int32)
+        self._tph_shifts = np.zeros(self.nsubints, dtype=np.int64)
+        self._fph_shifts = np.zeros(self.nsubbands, dtype=np.int64)
 
     @property
     def data(self) -> np.ndarray:
@@ -343,7 +343,7 @@ class FoldedData:
             nbits=np.int32(header.nbits),
             tsamp=np.float64(header.tsamp),
             tstart=np.float64(header.tstart),
-            nsamples=np.int32(header.nsamples),
+            nsamples=np.int64(header.nsamples),
             nifs=np.int32(header.nifs),
         )
         return str(path)
@@ -367,7 +367,7 @@ class FoldedData:
         ValueError
             If the archive version is missing or not supported.
         """
-        with np.load(filename) as archive:
+        with np.load(filename, allow_pickle=False) as archive:
             if "version" not in archive.files:
                 msg = f"{filename} has no fold archive version"
                 raise ValueError(msg)
@@ -375,14 +375,38 @@ class FoldedData:
             if version != _FOLD_NPZ_VERSION:
                 msg = f"Unsupported fold archive version {version}"
                 raise ValueError(msg)
+            required = {
+                "data",
+                "period",
+                "dm",
+                "accel",
+                "period0",
+                "dm0",
+                "tph_shifts",
+                "fph_shifts",
+                "filename",
+                "data_type",
+                "nchans",
+                "foff",
+                "fch1",
+                "nbits",
+                "tsamp",
+                "tstart",
+                "nsamples",
+                "nifs",
+            }
+            missing = required - set(archive.files)
+            if missing:
+                msg = f"Fold archive is missing fields: {sorted(missing)}"
+                raise ValueError(msg)
             data = np.array(archive["data"], dtype=np.float32, copy=True)
             period = float(archive["period"])
             dm = float(archive["dm"])
             accel = float(archive["accel"])
             period0 = float(archive["period0"])
             dm0 = float(archive["dm0"])
-            tph_shifts = np.array(archive["tph_shifts"], dtype=np.int32, copy=True)
-            fph_shifts = np.array(archive["fph_shifts"], dtype=np.int32, copy=True)
+            tph_shifts = np.array(archive["tph_shifts"], copy=True)
+            fph_shifts = np.array(archive["fph_shifts"], copy=True)
             header = Header(
                 filename=str(archive["filename"]),
                 data_type=str(archive["data_type"]),
@@ -396,10 +420,21 @@ class FoldedData:
                 nifs=int(archive["nifs"]),
             )
         cube = cls(data, header, period, dm, accel)
+        if not np.isfinite(period0) or period0 <= 0 or not np.isfinite(dm0):
+            msg = "Fold archive has an invalid original period or DM"
+            raise ValueError(msg)
+        for shifts, size in ((tph_shifts, cube.nsubints), (fph_shifts, cube.nsubbands)):
+            if shifts.shape != (size,) or not np.issubdtype(
+                shifts.dtype, np.signedinteger
+            ):
+                msg = "Fold archive shift vectors must be signed integers matching axes"
+                raise ValueError(msg)
         cube._period0 = period0
         cube._dm0 = dm0
-        cube._tph_shifts = tph_shifts
-        cube._fph_shifts = fph_shifts
+        # Only circular offsets matter, and bounded shifts prevent subtraction
+        # overflow in subsequent corrections, including archives written by v1.
+        cube._tph_shifts = np.remainder(tph_shifts, cube.nbins).astype(np.int64)
+        cube._fph_shifts = np.remainder(fph_shifts, cube.nbins).astype(np.int64)
         return cube
 
     def replace_nan(self) -> None:
@@ -416,6 +451,9 @@ class FoldedData:
         dm : float
             The new DM to dedisperse to
         """
+        if not np.isfinite(dm):
+            msg = f"dm must be finite, got {dm}"
+            raise ValueError(msg)
         dmdelays = self._get_dmdelays(dm)
         for isubint in range(self.nsubints):
             for isubband in range(self.nsubbands):
@@ -434,6 +472,9 @@ class FoldedData:
         period : float
             The new period to fold with
         """
+        if not np.isfinite(period) or period <= 0:
+            msg = f"period must be positive and finite, got {period}"
+            raise ValueError(msg)
         pdelays = self._get_pdelays(period)
         for isubint in range(self.nsubints):
             for isubband in range(self.nsubbands):
@@ -465,8 +506,9 @@ class FoldedData:
                 self.header.fch1,
                 in_samples=True,
             ),
-            dtype=np.int32,
+            dtype=np.int64,
         )
+        drifts %= self.nbins
         bin_drifts = drifts - self._fph_shifts
         self._fph_shifts = drifts
         return bin_drifts
@@ -483,9 +525,13 @@ class FoldedData:
         if dbins == 0:
             drifts = np.zeros(self.nsubints, dtype=np.int32)
         else:
-            drifts = np.round(
+            shifts = np.round(
                 np.arange(self.nsubints, dtype=np.float64) / (self.nsubints / dbins),
-            ).astype(np.int32)
+            )
+            if not np.isfinite(shifts).all():
+                msg = "period correction exceeds the finite phase range"
+                raise ValueError(msg)
+            drifts = np.remainder(shifts, self.nbins).astype(np.int64)
         bin_drifts = drifts - self._tph_shifts
         self._tph_shifts = drifts
         return bin_drifts

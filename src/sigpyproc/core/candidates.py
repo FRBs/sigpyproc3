@@ -393,7 +393,7 @@ class CandidateTable:
         for name in self.table.colnames:
             plain[name] = self.table[name]
             if name in _COLUMN_UNITS:
-                plain[name] = _plain(self.table[name])
+                plain[name] = self.values(name)
         if hasattr(path, "write"):
             plain.write(path, format="ascii.csv")
         else:
@@ -466,9 +466,16 @@ class CandidateTable:
         Returns
         -------
         ndarray
-            Numeric or string values with units stripped.
+            Numeric values in canonical schema units, or unchanged extra columns.
         """
-        return _plain(self.table[name])
+        column = self.table[name]
+        if name in _COLUMN_UNITS and isinstance(column, u.Quantity):
+            try:
+                return np.asarray(column.to_value(_COLUMN_UNITS[name]))
+            except u.UnitConversionError as exc:
+                msg = f"column {name} has incompatible unit {column.unit}"
+                raise ValueError(msg) from exc
+        return _plain(column)
 
     def sort_by_snr(self) -> CandidateTable:
         """Return a copy sorted by decreasing SNR."""
@@ -526,7 +533,7 @@ class CandidateTable:
             return CandidateTable(QTable(self.table))
 
         snr = _plain(self.table["snr"]).astype(np.float64, copy=False)
-        period = _plain(self.table["period_s"]).astype(np.float64, copy=False)
+        period = self.values("period_s").astype(np.float64, copy=False)
         eligible = np.isfinite(snr) & (snr >= snr_min)
         order = np.argsort(-snr)
 

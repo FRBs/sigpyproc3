@@ -1,7 +1,7 @@
-2.0.0 (Unreleased)
+2.0.0 (2026-10-16)
 ++++++++++++++++++
 
-
+- Stable API.
 - CLI logs go to stderr. ``--quiet`` turns progress bars off.
 - Streaming writes refuse an output path that is the same file as an input, including symlinks and hard links.
 - ``remove_zerodm`` restores the mean bandpass.

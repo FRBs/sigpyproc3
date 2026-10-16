@@ -22,6 +22,7 @@ from sigpyproc.apps import (
     spp_zerodm,
 )
 from sigpyproc.core.candidates import PULSE_CANDIDATE_NAMES, CandidateTable
+from sigpyproc.fourierseries import FourierSeries
 from sigpyproc.header import Header
 from sigpyproc.io import sigproc
 from sigpyproc.readers import FilReader
@@ -959,10 +960,15 @@ class TestSppSearch:
             ["pulses", str(tim), "--method", method, "--engine", engine, "-o", out],
         )
         assert result.exit_code == 0, result.output
-        assert Path(out).read_text().splitlines()[0].split(",") == list(
-            PULSE_CANDIDATE_NAMES
-        )
+        assert Path(out).read_text().splitlines()[0].split(",") == [
+            *PULSE_CANDIDATE_NAMES,
+            "bin_origin",
+        ]
         actual = CandidateTable.from_csv(out)
+        assert np.all(
+            actual.values("bin_origin")
+            == ("start" if method == "matched_filter" else "center")
+        )
         expected = TimeSeries.from_tim(tim).find_pulses(method=method, engine=engine)
         assert len(actual) > 0
         for column in ("bin", "snr", "width_s"):
@@ -1000,7 +1006,10 @@ class TestSppSearch:
         # stdout must be CSV only, including when preprocessing controls are used.
         out = Path(tmpdir) / "stdout.csv"
         out.write_text(result.output)
-        assert result.output.splitlines()[0].split(",") == list(PULSE_CANDIDATE_NAMES)
+        assert result.output.splitlines()[0].split(",") == [
+            *PULSE_CANDIDATE_NAMES,
+            "bin_origin",
+        ]
         actual = CandidateTable.from_csv(out)
         expected = TimeSeries.from_tim(tim).find_pulses(
             engine="fft",
@@ -1127,3 +1136,99 @@ class TestSppView:
         assert result.exit_code == 0
         pngs = list(tmp_path.glob("*.png"))
         assert len(pngs) == 2
+
+
+def _synthetic_series_header(nsamples: int = 128) -> Header:
+    return Header(
+        filename="synthetic.tim",
+        data_type="time series",
+        nchans=1,
+        foff=1.0,
+        fch1=1400.0,
+        nbits=32,
+        tsamp=0.001,
+        tstart=50000.0,
+        nsamples=nsamples,
+    )
+
+
+@pytest.mark.parametrize("n", [9, 16])
+def test_viewer_reads_complex_and_amplitude_spectra(tmp_path: Path, n: int) -> None:
+    series = FourierSeries(
+        np.fft.rfft(np.arange(n)).astype(np.complex64), _synthetic_series_header(n)
+    )
+    complex_path = series.to_spec(str(tmp_path / f"complex{n}.spec"))
+    power_path = series.form_spec().to_spec(str(tmp_path / f"power{n}.spec"))
+    for path in (complex_path, power_path):
+        loaded = spp_view._read_spectrum(path, ".spec")
+        assert loaded.header.nsamples == n
+        np.testing.assert_allclose(loaded.data, series.form_spec().data)
+    result = CliRunner().invoke(
+        spp_view.main,
+        [complex_path, power_path, "--batch", "-o", str(tmp_path / "plots")],
+    )
+    assert result.exit_code == 0, result.output
+    assert len(list((tmp_path / "plots").glob("*.png"))) == 2
+
+
+def _example_series_header(n: int = 256) -> Header:
+    return Header(
+        filename="example.tim",
+        data_type="time series",
+        nchans=1,
+        fch1=1400.0,
+        foff=1.0,
+        tsamp=0.001,
+        nbits=32,
+        tstart=50000.0,
+        nsamples=n,
+    )
+
+
+@pytest.mark.parametrize("suffix", [".tim", ".dat", ".fft"])
+def test_batch_viewer_handles_every_input_and_creates_output_directory(
+    suffix: str,
+    tmp_path: Path,
+) -> None:
+    series = TimeSeries(np.arange(256, dtype=np.float32), _example_series_header())
+    paths = []
+    for name in ("first", "second"):
+        base = tmp_path / name
+        if suffix == ".tim":
+            paths.append(series.to_tim(str(base.with_suffix(suffix))))
+        elif suffix == ".dat":
+            paths.append(series.to_dat(str(base)))
+        else:
+            paths.append(series.rfft().to_fft(str(base)))
+    output = tmp_path / "new" / "plots"
+    result = CliRunner().invoke(
+        spp_view.main,
+        [*paths, "--batch", "--start", "32", "--gulp", "64", "-o", str(output)],
+    )
+    assert result.exit_code == 0, result.output
+    assert len(list(output.glob("*.png"))) == 2
+    assert len(result.output.strip().splitlines()) == 2
+
+
+def test_viewer_refuses_ambiguous_multi_input_modes(tmp_path: Path) -> None:
+    series = TimeSeries(np.ones(256, dtype=np.float32), _example_series_header())
+    tim = series.to_tim(str(tmp_path / "one.tim"))
+    spec = series.rfft().to_spec(str(tmp_path / "one.spec"))
+    result = CliRunner().invoke(spp_view.main, [tim, spec, "--batch"])
+    assert result.exit_code != 0
+    assert "share one suffix" in result.output
+    result = CliRunner().invoke(spp_view.main, [tim, tim])
+    assert result.exit_code != 0
+    assert "pass one time series" in result.output
+
+
+def test_legacy_complex_spectrum_can_be_viewed(tmp_path: Path) -> None:
+    series = TimeSeries(
+        np.arange(16, dtype=np.float32), _example_series_header(16)
+    ).rfft()
+    legacy = tmp_path / "legacy.spec"
+    with series.header.prep_outfile(str(legacy), sources=()) as writer:
+        writer.cwrite(series.data.view(np.float32))
+    loaded = spp_view._read_spectrum(str(legacy), ".spec")
+    assert loaded.header.nsamples == 16
+    np.testing.assert_allclose(loaded.data, series.form_spec().data)

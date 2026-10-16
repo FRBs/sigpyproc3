@@ -265,10 +265,8 @@ def dmt_block_valid(arr: np.ndarray, dm_delays: np.ndarray) -> np.ndarray:
     for idm in range(ndms):
         for ichan in range(nchans):
             shift = -dm_delays[idm, ichan]
-            if shift > max_pos_shift:
-                max_pos_shift = shift
-            if shift < min_neg_shift:
-                min_neg_shift = shift
+            max_pos_shift = max(max_pos_shift, shift)
+            min_neg_shift = min(min_neg_shift, shift)
     start_col = max_pos_shift
     end_col = nsamps + min_neg_shift
     valid_samples = end_col - start_col

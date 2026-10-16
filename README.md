@@ -1,55 +1,52 @@
 # sigpyproc
 
 [![GitHub CI](https://github.com/FRBs/sigpyproc3/workflows/GitHub%20CI/badge.svg)](https://github.com/FRBs/sigpyproc3/actions)
+[![PyPI](https://img.shields.io/pypi/v/sigpyproc)](https://pypi.org/project/sigpyproc/)
 [![Docs](https://readthedocs.org/projects/sigpyproc3/badge/?version=latest)](https://sigpyproc3.readthedocs.io/en/latest/?badge=latest)
 [![codecov](https://codecov.io/gh/FRBs/sigpyproc3/branch/main/graph/badge.svg)](https://codecov.io/gh/FRBs/sigpyproc3)
 [![License](https://img.shields.io/github/license/FRBs/sigpyproc3)](https://github.com/FRBs/sigpyproc3/blob/main/LICENSE)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![Scientific Python Ecosystem Coordination](https://img.shields.io/badge/SPEC-0,1-green?labelColor=%23004811&color=%235CA038)](https://scientific-python.org/specs/)
 
-`sigpyproc` is a pulsar and FRB data analysis library for python. It provides an OOP approach to pulsar data handling through the use of
-objects representing different data types (e.g. [SIGPROC filterbank](http://sigproc.sourceforge.net),
-[PSRFITS](https://www.atnf.csiro.au/research/pulsar/psrfits_definition/Psrfits.html), time-series, fourier-series, etc.).
-As pulsar data processing is often time critical, speed is maintained using
-the excellent [numba](https://numba.pydata.org) library.
+`sigpyproc` is a Python library for pulsar and FRB data. It reads [SIGPROC filterbank](http://sigproc.sourceforge.net), [PSRFITS](https://www.atnf.csiro.au/research/pulsar/psrfits_definition/Psrfits.html), time series, and Fourier series as objects, and runs the numerical work with [Numba](https://numba.pydata.org/). Use it to inspect a file, try a processing step, and prototype a search ahead of a survey pipeline.
 
 ## Installation
 
-The package requires Python 3.12 or newer.
+Python 3.12 or newer, on Linux or macOS.
 
 ```bash
-pip install sigpyproc
+python -m pip install sigpyproc
 ```
 
-Until 2.0.0 is on PyPI, install the release candidate from git:
-
-```bash
-pip install -U git+https://github.com/FRBs/sigpyproc3
-```
-
-See the [installation page](https://sigpyproc3.readthedocs.io/en/latest/install.html) for a development checkout.
-
-## Older releases
-
-2.0.0 is the stable API. The ``legacy`` branch and the last 0.x release, 0.5.5, keep the previous interface.
+`uv pip install sigpyproc` works the same way. The first Numba call compiles; later calls reuse that code. See the [installation page](https://sigpyproc3.readthedocs.io/en/latest/install.html) for a virtual environment or a development checkout.
 
 ## Usage
 
 ```python
-from sigpyproc import FilReader, PFITSReader, TimeSeries
+from sigpyproc import FilReader
 
-fil = FilReader("tutorial.fil")
-fits = PFITSReader("tutorial.fits")
+with FilReader("observation.fil") as obs:
+    print(obs.header)
+    series = obs.dedisperse(dm=30.0)
 
-ts = TimeSeries.from_tim("observation.tim")
-hits = ts.search(nfolds=4, pmax=10.0)
-hits.cluster(snr_min=8.0).to_csv("cands.csv")
+candidates = series.search(nfolds=4, pmax=10.0)
+candidates.cluster(snr_min=8.0).to_csv("candidates.csv")
 ```
 
-Check out the [filterbank quickstart](https://sigpyproc3.readthedocs.io/en/latest/tutorials/quickstart.html),
-the [search tutorial](https://sigpyproc3.readthedocs.io/en/latest/tutorials/search.html),
-and the [API docs](https://sigpyproc3.readthedocs.io) for more.
+From the terminal:
+
+```bash
+spp_header print observation.fil
+spp_view observation.fil
+spp_search fft observation.tim --nfolds 4 --pmax 10 -o candidates.csv
+```
+
+Each `spp_*` command has `--help`. The [command reference](https://sigpyproc3.readthedocs.io/en/latest/cmd.html) lists the rest. The [quickstart](https://sigpyproc3.readthedocs.io/en/latest/tutorials/quickstart.html) runs the Python example on a synthetic file.
+
+## Older releases
+
+2.0.0 is the stable API. The `legacy` branch and the last 0.x release, 0.5.5, keep the previous interface.
 
 ## Contributing
 
-Check out [the developer documentation](https://sigpyproc3.readthedocs.io/en/latest/dev.html) for more info about getting started.
+See the [developer documentation](https://sigpyproc3.readthedocs.io/en/latest/dev.html). sigpyproc is released under the [MIT license](https://github.com/FRBs/sigpyproc3/blob/main/LICENSE).

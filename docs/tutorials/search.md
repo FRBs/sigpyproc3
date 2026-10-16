@@ -1,21 +1,25 @@
+---
+file_format: mystnb
+kernelspec:
+  name: python3
+  display_name: Python 3
+---
+
 (search-tutorial)=
 
 # Searching time series
 
-```{note}
-Search is a **library-first** API. The `spp_search` CLI is a thin wrapper
-around {py:class}`~sigpyproc.timeseries.TimeSeries` and
-{py:class}`~sigpyproc.core.candidates.CandidateTable`. This is a modern
-extension of SIGPROC, not a clone of `seek` / `best` / `peak`.
-```
+Once you have a dedispersed time series — usually from
+{py:meth}`~sigpyproc.base.Filterbank.dedisperse` or a SIGPROC `.tim` file —
+you can hunt for periodic power with an FFT or for individual bursts with a
+boxcar search. Results land in one {py:class}`~sigpyproc.core.candidates.CandidateTable`
+that you can filter, cluster, and export to CSV. The `spp_search` commands call
+the same methods shown here; they are a convenience layer, not a separate
+search engine.
 
-sigpyproc can look for **periodic signals** with an FFT and **single
-pulses** with a boxcar in a time series, and keep the hits in
-one candidate table. Input is a SIGPROC `.tim` file or an in-memory
-{py:class}`~sigpyproc.timeseries.TimeSeries` — typically the output of
-{py:meth}`~sigpyproc.base.Filterbank.dedisperse`.
-
-This page is the “how to use it” companion to {doc}`/tutorials/quickstart`.
+This page picks up where {doc}`/tutorials/quickstart` leaves off. It describes a
+modern Python API inspired by SIGPROC's `seek` / `best` / `peak`, but it is not
+a drop-in replacement for those tools.
 
 ---
 
@@ -29,13 +33,11 @@ This page is the “how to use it” companion to {doc}`/tutorials/quickstart`.
 | `peak` | {py:meth}`~sigpyproc.timeseries.TimeSeries.find_pulses` / `spp_search pulses` | Selectable PRESTO-inspired and original matched-filter boxcar searches. |
 | `giant` | — | Interactive PGPLOT viewer; out of scope. |
 
-The public interchange format is **CSV**, not `.prd`.
-
----
+Exports are **CSV**, not `.prd`.
 
 ## Load a time series
 
-From a SIGPROC `.tim` (the GBT example ships with the test suite):
+From a `.tim` in the repo test data:
 
 ```python
 from sigpyproc.timeseries import TimeSeries
@@ -82,12 +84,10 @@ header = Header(
 ts = TimeSeries(data, header)
 ```
 
----
-
 ## FFT search
 
-{py:meth}`~sigpyproc.timeseries.TimeSeries.search` is the `seek`-shaped
-pipeline, on purpose, in a fixed order:
+{py:meth}`~sigpyproc.timeseries.TimeSeries.search` follows the same steps SIGPROC
+`seek` used, in order:
 
 1. Optional acceleration resample
 2. Real FFT
@@ -95,8 +95,7 @@ pipeline, on purpose, in a fixed order:
    median on the **complex** series — not
    {py:meth}`~sigpyproc.timeseries.TimeSeries.deredden`)
 4. Amplitude spectrum, with inter-bin interpolation by default
-5. Harmonic folds \(2, 4, \ldots, 2^{N}\) **in addition to** the
-   unfolded spectrum
+5. Harmonic folds $2, 4, \ldots, 2^{N}$ **in addition to** the unfolded spectrum
 6. Local-maxima peak pick → one {py:class}`~sigpyproc.core.candidates.CandidateTable`
 
 ```python
@@ -107,24 +106,23 @@ print(hits.values("snr")[:5])
 print(hits.table["nharm"][:5])
 ```
 
-`nfolds` is the number of **folds**, not “use harmonics 1…n”.
-`nfolds=4` searches the unfolded spectrum plus 2, 4, 8 and 16 harmonics.
-`method` chooses how those harmonics are added:
+`nfolds` counts **extra** harmonic stacks, not “search harmonics 1 through n”.
+With `nfolds=4` you get the unfolded spectrum plus folds at 2, 4, 8, and 16.
+How those folds are combined depends on `method`:
 
 - `lyne` (default): SIGPROC Lyne-Ashworth stretch, with a half-bin neighbour add.
 - `simple`: integer bins `h*n` only. No drift. Fast, and the least sensitive off-bin.
 - `presto`: stock PRESTO sum, even harmonics, nearest bin.
 - `greedy`: follow the louder neighbour as the harmonic order increases.
 
-Folded spectra stay on the original Fourier grid. A narrow pulse can still
-peak on a harmonic of the true period. `find_pulses` is the boxcar search
-for a single event.
+Everything stays on the original Fourier grid, so a sharp pulse can still
+peak on a harmonic of the true period. For one-off bursts, use `find_pulses` instead.
 
 ### Cluster harmonic families
 
-Several folds of the same pulsar show up as \(P\), \(P/2\), \(2P\), …
-{py:meth}`~sigpyproc.core.candidates.CandidateTable.cluster` keeps the
-loudest member of each \(k/n\) family (default \(k, n \le 16\)):
+One pulsar often appears several times — $P$, $P/2$, $2P$, and so on.
+{py:meth}`~sigpyproc.core.candidates.CandidateTable.cluster` keeps the strongest
+row in each $k/n$ family (by default $k, n \le 16$):
 
 ```python
 best = hits.cluster(snr_min=8.0, period_tol=1e-4)
@@ -138,16 +136,12 @@ each other. Slice first if you want to cluster only FFT hits:
 fft_only = hits[hits.values("kind") == "fft"]
 ```
 
----
-
 ## Single pulses
 
-{py:meth}`~sigpyproc.timeseries.TimeSeries.find_pulses` defaults to a
-PRESTO-inspired search. It removes a baseline and estimates noise in blocks,
-searches full-resolution boxcars, then suppresses nearby weaker detections
-within and across widths. This is a modern adaptation of
-[PRESTO single_pulse_search.py](https://github.com/scottransom/presto/blob/master/bin/single_pulse_search.py),
-with different normalization and deterministic greedy pruning.
+{py:meth}`~sigpyproc.timeseries.TimeSeries.find_pulses` follows the broad
+idea of [PRESTO’s single-pulse search](https://github.com/scottransom/presto/blob/master/bin/single_pulse_search.py):
+baseline removal, block noise estimates, boxcars at several widths, then prune
+weak neighbours. Normalisation and tie-breaking differ from stock PRESTO.
 
 ```python
 pulses = ts.find_pulses(snr_min=6.0, max_width=256)
@@ -162,10 +156,7 @@ $$
 $$
 
 where samples $z_i$ are baseline-subtracted and normalized by their block's
-noise estimate, and $w$ is the width in samples. The `running_sum` engine
-(default) uses Numba rolling sums with float64 accumulation. The `fft` engine
-uses zero-padded linear convolution through rocket-fft inside Numba. Numerical
-rounding can change results very close to an SNR threshold or a tie.
+noise estimate, and $w$ is the width in samples.
 
 ### Widths and preprocessing
 
@@ -185,13 +176,10 @@ c = ts.find_pulses(width_style="geometric", spacing_factor=2, max_width=256)
 d = ts.find_pulses(block_size=16000, detrend="median", chunk_size=8192)
 ```
 
----
+## CPU Heimdall behaviour
 
-## CPU Heimdall behavior
-
-`method="heimdall"` models the single-DM stages of the supplied Heimdall CUDA
-pipeline on a CPU. It is intended for experimentation on an already dedispersed
-series; GPU parity is unverified.
+`method="heimdall"` is a CPU sketch of Heimdall’s single-DM stages for trying
+ideas on an already dedispersed series. Heimdall parity is not guaranteed.
 
 ```python
 from sigpyproc.algorithms.heimdall import HeimdallConfig
@@ -212,12 +200,10 @@ renormalized = ts.find_pulses(
 native.to_pulse_csv("heimdall.csv", ts.header.tsamp)
 ```
 
----
-
 ## Command line
 
-Each `spp_*` tool is a standalone script — there is no umbrella `spp`
-command. Search is one Click group:
+Search lives under one Click group (`spp_search`); there is no umbrella `spp`
+command:
 
 ```bash
 spp_search fft observation.tim --nfolds 4 --pmax 10 -o fft.csv
@@ -228,18 +214,20 @@ spp_search pulses observation.dat --snr 5 --max-width 150 -o dat_pulses.csv
 spp_search cluster fft.csv --snr 8 -o best.csv
 ```
 
-Defaults write `<stem>_{fft,pulses,cluster}.csv`. Use `-o -` to
-print CSV on stdout. Pulse CSVs contain only event fields, including event
-`time_s` and `width_bins`, rather than periodic-candidate columns. Full flag
-lists live in {doc}`/cmd`.
-
----
+Without `-o`, outputs default to `<stem>_fft.csv` (and similar). `-o -` prints
+CSV to stdout. Pulse CSVs only carry event columns (`time_s`, `width_bins`, …),
+not period trials. See {doc}`/cmd` for every flag.
 
 ## A complete walk-through
 
-Inject a rectangular pulsar, FFT-search it, and cluster:
+The cells below build a noisy periodic pulse train in memory, run an FFT search,
+cluster harmonic families, and plot the amplitude spectrum. No test-data files
+are required.
 
-```python
+```{code-cell} ipython3
+%matplotlib inline
+
+import matplotlib.pyplot as plt
 import numpy as np
 from sigpyproc.header import Header
 from sigpyproc.timeseries import TimeSeries
@@ -268,26 +256,60 @@ ts = TimeSeries(
 
 cands = ts.search(nfolds=2, pmax=1.0, snr_min=6.0)
 best = cands.cluster(snr_min=8.0)
-print(best.values("period_s")[0], best.values("snr")[0])
+print(f"Top clustered period {best.values('period_s')[0]:.4f} s, SNR {best.values('snr')[0]:.1f}")
+print(f"{len(cands)} raw FFT hits before clustering")
 ```
 
-`cluster` keeps the loudest member of a harmonic family. For this
-rectangular pulse that member is often a harmonic, not \(0.05\,\mathrm{s}\).
-Look through `cands` for the injected period. A match within about one
-Fourier bin is \(P^{2} / T_{\mathrm{obs}}\). Do not read the first row of
-`best` as the fundamental.
+```{code-cell} ipython3
+spectrum = ts.rfft().form_spec(interpolate=False)
+frequencies = np.arange(spectrum.data.size) / spectrum.header.tobs
+fig, ax = plt.subplots(figsize=(8, 3), layout="constrained")
+ax.plot(frequencies[1:], spectrum.data[1:], linewidth=0.8)
+ax.axvline(1 / period, color="tab:orange", linestyle="--", label="Injected fundamental")
+ax.set(xlim=(0, 150), xlabel="Frequency (Hz)", ylabel="Spectral amplitude",
+       title="Amplitude spectrum of the synthetic series")
+ax.legend()
+plt.show()
+plt.close(fig)
+```
 
-To invent a filterbank instead of a time series, use
-{py:func}`~sigpyproc.simulation.pulsar.fake_filterbank` /
-`spp_fake pulsar`, then {py:meth}`~sigpyproc.base.Filterbank.dedisperse`.
-`spp_fake furby` writes a mock FRB whose ``--snr`` is the matched-filter
-signal-to-noise ratio of the dedispersed sum, including 1- to 16-bit files.
-`spp_fake inject` stamps the same pulses into a filterbank that `spp_fake`
-already wrote. The walk-through is {doc}`/tutorials/fake`.
+```{code-cell} ipython3
+pulses = ts.find_pulses(snr_min=5.0, max_width=64)
+times = np.arange(ts.nsamples) * tsamp
+fig, ax = plt.subplots(figsize=(8, 2.8), layout="constrained")
+ax.plot(times[:4000], data[:4000], color="0.35", linewidth=0.6, label="Data (first 4 s)")
+for centre, width in zip(
+    pulses.values("bin")[:8] * tsamp,
+    pulses.values("width_s")[:8],
+    strict=True,
+):
+    ax.axvspan(centre - width / 2, centre + width / 2, color="tab:red", alpha=0.15)
+ax.set(xlabel="Time (s)", ylabel="Intensity", title="Single-pulse detections (first eight)")
+plt.show()
+plt.close(fig)
+print(f"{len(pulses)} pulses above threshold")
+```
+
+`cluster` keeps the loudest member of a harmonic family. For this rectangular
+pulse that row is often a harmonic, not $0.05\,\mathrm{s}$. Browse `cands` for
+the injected period. A match within about one Fourier bin is
+$P^{2} / T_{\mathrm{obs}}$. Treat the first row of `best` as a hint, not the
+fundamental by definition.
+
+To start from a filterbank instead of a time series, use
+{py:func}`~sigpyproc.simulation.pulsar.fake_filterbank` or `spp_fake pulsar`,
+then {py:meth}`~sigpyproc.base.Filterbank.dedisperse`. Mock FRBs and injection
+are covered in {doc}`/tutorials/fake`.
 
 ---
 
 ## What this is not
 
-Search here is for **exploratory** work on a single time series. It is
-not a drop-in survey pipeline and it is not bit-identical to SIGPROC.
+Search here is for exploratory work on a single time series. It is not a
+drop-in survey pipeline and it is not bit-identical to SIGPROC.
+
+```{code-cell} ipython3
+:tags: [remove-cell]
+
+plt.close("all")
+```

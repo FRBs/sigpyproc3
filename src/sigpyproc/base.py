@@ -55,6 +55,10 @@ class Filterbank(ABC):
         self._chan_stats: ChannelStats | None = None
         self._chan_stats_window: tuple[int, int, str] | None = None
 
+    @abstractmethod
+    def close(self) -> None:
+        """Release the input stream owned by this reader."""
+
     @property
     @abstractmethod
     def header(self) -> Header:

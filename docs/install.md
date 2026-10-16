@@ -6,23 +6,30 @@
 **Requirements:** Python 3.12 or newer.
 ```
 
-`sigpyproc` 2.0.0 is the stable release. Install it from PyPI, or from git until that upload is live.
+The 2.0 release requires Python 3.12 or newer on Linux or macOS. It ships a
+Python wheel, with native numerical dependencies supplied by platform wheels.
 
----
+## Install from PyPI
 
-## Quick Start (Recommended)
-
-The recommended installation method uses [uv](https://docs.astral.sh/uv/):
-
-```bash
-pip install sigpyproc
-```
-
-Or, before the PyPI upload:
+Install sigpyproc in your Python environment:
 
 ```bash
-uv pip install git+https://github.com/FRBs/sigpyproc3
+python -m pip install sigpyproc
 ```
+
+If you manage environments with [uv](https://docs.astral.sh/uv/), use
+`uv pip install sigpyproc` inside an activated environment.
+
+For a fresh environment with Python's standard tools:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install sigpyproc
+```
+
+Runtime dependencies are installed automatically. Numba compiles numerical routines on first use, so an
+initial call can take longer than subsequent calls.
 
 Verify the installation:
 
@@ -31,8 +38,8 @@ python -c "import sigpyproc; print(sigpyproc.__version__)"
 ```
 
 After installation, browse the {doc}`generated/sigpyproc` for the full API reference,
-or jump to {doc}`/tutorials/quickstart` (filterbanks) and
-{doc}`/tutorials/search` (FFT / pulses).
+or jump to {doc}`/tutorials/basics` (objects and headers),
+{doc}`/tutorials/quickstart` (plots), and {doc}`/tutorials/search` (FFT / pulses).
 
 ---
 
@@ -60,7 +67,7 @@ This installs:
 From the repository root:
 
 ```bash
-pytest --cov=src --cov-report=html -v
+pytest -v
 ```
 
 All tests should pass on a supported Python version.
@@ -103,7 +110,8 @@ All required dependencies are installed automatically via `uv sync` or `uv pip i
 
 ## Next steps
 
-- {doc}`/tutorials/quickstart` — load a filterbank, inspect the header, dedisperse.
+- {doc}`/tutorials/basics` — `FilReader`, headers, dedisperse, FFT, fold.
+- {doc}`/tutorials/quickstart` — plots and a short periodicity search.
 - {doc}`/tutorials/search` — search a time series and work with `CandidateTable`.
 - {doc}`/tutorials/fake` — write a mock FRB, or inject one into a filterbank.
 - {doc}`/cmd` — every `spp_*` command.

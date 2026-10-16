@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -176,7 +177,10 @@ def zap_times(
     fil = open_filterbank(filfile)
     if in_place:
         src = Path(filfile)
-        tmp_path = src.with_name(src.name + ".zap.tmp")
+        with NamedTemporaryFile(
+            prefix=f".{src.name}.", suffix=".zap.tmp", dir=src.parent, delete=False
+        ) as temporary:
+            tmp_path = Path(temporary.name)
         try:
             fil.zap_times(
                 [(start, end)],

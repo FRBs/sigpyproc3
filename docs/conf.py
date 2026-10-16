@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from sphinx.application import Sphinx
 
 # -- Project information
-project = "sigpyproc3"
+project = "sigpyproc"
 author = "Pravir Kumar"
 year = dt.datetime.now(tz=dt.UTC).date().year
 copyright = f"{year}, {author}"  # noqa: A001
@@ -31,6 +31,15 @@ release = __version__
 version = release
 master_doc = "index"
 repo_url = "https://github.com/FRBs/sigpyproc3"
+
+# -- PDF: preserve Unicode scientific notation throughout the complete manual.
+latex_engine = "xelatex"
+# API index entries are English; use makeindex without an extra xindy dependency.
+latex_use_xindy = False
+# Build chapters from the complete navigation tree, without landing-page cards.
+latex_documents = [
+    ("index", "sigpyproc.tex", "sigpyproc Documentation", author, "manual", True),
+]
 
 # -- General configuration
 extensions = [
@@ -49,7 +58,14 @@ extensions = [
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ["_templates"]
-exclude_patterns = ["_build", "**.ipynb_checkpoints", "Thumbs.db", ".DS_Store"]
+# docs/header.md is internal reference material; it lives in the repository only.
+exclude_patterns = [
+    "_build",
+    "**.ipynb_checkpoints",
+    "Thumbs.db",
+    ".DS_Store",
+    "header.md",
+]
 default_role = "any"
 nitpicky = True
 rst_epilog = f"""
@@ -72,7 +88,7 @@ html_theme_options = {
     "show_toc_level": 2,
     "header_links_before_dropdown": 4,
     "use_fullscreen_button": True,
-    "show_navbar_depth": 2,
+    "show_navbar_depth": 1,
     "navigation_with_keys": True,
     "toc_title": "On this page",
 }
@@ -147,6 +163,10 @@ numpydoc_xref_aliases = {
     "PulseParams": "sigpyproc.simulation.furby.PulseParams",
     "Injector": "sigpyproc.simulation.inject.Injector",
     "FileWriter": "sigpyproc.io.fileio.FileWriter",
+    "WaterfallViewer": "sigpyproc.viz.waterfall.WaterfallViewer",
+    "SeriesViewer": "sigpyproc.viz.series.SeriesViewer",
+    "SpectrumViewer": "sigpyproc.viz.series.SpectrumViewer",
+    "RFIMask": "sigpyproc.core.rfi.RFIMask",
 }
 numpydoc_xref_ignore = {
     "of",
@@ -166,8 +186,13 @@ myst_enable_extensions = [
     "dollarmath",
     "amsmath",
 ]
-nb_execution_mode = "auto"
+# Inline/display math in MyST must use $...$ / $$...$$ (not \(...\)).
+myst_update_mathjax = True
+# Rebuilt notebook pages execute even when the source contains saved outputs.
+nb_execution_mode = "force"
 nb_execution_timeout = 300
+nb_execution_in_temp = True
+nb_execution_raise_on_error = True
 
 # -- Sphinx copybutton
 copybutton_prompt_text = ">>> "

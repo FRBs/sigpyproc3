@@ -95,30 +95,40 @@ jobs:
               os.utime(path, (stamp, stamp))
           EOF
 
-      - name: Run pytest (with coverage)
-        if: runner.os == 'Linux' && matrix.python-version == '3.12'
-        run: uv run pytest --cov=src --cov-report=xml -v
-
-      - name: Run pytest (with coverage)
-        if: runner.os == 'Linux' && matrix.python-version != '3.12'
-        run: uv run pytest --cov=src --cov-report=xml -v
-
       - name: Run pytest
-        if: runner.os == 'macOS'
         run: uv run pytest -q
 
-      - name: Upload coverage to Codecov
-        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.14'
+  coverage:
+    name: line coverage (Python + Numba compilation)
+    runs-on: ubuntu-latest
+    env:
+      MPLBACKEND: Agg
+      NUMBA_NUM_THREADS: "2"
+      NUMBA_JIT_COVERAGE: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+          python-version: "3.12"
+      - run: uv sync --extra tests
+      - name: Test and measure line coverage
+        # runner is valid only in a step. A fresh directory makes Numba
+        # compile every kernel and report those lines.
+        env:
+          NUMBA_CACHE_DIR: ${{ runner.temp }}/numba-coverage-${{ github.run_id }}-${{ github.run_attempt }}
+        run: uv run pytest --cov=src --cov-report=xml --cov-report=term-missing
+      - name: Upload coverage
         uses: codecov/codecov-action@v7
         with:
           files: ./coverage.xml
-          name: codecov-umbrella
+          name: python-and-numba-compilation
           fail_ci_if_error: true
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
-  installed-wheel:
-    name: installed wheel
+  distributions:
+    name: distribution build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -150,5 +160,9 @@ jobs:
           location = pathlib.Path(inspect.getfile(sigpyproc))
           if "site-packages" not in location.parts:
               raise SystemExit(f"imported from the checkout: {location}")
+          if not (location.parent / "py.typed").is_file():
+              raise SystemExit(f"py.typed missing from {location.parent}")
           assert TimeSeries is not None
           PY
+          /tmp/sigpyproc-wheel/bin/spp_header --help >/dev/null
+

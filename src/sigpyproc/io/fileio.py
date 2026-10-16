@@ -37,9 +37,9 @@ def ensure_output_does_not_alias(
 
     Parameters
     ----------
-    sources : iterable of path
+    sources : iterable of str or Path
         Files that must remain unchanged.
-    destinations : iterable of path
+    destinations : iterable of str or Path
         Files about to be opened for writing.
 
     Raises

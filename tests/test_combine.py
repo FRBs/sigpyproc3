@@ -70,3 +70,87 @@ def test_bad_axis_and_gulp_are_rejected_before_writing(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="gulp"):
         splice_filterbanks([high, low], str(out), gulp=0)
     assert not out.exists()
+
+
+def _example_series_header(n: int = 256) -> Header:
+    return Header(
+        filename="example.tim",
+        data_type="time series",
+        nchans=1,
+        fch1=1400.0,
+        foff=1.0,
+        tsamp=0.001,
+        nbits=32,
+        tstart=50000.0,
+        nsamples=n,
+    )
+
+
+@pytest.mark.parametrize(
+    "updates",
+    [
+        {"tsamp": 0.002},
+        {"nbits": 16},
+        {"nsamples": 7},
+        {"foff": -2.0},
+        {"dm": 20.0},
+        {"frame": "barycentric"},
+        {"source": "Other"},
+        {"tstart": 50001.0},
+    ],
+)
+def test_splice_mismatches_leave_existing_output_untouched(
+    updates: dict,
+    tmp_path: Path,
+) -> None:
+    inputs = []
+    for name, freq, changes in [("high", 1420.0, {}), ("low", 1416.0, updates)]:
+        path = tmp_path / f"{name}.fil"
+        header = _example_series_header(8).new_header(
+            {
+                "filename": str(path),
+                "data_type": "filterbank",
+                "nbits": 8,
+                "nchans": 4,
+                "fch1": freq,
+                "foff": -1.0,
+                **changes,
+            }
+        )
+        with header.prep_outfile(str(path), sources=()) as writer:
+            writer.cwrite(np.arange(header.nsamples * 4, dtype=np.float32))
+        inputs.append(path)
+    destination = tmp_path / "existing.fil"
+    destination.write_bytes(b"keep this output on validation failure")
+    with pytest.raises(ValueError, match="match"):
+        splice_filterbanks(inputs, str(destination))
+    assert destination.read_bytes() == b"keep this output on validation failure"
+
+
+def test_ascending_splice_sorts_samples_and_channel_coordinates(tmp_path: Path) -> None:
+    inputs = []
+    arrays = []
+    for band in range(2):
+        path = tmp_path / f"band{band}.fil"
+        data = (np.arange(32) + band * 100).astype(np.uint8).reshape(8, 4)
+        header = _example_series_header(8).new_header(
+            {
+                "filename": str(path),
+                "data_type": "filterbank",
+                "nbits": 8,
+                "nchans": 4,
+                "foff": 1.0,
+                "fch1": 1400.0 + band * 4,
+            }
+        )
+        with header.prep_outfile(str(path), sources=()) as writer:
+            writer.cwrite(data.ravel())
+        inputs.append(path)
+        arrays.append(data)
+    out = tmp_path / "joined.fil"
+    splice_filterbanks(inputs[::-1], str(out), gulp=3)
+    with FilReader(out) as reader:
+        np.testing.assert_allclose(reader.header.chan_freqs, np.arange(1400, 1408))
+        np.testing.assert_array_equal(
+            reader.read_block(0, 8).data.T, np.concatenate(arrays, axis=1)
+        )

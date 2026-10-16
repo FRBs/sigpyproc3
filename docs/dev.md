@@ -1,12 +1,8 @@
-# Development Guide
+# Development guide
 
-This page outlines the workflow, conventions, and extension points for contributing to **sigpyproc**.
+This page outlines the workflow and conventions for contributing to **sigpyproc**.
 
----
-
-## Development Setup
-
-Clone the repository and install development dependencies:
+## Get a working tree
 
 ```bash
 git clone https://github.com/FRBs/sigpyproc3.git
@@ -14,76 +10,45 @@ cd sigpyproc3
 uv sync --extra tests --extra dev --extra docs
 ```
 
-This installs:
+That pulls in the library, pytest, ruff, ty, and the Sphinx/MyST stack for
+documentation.
 
-- Runtime dependencies  
-- Test suite requirements  
-- Linting and static typing tools  
-- Documentation build dependencies  
+## Usual workflow
 
----
+Branch from `main`, make your change, add or adjust tests, run the checks below,
+and open a PR. New public API should match existing patterns (data objects,
+headers, streaming reads) and the full test suite should pass.
 
-## Contribution Workflow
+## Where new code goes
 
-Typical development cycle:
+User-facing code lives on the data classes — {py:class}`~sigpyproc.base.Filterbank`,
+{py:class}`~sigpyproc.timeseries.TimeSeries`, {py:class}`~sigpyproc.core.candidates.CandidateTable`,
+and friends. Heavy lifting is in Numba kernels under `sigpyproc.kernels`.
+Metadata stays on {py:class}`~sigpyproc.header.Header` and friends in `io/`.
 
-1. Create a feature branch.
-2. Implement changes.
-3. Add or update tests.
-4. Run quality checks.
-5. Build documentation locally to verify changes.
-6. Open a pull request.
+Search is a good example of the split: `TimeSeries.search`, `find_pulses`, and
+`PowerSpectrum.find_peaks` are methods on those objects, but the algorithms sit
+in `sigpyproc.algorithms` on plain arrays. Single-pulse paths go through
+`box.py` (PRESTO-style stages in `sps.py`, optional CPU Heimdall in
+`heimdall.py`); periodic picking is in `period.py`; shared width banks and
+validation are in `common.py`. Put the algorithm in the right module, keep
+`apps/` and `io/` thin — `spp_search` is only Click glue.
 
-All contributions should maintain API consistency and pass the full test suite.
+## Example: a `bandpass()` method
 
----
+Suppose you want total power per channel across the whole filterbank, returned
+as a one-channel {py:class}`~sigpyproc.timeseries.TimeSeries`. That belongs on
+{py:class}`~sigpyproc.base.Filterbank` because you still have frequency
+resolution while streaming in time.
 
-## Extending sigpyproc
-
-The architecture separates:
-
-- **User-facing API** (high-level classes)
-- **Core numerical kernels** (Numba-accelerated)
-- **Structured metadata handling**
-
-New functionality typically involves:
-
-1. Adding a method to a data object (e.g. {py:class}`~sigpyproc.base.Filterbank`, {py:class}`~sigpyproc.timeseries.TimeSeries`, {py:class}`~sigpyproc.core.candidates.CandidateTable`)
-2. Implementing or extending a Numba kernel
-3. Writing tests
-4. Documenting the public API
-
-Search (`TimeSeries.search` / `find_pulses`, `PowerSpectrum.find_peaks`)
-is called from those objects. Algorithms operate on plain arrays in the
-`sigpyproc.algorithms` package. Its two public frontends are `box.py` for
-single-pulse searches and `period.py` for spectral peak picking.
-`box.py` selects the method and delegates to the PRESTO-inspired stages in
-`sps.py` or the CPU Heimdall stages in `heimdall.py`. Shared validation,
-width banks, and candidate utilities live in `common.py`. Numerical kernels
-remain in `sigpyproc.kernels`.
-
-Attribute source algorithms in their modules. Keep engine comparisons on
-shared preprocessing, widths, alignment, and pruning. `spp_search` is a thin
-Click wrapper. Do not put search logic in `apps/` or `io/`.
-
----
-
-## Example: Adding a new function: `bandpass()`
-
-**Goal:** Add a new function called `bandpass`, which will return the total power
-as a function of frequency for the filterbank data.
-
-### Step 1 — Add the API Method
-
-As this function will run on data with both time and frequency resolution, it belongs in the
-{py:class}`~sigpyproc.base.Filterbank` class.
+**API method** (on `Filterbank`):
 
 ```python
 def bandpass(self, gulp: int = 16384, **plan_kwargs: Unpack[PlanKwargs]) -> TimeSeries:
     bpass_ar = np.zeros(self.header.nchans, dtype=np.float32)
     num_samples = 0
 
-    for nsamps, _, data in self.read_plan(**plan_kwargs):
+    for nsamps, _, data in self.read_plan(gulp=gulp, **plan_kwargs):
         kernels.extract_bpass(data, bpass_ar, self.header.nchans, nsamps)
         num_samples += nsamps
 
@@ -93,19 +58,10 @@ def bandpass(self, gulp: int = 16384, **plan_kwargs: Unpack[PlanKwargs]) -> Time
     return TimeSeries(bpass_ar, self.header.new_header(hdr_changes))
 ```
 
-This method:
+Stream blocks, call a kernel, return a new object with an updated header — same
+shape as other filterbank methods.
 
-- Streams data in blocks  
-- Calls a compiled kernel  
-- Returns a new {py:class}`~sigpyproc.timeseries.TimeSeries` instance  
-
-Public-facing methods should remain clean and explicit.
-
----
-
-### Step 2 — Implement the Numba Kernel
-
-Add the corresponding kernel to `sigpyproc/kernels/filterbank.py`:
+**Kernel** in `sigpyproc/kernels/filterbank.py`:
 
 ```python
 @njit(
@@ -120,64 +76,73 @@ def extract_bpass(inarray, outarray, nchans, nsamps):
             outarray[ichan] += inarray[nchans * isamp + ichan]
 ```
 
-This kernel:
+Kernels stay small, side-effect free, and linear in memory. Prefer `parallel=True`
+only when it actually helps.
 
-- Accumulates power along the time axis  
-- Uses `parallel=True` to enable Numba's parallel execution  
-- Is intentionally simple and memory-linear
+## Checks before you push
 
-We keep kernels small, predictable, and side-effect free.
-
----
-
-## Quality Checks
-
-From the repository root:
+From the repo root:
 
 ```bash
 ruff check
 ruff format --check
 ty check
-pytest --cov=src --cov-report=html -v
+pytest -v
 ```
 
-All checks must pass before submitting a pull request.
+For coverage of compiled kernels, point Numba at a fresh cache each run:
 
----
+```bash
+NUMBA_CACHE_DIR="$(mktemp -d)" NUMBA_JIT_COVERAGE=1 MPLBACKEND=Agg NUMBA_NUM_THREADS=2 \
+  pytest --cov=src --cov-report=html --cov-report=term-missing
+```
 
-## Building Documentation
+CI expects all of the above to pass.
+
+## Build the docs
 
 ```bash
 sphinx-build -b html docs docs/_build/html -W --keep-going
 ```
 
-Open `docs/_build/html/index.html` in your browser to verify the changes.
-Documentation builds must complete without warnings.
+Open `docs/_build/html/index.html`. We treat warnings as errors (`-W`).
 
----
+**Runnable tutorials** use MyST Notebook (`myst_nb`): front matter
+`file_format: mystnb` and `{code-cell} ipython3` fences. Use `%matplotlib inline`
+and `plt.show()` — Agg alone will not embed figures. `header.md` is static
+Markdown; `io.md` runs against `tests/data/parkes_4bit.sf` in a git checkout.
+Seeded sims and temp dirs keep builds reproducible; a failing cell fails the
+build. Force a full re-execute with `sphinx-build -E -a ...`.
 
-## Reporting Issues
+In MyST prose, write math as `$...$` or `$$...$$`, not `\(...\)`. Avoid fussy
+LaTeX inside tables; put the formula in the next paragraph.
 
-Please report bugs or feature requests via the [GitHub issue tracker](https://github.com/FRBs/sigpyproc3/issues).
+The README cards use PNGs exported from the viewer and folding notebooks. After
+you change those tutorials:
 
-Include:
+```bash
+python docs/export_figures.py \
+  docs/_build/jupyter_execute/tutorials/viewers.ipynb \
+  docs/_build/jupyter_execute/tutorials/folding.ipynb
+sphinx-build -b html docs docs/_build/html -W --keep-going
+```
 
-- Minimal reproducible example  
-- Python version  
-- Operating system  
-- Relevant stack traces  
+The script reads cells tagged `preview-waterfall` and `preview-fold`; check
+`docs/_static/figures/` and the rendered HTML.
 
----
+## API vs narrative docs
 
-## Documentation Policy
+- Docstrings in `src/sigpyproc/` (NumPy style) feed the API reference.
+- Guides and tutorials are `docs/*.md`.
+- Autosummary generates the per-module HTML under `generated/`.
 
-- API documentation lives in `src/sigpyproc/**` using NumPy-style docstrings.
-- Narrative documentation lives in `docs/*.md`.
-- Per-module API pages are generated via autosummary.
+## Bugs and feature requests
 
----
+Use the [GitHub issue tracker](https://github.com/FRBs/sigpyproc3/issues). A
+useful report has a small reproducer, Python version, OS, and a traceback if
+something crashed.
 
-## Contributing code or documentation
+## Further reading
 
-An excellent place to start is the
-[AstroPy developer docs](https://docs.astropy.org/en/latest/index_dev.html).
+The [Astropy developer guide](https://docs.astropy.org/en/latest/index_dev.html)
+is a solid model for Python astronomy packaging and contribution norms.

@@ -243,3 +243,56 @@ def test_zap_in_place_replaces_after_success_and_keeps_input_on_error(
         data = fil.read_block(0, 8).data
     np.testing.assert_array_equal(data[:, :2], 0)
     np.testing.assert_array_equal(data[:, 2:], 9)
+
+
+def _synthetic_series_header(nsamples: int = 128) -> Header:
+    return Header(
+        filename="synthetic.tim",
+        data_type="time series",
+        nchans=1,
+        foff=1.0,
+        fch1=1400.0,
+        nbits=32,
+        tsamp=0.001,
+        tstart=50000.0,
+        nsamples=nsamples,
+    )
+
+
+@pytest.mark.parametrize("valid_range", [True, False])
+def test_inplace_zap_preserves_unrelated_temporary_file(
+    tmp_path: Path,
+    valid_range: bool,
+) -> None:
+    path = tmp_path / "input.fil"
+    header = _synthetic_series_header(16).new_header(
+        {"filename": str(path), "data_type": "filterbank"}
+    )
+    with header.prep_outfile(str(path), sources=()) as writer:
+        writer.cwrite(np.full(16, 7, dtype=np.float32))
+    original = path.read_bytes()
+    sentinel = tmp_path / "input.fil.zap.tmp"
+    sentinel.write_bytes(b"not our temporary file")
+    result = CliRunner().invoke(
+        spp_clean.main,
+        [
+            "zap-times",
+            str(path),
+            "--start",
+            "1",
+            "--end",
+            "4" if valid_range else "0",
+            "--in-place",
+        ],
+    )
+    assert sentinel.read_bytes() == b"not our temporary file"
+    assert not list(tmp_path.glob(".input.fil.*.zap.tmp"))
+    if valid_range:
+        assert result.exit_code == 0, result.output
+        with FilReader(path) as reader:
+            got = reader.read_block(0, 16).data.ravel()
+        np.testing.assert_array_equal(got[1:4], 0)
+        np.testing.assert_array_equal(np.r_[got[:1], got[4:]], 7)
+    else:
+        assert result.exit_code != 0
+        assert path.read_bytes() == original

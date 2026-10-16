@@ -426,7 +426,7 @@ class FourierSeries:
         ifftn : Callable[[np.ndarray, int], np.ndarray], optional
             Inverse transform ``(spectrum, n) -> time``. ``n`` is the stored
             real length, which keeps odd lengths. By default
-            :func:`~sigpyproc.kernels.fourier.nb_irfft`.
+            ``sigpyproc.kernels.nb_irfft``.
 
         Returns
         -------
@@ -502,7 +502,16 @@ class FourierSeries:
                 f"whitening window {start_width}"
             )
             raise ValueError(msg)
-        power = self.data.real**2 + self.data.imag**2
+        if not np.isfinite(self.data).all():
+            msg = "whitening requires a finite spectrum"
+            raise ValueError(msg)
+        power = (
+            self.data.real.astype(np.float64) ** 2
+            + self.data.imag.astype(np.float64) ** 2
+        )
+        if np.any(power > np.finfo(np.float32).max):
+            msg = "spectrum power exceeds the float32 whitening range"
+            raise ValueError(msg)
         if not np.any(power > 0):
             return FourierSeries(np.array(self.data), self.header.new_header())
         end_freq_bin = round(end_freq / self.binwidth)

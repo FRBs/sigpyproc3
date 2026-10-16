@@ -3,11 +3,27 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import rich_click as click
 
 from sigpyproc.apps._logging import logging_options, setup_cli_logging
+
+if TYPE_CHECKING:
+    from sigpyproc.fourierseries import PowerSpectrum
+
+
+def _read_spectrum(filename: str, suffix: str) -> PowerSpectrum:
+    """Read amplitude, complex, or legacy complex spectra on their real grid."""
+    from sigpyproc.fourierseries import FourierSeries, PowerSpectrum
+    from sigpyproc.header import Header
+
+    if suffix == ".fft":
+        return FourierSeries.from_fft(filename).form_spec()
+    header = Header.from_sigproc(filename)
+    if header.data_type == "amplitude spectrum":
+        return PowerSpectrum.from_spec(filename)
+    return FourierSeries.from_spec(filename).form_spec()
 
 
 def _echo_paths(paths: list[str]) -> None:
@@ -27,6 +43,7 @@ def _batch_series(
     from sigpyproc.timeseries import TimeSeries
     from sigpyproc.viz.series import SeriesViewer
 
+    Path(outdir).mkdir(parents=True, exist_ok=True)
     written: list[str] = []
     for name in files:
         tim = (
@@ -47,16 +64,12 @@ def _batch_spectra(
     theme: str,
     outdir: str,
 ) -> list[str]:
-    from sigpyproc.fourierseries import FourierSeries, PowerSpectrum
     from sigpyproc.viz.series import SpectrumViewer
 
+    Path(outdir).mkdir(parents=True, exist_ok=True)
     written: list[str] = []
     for name in files:
-        spec = (
-            FourierSeries.from_fft(name).form_spec()
-            if suffix == ".fft"
-            else PowerSpectrum.from_spec(name)
-        )
+        spec = _read_spectrum(name, suffix)
         viewer = SpectrumViewer(spec, theme=theme, batch=True)
         out = Path(outdir) / f"{spec.header.basename}_spec.png"
         written.append(viewer.save_png(str(out)))
@@ -185,14 +198,9 @@ def main(
         if batch:
             _echo_paths(_batch_spectra(files, first_ext, theme=theme, outdir=outdir))
             return
-        from sigpyproc.fourierseries import FourierSeries, PowerSpectrum
         from sigpyproc.viz.series import SpectrumViewer
 
-        spec = (
-            FourierSeries.from_fft(files[0]).form_spec()
-            if first_ext == ".fft"
-            else PowerSpectrum.from_spec(files[0])
-        )
+        spec = _read_spectrum(files[0], first_ext)
         SpectrumViewer(spec, theme=theme).show()
         return
 

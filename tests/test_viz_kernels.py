@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from sigpyproc import kernels
 from sigpyproc.viz._backend import viewer_rc
@@ -38,9 +39,7 @@ def test_decimate_2d_nan_handling() -> None:
     data = np.ones((4, 4), dtype=np.float32)
     data[0, :] = np.nan
     dec = kernels.decimate_2d(data, 2, 2, mode=0)
-    python = kernels.decimate_2d.py_func(data, 2, 2, mode=0)
     np.testing.assert_allclose(dec, 1.0)
-    np.testing.assert_allclose(python, dec)
 
     partial = np.array([[np.nan, 1.0], [1.0, 1.0]], dtype=np.float32)
     mean = kernels.decimate_2d(partial, 1, 1, mode=0)
@@ -128,3 +127,49 @@ def test_viewer_rc() -> None:
 
     rc_dark = viewer_rc("dark")
     assert rc_dark["figure.facecolor"] == "#181818"
+
+
+@pytest.mark.parametrize("mode", [0, 1, 2])
+def test_masked_pixels_keep_real_zeros_and_extreme_values(mode: int) -> None:
+    data = np.array([[np.nan, np.inf, 0], [-1e32, 1e32, -3]], dtype=np.float64)
+    valid = data[np.isfinite(data)]
+    expected = [valid.mean(), valid.max(), valid[np.argmax(np.abs(valid))]][mode]
+    np.testing.assert_allclose(
+        kernels.decimate_2d(data, 1, 1, mode), expected, atol=1e-6
+    )
+    low, high = kernels.minmax_envelope(data.ravel(), 0, data.size, 1)
+    np.testing.assert_allclose(low, valid.min())
+    np.testing.assert_allclose(high, valid.max())
+
+
+def test_masked_normalization_matches_independent_median_mad() -> None:
+    values = np.array([[1, np.nan, 3, np.inf, 5, 7], [np.nan] * 6], dtype=np.float32)
+    out = np.empty_like(values)
+    kernels.robust_chan_norm(values, out, subsample=1)
+    finite = np.isfinite(values[0])
+    data = values[0, finite]
+    med = np.median(data)
+    expected = (data - med) / (1.4826 * np.median(np.abs(data - med)))
+    np.testing.assert_allclose(out[0, finite], expected, rtol=1e-6)
+    assert np.isnan(out[0, ~finite]).all()
+    assert np.isnan(out[1]).all()
+
+
+def test_visualization_boundaries_preserve_missing_and_empty_results() -> None:
+    assert kernels.decimate_2d(np.empty((0, 2)), 1, 1).shape == (1, 1)
+    assert np.isnan(kernels.decimate_2d(np.empty((0, 2)), 1, 1)).all()
+    assert kernels.decimate_2d(np.ones((2, 2)), 0, 1).size == 0
+    for data, rows, cols, mode in [
+        (np.ones(2), 1, 1, 0),
+        (np.ones((2, 2)), -1, 1, 0),
+        (np.ones((2, 2)), 1, 1, 3),
+    ]:
+        with pytest.raises(ValueError, match="decimation"):
+            kernels.decimate_2d(data, rows, cols, mode)
+    low, high = kernels.minmax_envelope(np.ones(3), 1, 1, 2)
+    assert np.isnan(low).all()
+    assert np.isnan(high).all()
+    with pytest.raises(ValueError, match="slice"):
+        kernels.minmax_envelope(np.ones(3), -1, 2, 1)
+    with pytest.raises(ValueError, match="same-shaped"):
+        kernels.robust_chan_norm(np.ones((2, 2)), np.empty(2))

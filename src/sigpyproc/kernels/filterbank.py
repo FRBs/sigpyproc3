@@ -110,7 +110,7 @@ def extract_bpass_par(
 def mask_channels(
     in_arr: np.ndarray,
     chan_mask: np.ndarray,
-    mask_value: float,
+    mask_value: np.float32 | np.uint8,
     nchans: int,
     nsamps: int,
 ) -> None:
@@ -184,13 +184,80 @@ def remove_zerodm(
             out_arr_2d[isamp, ichan] = written
 
 
-@njit(cache=True, fastmath=True, nogil=True, parallel=True)
+def _finite_samples(data: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Separate missingness from values before entering fastmath kernels.
+
+    Zero is only a storage fill: validity, never the value, determines whether
+    a sample participates. NaNs and infinities are missing visualization data.
+    """
+    values = np.asarray(data)
+    valid = np.isfinite(values)
+    return (values if valid.all() else np.where(valid, values, 0)), valid
+
+
 def decimate_2d(
+    data: np.ndarray, out_rows: int, out_cols: int, mode: int = 0
+) -> np.ndarray:
+    """Reduce finite samples to pixels (0=mean, 1=max, 2=signed absmax).
+
+    Missing samples are excluded using a validity mask. Empty pixels are NaN
+    at the plotting boundary; compiled arithmetic receives finite values only.
+    """
+    if data.ndim != 2 or out_rows < 0 or out_cols < 0 or mode not in {0, 1, 2}:
+        msg = "decimation needs a 2-D array, nonnegative output sizes and mode 0/1/2"
+        raise ValueError(msg)
+    values, valid = _finite_samples(data)
+    out, present = _decimate_finite(values, valid, out_rows, out_cols, mode)
+    out[~present] = np.nan
+    return out
+
+
+def minmax_envelope(
+    x: np.ndarray, start: int, stop: int, nbins: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """Reduce a valid 1-D slice to finite min/max envelopes.
+
+    Nonfinite samples are missing. Empty bins are NaN for plotting; native
+    fastmath code uses a separate validity mask and finite values.
+    """
+    if x.ndim != 1 or not 0 <= start <= stop <= x.size or nbins < 0:
+        msg = "envelope needs a valid 1-D slice and a nonnegative bin count"
+        raise ValueError(msg)
+    values, valid = _finite_samples(x)
+    mins, maxs, present = _envelope_finite(values, valid, start, stop, nbins)
+    mins[~present] = np.nan
+    maxs[~present] = np.nan
+    return mins, maxs
+
+
+def robust_chan_norm(data: np.ndarray, out: np.ndarray, subsample: int = 8) -> None:
+    """Normalize channels using finite strided median/MAD estimates.
+
+    A zero MAD uses a 1e-12 scale floor. Channels with fewer than two valid
+    estimation samples, and missing input samples, are NaN in the result.
+    Only finite values and boolean masks reach the compiled fastmath routine.
+    """
+    if (
+        data.ndim != 2
+        or out.shape != data.shape
+        or not np.issubdtype(out.dtype, np.floating)
+    ):
+        msg = "normalization needs 2-D data and a same-shaped floating output"
+        raise ValueError(msg)
+    values, valid = _finite_samples(data)
+    supported = _normalize_finite(values, valid, out, subsample)
+    out[~valid] = np.nan
+    out[~supported, :] = np.nan
+
+
+@njit(cache=True, fastmath=True, nogil=True, parallel=True)
+def _decimate_finite(
     data: np.ndarray,
+    valid: np.ndarray,
     out_rows: int,
     out_cols: int,
     mode: int = 0,
-) -> np.ndarray:
+) -> tuple[np.ndarray, np.ndarray]:
     """Decimate a 2D float array to (out_rows, out_cols) using variable-width binning.
 
     Parameters
@@ -210,10 +277,11 @@ def decimate_2d(
         Decimated 2D array of shape (out_rows, out_cols), float32.
     """
     in_rows, in_cols = data.shape
-    out = np.full((out_rows, out_cols), np.nan, dtype=np.float32)
+    out = np.zeros((out_rows, out_cols), dtype=np.float32)
+    present = np.zeros((out_rows, out_cols), dtype=np.bool_)
 
     if in_rows == 0 or in_cols == 0 or out_rows == 0 or out_cols == 0:
-        return out
+        return out, present
 
     # Compute row boundaries
     row_starts = np.empty(out_rows, dtype=np.int64)
@@ -248,23 +316,24 @@ def decimate_2d(
 
             count = 0
             val_sum = 0.0
-            val_max = -1e30
+            val_max = 0.0
             val_absmax = -1.0
             val_absmax_orig = 0.0
 
             for ir in range(r_start, r_end):
                 for ic in range(c_start, c_end):
                     v = float(data[ir, ic])
-                    if not np.isnan(v):
+                    if valid[ir, ic]:
+                        val_max = v if count == 0 else max(val_max, v)
                         count += 1
                         val_sum += v
-                        val_max = max(val_max, v)
                         abs_v = abs(v)
                         if abs_v > val_absmax:
                             val_absmax = abs_v
                             val_absmax_orig = v
 
             if count > 0:
+                present[r, c] = True
                 if mode == 0:
                     out[r, c] = np.float32(val_sum / count)
                 elif mode == 1:
@@ -272,16 +341,17 @@ def decimate_2d(
                 elif mode == 2:
                     out[r, c] = np.float32(val_absmax_orig)
 
-    return out
+    return out, present
 
 
 @njit(cache=True, fastmath=True, nogil=True, parallel=True)
-def minmax_envelope(
+def _envelope_finite(
     x: np.ndarray,
+    valid: np.ndarray,
     start: int,
     stop: int,
     nbins: int,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Compute min and max envelopes for a 1D slice across nbins.
 
     Parameters
@@ -300,12 +370,13 @@ def minmax_envelope(
     tuple[np.ndarray, np.ndarray]
         (mins, maxs) each of length nbins (float32).
     """
-    mins = np.full(nbins, np.nan, dtype=np.float32)
-    maxs = np.full(nbins, np.nan, dtype=np.float32)
+    mins = np.zeros(nbins, dtype=np.float32)
+    maxs = np.zeros(nbins, dtype=np.float32)
+    present = np.zeros(nbins, dtype=np.bool_)
 
     total_len = stop - start
     if total_len <= 0 or nbins <= 0:
-        return mins, maxs
+        return mins, maxs, present
 
     for b in prange(nbins):
         b_start = start + int(b * total_len / nbins)
@@ -314,29 +385,31 @@ def minmax_envelope(
             b_end = b_start + 1
         b_end = min(b_end, stop)
 
-        v_min = 1e30
-        v_max = -1e30
+        v_min = 0.0
+        v_max = 0.0
         count = 0
         for i in range(b_start, b_end):
             val = float(x[i])
-            if not np.isnan(val):
+            if valid[i]:
+                v_min = val if count == 0 else min(v_min, val)
+                v_max = val if count == 0 else max(v_max, val)
                 count += 1
-                v_min = min(v_min, val)
-                v_max = max(v_max, val)
 
         if count > 0:
+            present[b] = True
             mins[b] = np.float32(v_min)
             maxs[b] = np.float32(v_max)
 
-    return mins, maxs
+    return mins, maxs, present
 
 
 @njit(cache=True, fastmath=True, nogil=True, parallel=True)
-def robust_chan_norm(
+def _normalize_finite(
     data: np.ndarray,
+    valid: np.ndarray,
     out: np.ndarray,
     subsample: int = 8,
-) -> None:
+) -> np.ndarray:
     """Normalize each channel by a strided median and MAD.
 
     The scale is ``1.4826 * MAD``, so a Gaussian channel has unit variance.
@@ -353,6 +426,7 @@ def robust_chan_norm(
     """
     nchans, nsamps = data.shape
     stride = max(1, subsample)
+    supported = np.zeros(nchans, dtype=np.bool_)
 
     for ch in prange(nchans):
         n_est = (nsamps + stride - 1) // stride
@@ -360,15 +434,16 @@ def robust_chan_norm(
         count = 0
         for i in range(0, nsamps, stride):
             v = float(data[ch, i])
-            if not np.isnan(v):
+            if valid[ch, i]:
                 buf[count] = v
                 count += 1
 
         if count < 2:
             for s in range(nsamps):
-                out[ch, s] = np.nan
+                out[ch, s] = 0.0
             continue
 
+        supported[ch] = True
         work = buf[:count].copy()
         work.sort()
         mid = count // 2
@@ -383,10 +458,12 @@ def robust_chan_norm(
 
         for s in range(nsamps):
             val = float(data[ch, s])
-            if np.isnan(val):
-                out[ch, s] = np.nan
+            if not valid[ch, s]:
+                out[ch, s] = 0.0
             else:
                 out[ch, s] = np.float32((val - med) * inv)
+
+    return supported
 
 
 downsample_1d_mean_par = njit(downsample_1d_mean.py_func, parallel=True, fastmath=True)

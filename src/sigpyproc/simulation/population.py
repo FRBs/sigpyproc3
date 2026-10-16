@@ -229,7 +229,9 @@ class RandomBurstPopulation:
 
         Returns
         -------
-        list of tuple of (time, dm, width, snr, spec_idx, tau0, spec_kind)
+        list of tuple
+            Rows contain ``time``, ``dm``, ``width``, ``snr``, ``spec_idx``,
+            ``tau0``, and ``spec_kind``, in that order.
         """
         bursts = self.draw_bursts(count, tobs)
         return [

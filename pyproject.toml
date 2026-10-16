@@ -161,7 +161,7 @@ omit = ["tests/*", "docs/*", "*__init__.py", "*_types.py"]
 [tool.coverage.report]
 show_missing = true
 fail_under = 90
-ignore_errors = true
+ignore_errors = false
 exclude_lines = [
     'raise NotImplementedError',
     'if TYPE_CHECKING:',
