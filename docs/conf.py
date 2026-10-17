@@ -15,6 +15,8 @@ DOCS_DIR = Path(__file__).resolve().parent
 ROOT_DIR = DOCS_DIR.parent
 SRC_DIR = ROOT_DIR / "src"
 
+os.environ.setdefault("SIGPYPROC_PROJECT_ROOT", str(ROOT_DIR))
+
 sys.path.insert(0, str(SRC_DIR))
 
 from sigpyproc import __version__  # noqa: E402

@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/_static/logo/logo-tagline-dark.svg">
-    <img alt="sigpyproc: pulsar and FRB I/O" src="docs/_static/logo/logo-tagline.svg" width="480">
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/FRBs/sigpyproc3/main/docs/_static/logo/logo-tagline-dark.svg">
+    <img alt="sigpyproc: pulsar and FRB I/O" src="https://raw.githubusercontent.com/FRBs/sigpyproc3/main/docs/_static/logo/logo-tagline.svg" width="480">
   </picture>
 </p>
 

@@ -34,16 +34,12 @@ The next cell prints the same summary the `print` command uses (not the longer
 `--long` pretty-print).
 
 ```{code-cell} ipython3
+import os
 from pathlib import Path
 
-import sigpyproc
 from sigpyproc.header import Header
 
-def repo_root() -> Path:
-    """Repository root when docs are built from a checkout."""
-    return Path(sigpyproc.__file__).resolve().parent.parent.parent
-
-SF = repo_root() / "tests/data/parkes_4bit.sf"
+SF = Path(os.environ["SIGPYPROC_PROJECT_ROOT"]) / "tests/data/parkes_4bit.sf"
 if not SF.is_file():
     msg = f"Sample file missing: {SF} (need a full git checkout to run this page)"
     raise FileNotFoundError(msg)
