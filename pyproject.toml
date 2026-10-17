@@ -166,7 +166,13 @@ invalid-argument-type = "ignore"
 include = ["src/sigpyproc/kernels/*.py"]
 
 [tool.ty.overrides.rules]
-no-matching-overload = "ignore" # numba Dispatcher.py_func is not modelled by ty
+no-matching-overload = "ignore"
+
+[[tool.ty.overrides]]
+include = ["src/sigpyproc/kernels/fourier.py"]
+
+[tool.ty.overrides.rules]
+invalid-argument-type = "ignore"
 
 [tool.pytest.ini_options]
 minversion = "9.0"

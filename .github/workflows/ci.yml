@@ -53,7 +53,6 @@ jobs:
             python-version: "3.12"
 
     env:
-      NUMBA_CACHE_DIR: ${{ github.workspace }}/.numba_cache
       # macOS otherwise selects the MacOSX backend. plt.show() then blocks,
       # and the viewer tests never finish.
       MPLBACKEND: Agg
@@ -69,31 +68,6 @@ jobs:
 
       - name: Install package with test dependencies
         run: uv sync --extra tests
-
-      - name: Restore numba cache
-        uses: actions/cache@v6
-        with:
-          path: ${{ env.NUMBA_CACHE_DIR }}
-          key: numba-${{ runner.os }}-py${{ matrix.python-version }}-${{ hashFiles('src/**/*.py') }}
-          restore-keys: |
-            numba-${{ runner.os }}-py${{ matrix.python-version }}-
-
-      # Numba invalidates cached kernels when a source file's mtime changes, and
-      # a fresh checkout gives every file a new mtime. Setting each mtime from a
-      # hash of its content keeps the cache valid for unchanged code and
-      # invalidates it when the code changes.
-      - name: Normalise source mtimes for numba cache
-        run: |
-          python3 - <<'EOF'
-          import hashlib
-          import os
-          import pathlib
-
-          for path in pathlib.Path("src").rglob("*.py"):
-              digest = int(hashlib.sha256(path.read_bytes()).hexdigest()[:8], 16)
-              stamp = 1_000_000_000 + digest % 1_000_000_000
-              os.utime(path, (stamp, stamp))
-          EOF
 
       - name: Run pytest
         run: uv run pytest -q
