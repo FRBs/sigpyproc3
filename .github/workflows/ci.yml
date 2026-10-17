@@ -45,12 +45,16 @@ jobs:
         include:
           - os: ubuntu-latest
             python-version: "3.12"
+            coverage: true
           - os: ubuntu-latest
             python-version: "3.13"
+            coverage: false
           - os: ubuntu-latest
             python-version: "3.14"
+            coverage: false
           - os: macos-latest
             python-version: "3.12"
+            coverage: false
 
     env:
       # macOS otherwise selects the MacOSX backend. plt.show() then blocks,
@@ -70,29 +74,20 @@ jobs:
         run: uv sync --extra tests
 
       - name: Run pytest
+        if: ${{ !matrix.coverage }}
         run: uv run pytest -q
 
-  coverage:
-    name: line coverage (Python + Numba compilation)
-    runs-on: ubuntu-latest
-    env:
-      MPLBACKEND: Agg
-      NUMBA_NUM_THREADS: "2"
-      NUMBA_JIT_COVERAGE: "1"
-    steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.2.0
-        with:
-          enable-cache: true
-          python-version: "3.12"
-      - run: uv sync --extra tests
-      - name: Test and measure line coverage
-        # runner is valid only in a step. A fresh directory makes Numba
-        # compile every kernel and report those lines.
+      - name: Run pytest with line coverage
+        if: matrix.coverage
         env:
+          NUMBA_NUM_THREADS: "2"
+          NUMBA_JIT_COVERAGE: "1"
+          # Fresh cache so kernels recompile under coverage tracing.
           NUMBA_CACHE_DIR: ${{ runner.temp }}/numba-coverage-${{ github.run_id }}-${{ github.run_attempt }}
         run: uv run pytest --cov=src --cov-report=xml --cov-report=term-missing
+
       - name: Upload coverage
+        if: matrix.coverage
         uses: codecov/codecov-action@v7
         with:
           files: ./coverage.xml
