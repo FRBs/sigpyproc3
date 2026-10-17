@@ -1,39 +1,64 @@
-# Build a release wheel and check its metadata.
+# Build and publish a sigpyproc release to PyPI.
 #
-# This workflow does not upload to PyPI or TestPyPI. Publishing stays a
-# separate maintainer action after the tag, the changelog, and the trusted
-# publisher are reviewed. An uploaded file cannot be replaced; ship a new
-# version instead.
+# A GitHub release triggers the workflow. Publishing uses PyPI Trusted
+# Publishing / GitHub OIDC: no long-lived PyPI token is stored in GitHub.
 
-name: Release build
+name: Publish to PyPI
 
 on:
+  release:
+    types: [published]
+
   workflow_dispatch:
 
 jobs:
   build:
-    name: build and check
+    name: Build and check distributions
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install uv & Python
+      - name: Install uv and Python
         uses: astral-sh/setup-uv@v10.2.0
         with:
           python-version: "3.12"
 
-      - name: Build
+      - name: Build distributions
         run: uv build
 
-      - name: Check metadata
+      - name: Check package metadata
         run: uvx twine check dist/*
 
       - name: Record checksums
         run: sha256sum dist/* | tee dist/SHA256SUMS
 
-      - name: Upload the artifacts
+      - name: Upload distributions
         uses: actions/upload-artifact@v4
         with:
           name: sigpyproc-dist
           path: dist/*
           if-no-files-found: error
+
+  publish:
+    if: github.event_name == 'release'
+    name: Publish distributions to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+
+    environment:
+      name: pypi
+      url: https://pypi.org/p/sigpyproc
+
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: sigpyproc-dist
+          path: dist/
+
+      - name: Publish distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

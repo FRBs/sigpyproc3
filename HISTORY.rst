@@ -1,7 +1,9 @@
 2.0.0 (2026-10-17)
 ++++++++++++++++++
 
-- Stable API.
+- First release on PyPI as ``sigpyproc`` (``pip install sigpyproc``). GitHub tag
+  **v2.0.0** supersedes the prior **0.5.5** source release; the ``legacy`` branch
+  keeps the old API and C++ bindings.
 - CLI logs go to stderr. ``--quiet`` turns progress bars off.
 - ``spp_merge``, ``spp_splice`` and ``spp_extract`` are now ``spp_io merge``, ``spp_io splice`` and ``spp_io extract``. ``spp_zerodm`` is ``spp_clean zerodm``.
 - Streaming writes refuse an output path that is the same file as an input, including symlinks and hard links.

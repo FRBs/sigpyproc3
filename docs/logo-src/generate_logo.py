@@ -336,8 +336,8 @@ def social_preview_svg(med: Face, reg: Face) -> str:
         '<rect width="1280" height="640" fill="#0B0F19"/>'
         '<rect x="1" y="1" width="1278" height="638" rx="0" fill="none" stroke="#1E293B" stroke-width="2"/>'
         f'<g transform="translate({fmt(tx)} {fmt(ty)}) scale({fmt(scale)})">'
-        f'{lockup}'
-        '</g>'
+        f"{lockup}"
+        "</g>"
     )
     return svg((0, 0, 1280, 640), card, "sigpyproc: pulsar and FRB I/O")
 
