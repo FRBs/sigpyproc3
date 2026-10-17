@@ -1,7 +1,13 @@
 # sigpyproc
 
-```{div} .lead
-A modern, object-oriented Python library for FRB and pulsar data analysis.
+```{raw} html
+<div class="spp-hero-card">
+  <img class="spp-hero-mark only-light" src="_static/logo/mark.svg" alt="">
+  <img class="spp-hero-mark only-dark" src="_static/logo/mark-dark.svg" alt="">
+  <p class="spp-hero-lede">
+    A modern, object-oriented Python library for FRB and pulsar data analysis.
+  </p>
+</div>
 ```
 
 [![GitHub CI](https://github.com/FRBs/sigpyproc3/workflows/GitHub%20CI/badge.svg)](https://github.com/FRBs/sigpyproc3/actions)

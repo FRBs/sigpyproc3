@@ -64,6 +64,18 @@ def test_parse_header_reads_named_axes(tmp_path: Path) -> None:
     assert parsed["nbeams"] == 1
 
 
+def test_missing_file_and_unknown_labels_are_rejected(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError, match="not found"):
+        fbh5.parse_header(tmp_path / "absent.h5")
+    assert fbh5.map_dimensions(["time", "feed_id", "frequency"])["frequency"] == 2
+    with pytest.raises(ValueError, match="polarisation"):
+        fbh5.map_dimensions(["time", "feed_id", "polarisation"])
+    with pytest.raises(TypeError, match="Unexpected dimension label"):
+        fbh5.map_dimensions(["time", "feed_id", 1])
+    with pytest.raises(ValueError, match="Missing expected dimension"):
+        fbh5.map_dimensions(["time", "feed_id"])
+
+
 def test_missing_class_is_an_oserror(tmp_path: Path) -> None:
     path = tmp_path / "noclass.h5"
     _write_fbh5(path, klass=None)

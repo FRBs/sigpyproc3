@@ -173,3 +173,81 @@ def test_visualization_boundaries_preserve_missing_and_empty_results() -> None:
         kernels.minmax_envelope(np.ones(3), -1, 2, 1)
     with pytest.raises(ValueError, match="same-shaped"):
         kernels.robust_chan_norm(np.ones((2, 2)), np.empty(2))
+
+
+def test_rebinding_keys_updates_dispatch_and_help() -> None:
+    from types import SimpleNamespace
+
+    keymap = KeyMap()
+    calls = []
+    keymap.bind(["a", "b"], lambda: calls.append("old"), "Old action")
+    keymap.bind("a", lambda: calls.append("new"), "New action")
+    assert keymap.handle(SimpleNamespace(key="a"))
+    assert keymap.handle(SimpleNamespace(key="b"))
+    assert not keymap.handle(SimpleNamespace(key="unknown"))
+    assert calls == ["new", "old"]
+    assert keymap.help_table() == [
+        ("General", "b", "Old action"),
+        ("General", "a", "New action"),
+    ]
+
+
+@pytest.mark.parametrize("use_axes", [False, True])
+def test_blitting_updates_real_canvas_artists(use_axes: bool) -> None:
+    from types import SimpleNamespace
+
+    from matplotlib import pyplot as plt
+
+    from sigpyproc.viz.keymap import BlitManager
+
+    fig, ax = plt.subplots()
+    try:
+        (line,) = ax.plot([0, 1], [0, 1], color="red")
+        manager = BlitManager(fig, [line], axes=ax if use_axes else None)
+        assert line.get_animated()
+        manager.on_draw(SimpleNamespace(canvas=object()))
+        assert manager._bg is None
+        manager.update()
+        before = np.asarray(fig.canvas.buffer_rgba()).copy()
+        line.set_ydata([1, 0])
+        manager.update()
+        assert np.any(before != np.asarray(fig.canvas.buffer_rgba()))
+    finally:
+        plt.close(fig)
+
+
+def test_preferred_gui_backend_failure_is_a_viewer_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from sigpyproc.viz import _backend
+
+    def fail(_name: str, **_kwargs: object) -> None:
+        msg = "backend unavailable"
+        raise ImportError(msg)
+
+    monkeypatch.setattr(_backend.mpl, "use", fail)
+    with pytest.raises(_backend.ViewerError, match="preferred backend"):
+        _backend.ensure_interactive_backend("QtAgg")
+
+
+def test_unavailable_gui_backends_report_a_headless_workaround(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+
+    from sigpyproc.viz import _backend
+
+    def fail(_name: str, **_kwargs: object) -> None:
+        msg = "backend unavailable"
+        raise ImportError(msg)
+
+    monkeypatch.setattr(_backend.mpl, "use", fail)
+    monkeypatch.setattr(_backend.mpl, "get_backend", lambda: "Agg")
+    monkeypatch.setattr(_backend.os, "uname", lambda: SimpleNamespace(sysname="Linux"))
+    monkeypatch.delenv("DISPLAY", raising=False)
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+    with pytest.raises(_backend.ViewerError, match="--batch"):
+        _backend.ensure_interactive_backend()
+    monkeypatch.setenv("DISPLAY", ":1")
+    with pytest.raises(_backend.ViewerError, match="Tkinter or PyQt"):
+        _backend.ensure_interactive_backend()

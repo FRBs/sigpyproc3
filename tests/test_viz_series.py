@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -9,9 +9,6 @@ from sigpyproc.fourierseries import FourierSeries, PowerSpectrum
 from sigpyproc.simulation.pulsar import make_header
 from sigpyproc.timeseries import TimeSeries
 from sigpyproc.viz.series import SeriesViewer, SpectrumViewer
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 class DummyEvent:
@@ -133,3 +130,52 @@ def test_spectrum_spacing_uses_the_transform_length(tmp_path: Path) -> None:
     out = tmp_path / "tone.png"
     assert viewer.save_png(str(out)) == str(out)
     assert out.exists()
+
+
+def test_large_spectrum_envelope_preserves_isolated_line(tmp_path: Path) -> None:
+    from matplotlib import pyplot as plt
+
+    header = make_header(nchans=1, nbits=32, tsamp=0.001, tobs=32.768)
+    data = np.ones(16385, dtype=np.float32)
+    data[1234] = 100
+    viewer = SpectrumViewer(PowerSpectrum(data, header), batch=True, gui=True)
+    try:
+        assert not viewer.line.get_visible()
+        assert viewer._spec_fill is not None
+        assert viewer.ax.get_ylim()[1] >= 100
+        viewer.update_plot()
+        viewer.on_click(DummyEvent())
+        assert not any(line.get_visible() for line in viewer.marker_lines)
+        viewer.on_click(DummyEvent(inaxes=viewer.ax, xdata=12.5))
+        for harmonic, line in enumerate(viewer.marker_lines, 1):
+            np.testing.assert_allclose(line.get_xdata(), 12.5 * harmonic)
+        path = viewer.save_png(str(tmp_path / "large.png"))
+        assert Path(path).stat().st_size > 1000
+    finally:
+        viewer.close()
+        plt.close("all")
+
+
+def test_batch_series_exports_selected_interval(tmp_path: Path) -> None:
+    header = make_header(nchans=1, nbits=32, tsamp=0.001, tobs=0.128)
+    data = np.zeros(128, dtype=np.float32)
+    data[32] = 10
+    viewer = SeriesViewer(TimeSeries(data, header), batch=True)
+    viewer.start_samp, viewer.end_samp = 16, 64
+    viewer.update_detail()
+    path = viewer.save_png(str(tmp_path / "window.png"))
+    assert Path(path).stat().st_size > 1000
+    before = viewer.start_samp, viewer.end_samp
+    viewer.on_span_select(0.0, 0.001)
+    assert (viewer.start_samp, viewer.end_samp) == before
+
+
+def test_headless_spectrum_log_toggle_does_not_require_widgets() -> None:
+    header = make_header(nchans=1, nbits=32, tsamp=0.001, tobs=0.128)
+    viewer = SpectrumViewer(
+        PowerSpectrum(np.ones(65, dtype=np.float32), header), batch=True
+    )
+    viewer.update_plot()
+    viewer.toggle_logy()
+    assert viewer.logy
+    viewer.close()

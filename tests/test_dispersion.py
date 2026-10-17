@@ -142,6 +142,31 @@ def test_invalid_dispersion_geometry_is_rejected(changes: dict) -> None:
         compute_dmdelays(**kwargs)
 
 
+def test_channel_smearing_rejects_a_zero_index_and_accepts_other_laws() -> None:
+    freqs = np.array([1400.0, 1399.0])
+    with pytest.raises(ValueError, match="non-zero"):
+        compute_dmsmearing(freqs, 10.0, 0.001, index=0.0)
+    smear = compute_dmsmearing(freqs, 10.0, 0.001, index=-3.0, in_samples=False)
+    assert smear.shape == (2,)
+    assert np.all(np.isfinite(smear))
+
+
+def test_subband_count_must_be_positive() -> None:
+    header = Header(
+        filename="synth.fil",
+        data_type="filterbank",
+        nchans=16,
+        foff=-1.0,
+        fch1=1400.0,
+        nbits=8,
+        tsamp=64e-6,
+        tstart=50000.0,
+        nsamples=32,
+    )
+    with pytest.raises(ValueError, match="nsub"):
+        DMPlan.from_header(header, dm_max=10.0, nsub=0)
+
+
 @pytest.mark.parametrize(
     "changes", [{"dm_max": -1.0}, {"nchan": 0}, {"bw_mhz": 0.0}, {"tol": 0.0}]
 )

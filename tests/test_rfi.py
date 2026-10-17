@@ -157,3 +157,36 @@ def test_obs_time_precision_stays_within_astropy(tmp_path: Path) -> None:
     )
     assert header.obs_time.precision <= 9
     assert header.mjd_after_nsamps(2) == pytest.approx(header.tstart)
+
+
+@pytest.mark.parametrize("mode", ["zero", "gaussian", "samples"])
+def test_zapping_clips_to_window_and_preserves_unselected_rows(mode: str) -> None:
+    data = np.arange(40, dtype=np.float32).reshape(10, 4)
+    before = data.copy()
+    rfi.zap_block(
+        data, [(0, 2), (13, 16), (30, 40)], 10, mode, np.random.default_rng(4)
+    )
+    np.testing.assert_array_equal(data[:3], before[:3])
+    np.testing.assert_array_equal(data[6:], before[6:])
+    assert not np.array_equal(data[3:6], before[3:6])
+    assert np.isfinite(data).all()
+    if mode == "samples":
+        kept = np.concatenate([before[:3], before[6:]])
+        assert all(
+            any(np.array_equal(row, sample) for sample in kept) for row in data[3:6]
+        )
+
+
+@pytest.mark.parametrize("mode", ["gaussian", "samples"])
+def test_zapping_entire_block_has_a_defined_zero_fallback(mode: str) -> None:
+    data = np.ones((4, 2), dtype=np.uint8)
+    rfi.zap_block(data, [(0, 100)], 10, mode, np.random.default_rng(3))
+    np.testing.assert_array_equal(data, 0)
+
+
+def test_gaussian_zapping_clips_integer_samples_without_wrapping() -> None:
+    data = np.full((1000, 2), 255, dtype=np.uint8)
+    rfi.zap_block(data, [(0, 500)], 0, "gaussian", np.random.default_rng(5))
+    assert data[:500].min() >= 250
+    assert data[:500].max() <= 255
+    np.testing.assert_array_equal(data[500:], 255)

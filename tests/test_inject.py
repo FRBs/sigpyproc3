@@ -6,7 +6,12 @@ import pytest
 from sigpyproc.header import Header
 from sigpyproc.readers import FilReader
 from sigpyproc.simulation.furby import FurbyGenerator, PulseParams
-from sigpyproc.simulation.inject import Injector, inject_file, read_pulse_catalogue
+from sigpyproc.simulation.inject import (
+    InjectedPulse,
+    Injector,
+    inject_file,
+    read_pulse_catalogue,
+)
 from sigpyproc.simulation.pulsar import PulsarParams, fake_filterbank
 
 
@@ -224,3 +229,44 @@ class TestInjector:
             atol=0.0,
         )
         assert data_out[:, 495:505].sum() > data_in[:, 495:505].sum() + 10.0
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"profile": np.ones(3, dtype=np.float32)},
+        {"delays": np.zeros(1)},
+        {"scale": np.inf},
+        {"profile": np.full((2, 3), np.nan)},
+        {"delays": np.full(2, np.inf)},
+    ],
+)
+def test_injected_profiles_reject_malformed_arrays(changes: dict) -> None:
+    values = {
+        "profile": np.ones((2, 3), dtype=np.float32),
+        "delays": np.zeros(2),
+        "start": 0,
+        **changes,
+    }
+    with pytest.raises(ValueError):
+        InjectedPulse(**values)
+
+
+def test_injector_rejects_mixed_channel_counts() -> None:
+    pulses = [
+        InjectedPulse(
+            profile=np.ones((n, 3), dtype=np.float32), delays=np.zeros(n), start=0
+        )
+        for n in [2, 3]
+    ]
+    with pytest.raises(ValueError, match="same number"):
+        Injector(pulses)
+
+
+def test_empty_injector_is_an_identity_transform() -> None:
+    injector = Injector([])
+    data = np.arange(15, dtype=np.float32).reshape(3, 5)
+    before = data.copy()
+    injector.add_into(data, 0)
+    np.testing.assert_array_equal(data, before)
+    assert injector.pulses == ()

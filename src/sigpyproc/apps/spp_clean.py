@@ -69,16 +69,16 @@ def rfi(
     gulp: int,
 ) -> None:
     """Clean RFI from filterbank data."""
-    fil = open_filterbank(filfile)
-    out_file, rfimask = fil.clean_rfi(
-        method=method,
-        threshold=threshold,
-        outfile_name=outfile,
-        gulp=gulp,
-    )
-    click.echo(out_file)
-    if maskfile is not None:
-        rfimask.to_file(filename=maskfile)
+    with open_filterbank(filfile) as fil:
+        out_file, rfimask = fil.clean_rfi(
+            method=method,
+            threshold=threshold,
+            outfile_name=outfile,
+            gulp=gulp,
+        )
+        click.echo(out_file)
+        if maskfile is not None:
+            rfimask.to_file(filename=maskfile)
 
 
 @main.command()
@@ -125,11 +125,11 @@ def zap_channels(
     if zap.size == 0:
         msg = "Provide -c/--chans or --mask-file"
         raise click.UsageError(msg)
-    fil = open_filterbank(filfile)
-    chan_mask = np.zeros(fil.header.nchans, dtype=bool)
-    chan_mask[zap] = True
-    path = fil.apply_channel_mask(chan_mask, outfile_name=outfile, gulp=gulp)
-    click.echo(path)
+    with open_filterbank(filfile) as fil:
+        chan_mask = np.zeros(fil.header.nchans, dtype=bool)
+        chan_mask[zap] = True
+        path = fil.apply_channel_mask(chan_mask, outfile_name=outfile, gulp=gulp)
+        click.echo(path)
 
 
 @main.command()
@@ -174,31 +174,54 @@ def zap_times(
     in_place: bool,
 ) -> None:
     """Replace a time-sample range in a filterbank."""
-    fil = open_filterbank(filfile)
-    if in_place:
-        src = Path(filfile)
-        with NamedTemporaryFile(
-            prefix=f".{src.name}.", suffix=".zap.tmp", dir=src.parent, delete=False
-        ) as temporary:
-            tmp_path = Path(temporary.name)
-        try:
-            fil.zap_times(
-                [(start, end)],
-                mode=mode,
-                outfile_name=str(tmp_path),
-                gulp=gulp,
-            )
-            fil.close()
-            tmp_path.replace(src)
-        except Exception:
-            tmp_path.unlink(missing_ok=True)
-            raise
-        finally:
-            fil.close()
-        click.echo(filfile)
-        return
-    path = fil.zap_times([(start, end)], mode=mode, outfile_name=outfile, gulp=gulp)
-    click.echo(path)
+    with open_filterbank(filfile) as fil:
+        if in_place:
+            src = Path(filfile)
+            with NamedTemporaryFile(
+                prefix=f".{src.name}.", suffix=".zap.tmp", dir=src.parent, delete=False
+            ) as temporary:
+                tmp_path = Path(temporary.name)
+            try:
+                fil.zap_times(
+                    [(start, end)],
+                    mode=mode,
+                    outfile_name=str(tmp_path),
+                    gulp=gulp,
+                )
+                fil.close()
+                tmp_path.replace(src)
+            except Exception:
+                tmp_path.unlink(missing_ok=True)
+                raise
+            click.echo(filfile)
+            return
+        path = fil.zap_times([(start, end)], mode=mode, outfile_name=outfile, gulp=gulp)
+        click.echo(path)
+
+
+@main.command(
+    context_settings={"help_option_names": ["-h", "--help"], "show_default": True},
+)
+@click.argument("filfile", type=click.Path(exists=True))
+@click.option(
+    "-g",
+    "--gulp",
+    type=int,
+    default=16384,
+    help="Number of samples to read at once",
+)
+@click.option(
+    "-o",
+    "--outfile",
+    type=click.Path(exists=False),
+    default=None,
+    help="Output filename",
+)
+def zerodm(filfile: str, gulp: int, outfile: str | None) -> None:
+    """Subtract the channel-weighted zero-DM (Eatough / PRESTO)."""
+    with open_filterbank(filfile) as fil:
+        path = fil.remove_zerodm(outfile_name=outfile, gulp=gulp)
+        click.echo(path)
 
 
 if __name__ == "__main__":

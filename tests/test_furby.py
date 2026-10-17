@@ -238,3 +238,64 @@ class TestSpectralStructure:
         ratio = spec[-1] / spec[0]
         expected_ratio = (freqs[-1] / freqs[0]) ** (-2.0)
         np.testing.assert_allclose(ratio, expected_ratio, rtol=1e-5)
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"dm": -1.0},
+        {"dm": np.inf},
+        {"snr": 0.0},
+        {"snr": np.nan},
+        {"width": 0.0},
+        {"width": np.inf},
+        {"shape": "triangle"},
+        {"spec_kind": "unknown"},
+        {"disp_ind": np.nan},
+        {"scatt_idx": np.inf},
+        {"spec_idx": -np.inf},
+    ],
+)
+def test_pulse_parameters_reject_invalid_physics(changes: dict) -> None:
+    values = {"dm": 10.0, "snr": 12.0, "width": 0.003, **changes}
+    with pytest.raises(ValueError):
+        furby.PulseParams(**values)
+
+
+@pytest.mark.parametrize("oversampling", [True, 1.5])
+def test_pulse_oversampling_requires_an_integer(oversampling: object) -> None:
+    with pytest.raises(TypeError):
+        furby.PulseParams(dm=10.0, snr=12.0, width=0.003, os_fact=oversampling)
+
+
+@pytest.mark.parametrize(
+    "frequencies",
+    [
+        np.array([]),
+        np.ones((2, 2)),
+        np.array([0.0]),
+        np.array([np.nan]),
+        np.array([-1.0]),
+    ],
+)
+def test_spectral_structures_require_physical_frequency_coordinates(
+    frequencies: np.ndarray,
+) -> None:
+    with pytest.raises(ValueError):
+        furby.SpectralStructure(frequencies)
+
+
+def test_spectral_structure_requires_a_finite_index() -> None:
+    with pytest.raises(ValueError):
+        furby.SpectralStructure(np.array([1000.0, 1100.0]), spec_index=np.nan)
+
+
+def test_unknown_spectral_structure_cannot_generate_samples() -> None:
+    with pytest.raises(ValueError):
+        furby.SpectralStructure(np.array([1000.0, 1100.0]), kind="unknown").generate()
+
+
+@pytest.mark.parametrize("field", ["tau0", "tau_ref_freq", "noise"])
+def test_pulse_broadening_and_noise_must_be_finite(field: str) -> None:
+    with pytest.raises(ValueError, match="finite"):
+        furby.PulseParams(dm=10, snr=10, width=0.001, **{field: np.inf})

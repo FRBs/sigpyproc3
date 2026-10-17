@@ -65,6 +65,7 @@ exclude_patterns = [
     "Thumbs.db",
     ".DS_Store",
     "header.md",
+    "logo-src",
 ]
 default_role = "any"
 nitpicky = True
@@ -77,6 +78,9 @@ rst_epilog = f"""
 html_theme = "sphinx_book_theme"
 html_context = {"default_mode": "light"}
 html_title = project
+html_favicon = "_static/logo/favicon.svg"
+html_static_path = ["_static"]
+html_css_files = ["custom.css"]
 html_last_updated_fmt = "%b %d, %Y"
 html_theme_options = {
     "repository_url": repo_url,
@@ -91,6 +95,11 @@ html_theme_options = {
     "show_navbar_depth": 1,
     "navigation_with_keys": True,
     "toc_title": "On this page",
+    "logo": {
+        "image_light": "_static/logo/logo.svg",
+        "image_dark": "_static/logo/logo-dark.svg",
+        "alt_text": "sigpyproc",
+    },
 }
 
 # -- Autodoc / autosummary
@@ -250,7 +259,7 @@ def linkcode_resolve(domain: str, info: dict) -> str | None:
     return f"{repo_url}/blob/{github_ref}/{file_path}#L{start_line}-L{end_line}"
 
 
-def find_data_like_classes(src_path: Path) -> set[str]:  # noqa: C901
+def find_data_like_classes(src_path: Path) -> set[str]:
     result = set()
 
     for py_file in src_path.rglob("*.py"):

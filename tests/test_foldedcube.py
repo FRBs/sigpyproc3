@@ -304,3 +304,23 @@ def test_old_integer_archive_and_missing_fields(tmp_path: Path) -> None:
     np.savez(path, data=np.ones(8))
     with pytest.raises(ValueError, match="version"):
         FoldedData.from_npz(path)
+
+
+@pytest.mark.parametrize("all_missing", [False, True])
+def test_fold_nan_replacement_uses_finite_median(all_missing: bool) -> None:
+    data = np.full((2, 2, 8), np.nan, dtype=np.float32)
+    if not all_missing:
+        data[0, 0, :4] = [1, 3, 5, 7]
+    expected = np.zeros_like(data) if all_missing else np.where(np.isnan(data), 4, data)
+    cube = FoldedData(
+        data, _synthetic_series_header().new_header({"nchans": 2}), 0.5, 0
+    )
+    cube.replace_nan()
+    np.testing.assert_allclose(cube.data, expected)
+
+
+@pytest.mark.parametrize("changes", [{"dm": np.nan}, {"accel": np.inf}])
+def test_fold_metadata_must_be_finite(changes: dict) -> None:
+    values = {"period": 0.5, "dm": 0.0, "accel": 0.0, **changes}
+    with pytest.raises(ValueError, match="finite"):
+        FoldedData(np.ones((2, 2, 8)), _synthetic_series_header(), **values)

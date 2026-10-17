@@ -10,16 +10,13 @@ from sigpyproc.apps import (
     spp_clean,
     spp_decimate,
     spp_dedisperse,
-    spp_extract,
     spp_fake,
     spp_fold,
     spp_header,
-    spp_merge,
+    spp_io,
     spp_search,
-    spp_splice,
     spp_stats,
     spp_view,
-    spp_zerodm,
 )
 from sigpyproc.core.candidates import PULSE_CANDIDATE_NAMES, CandidateTable
 from sigpyproc.fourierseries import FourierSeries
@@ -194,8 +191,18 @@ class TestSppHeader:
         nsamples = 10
         runner = CliRunner()
         result = runner.invoke(
-            spp_extract.main,
-            ["samples", filfile_8bit_1, "-s", "0", "-n", "10", "-o", tmpfile],
+            spp_io.main,
+            [
+                "extract",
+                "samples",
+                filfile_8bit_1,
+                "-s",
+                "0",
+                "-n",
+                "10",
+                "-o",
+                tmpfile,
+            ],
         )
         assert result.exit_code == 0
         assert tmpfile in result.output
@@ -208,8 +215,9 @@ class TestSppHeader:
         duration = 10 * header.tsamp
         runner = CliRunner()
         result = runner.invoke(
-            spp_extract.main,
+            spp_io.main,
             [
+                "extract",
                 "samples",
                 filfile_8bit_1,
                 "--start-sec",
@@ -224,11 +232,33 @@ class TestSppHeader:
         result = runner.invoke(spp_header.main, ["get", tmpfile, "-k", "nsamples"])
         assert "nsamples = 10" in result.output
 
+    def test_samples_requires_a_length(
+        self, filfile_8bit_1: str, tmp_path: Path
+    ) -> None:
+        out = tmp_path / "window.fil"
+        result = CliRunner().invoke(
+            spp_io.main,
+            ["extract", "samples", filfile_8bit_1, "-o", str(out)],
+        )
+        assert result.exit_code == 2
+        assert "nsamps" in result.output
+        assert not out.exists()
+
     def test_channels(self, filfile_8bit_1: str, tmpfile: str) -> None:
         runner = CliRunner()
         result = runner.invoke(
-            spp_extract.main,
-            ["channels", filfile_8bit_1, "-c", "0", "-c", "1", "-o", tmpfile],
+            spp_io.main,
+            [
+                "extract",
+                "channels",
+                filfile_8bit_1,
+                "-c",
+                "0",
+                "-c",
+                "1",
+                "-o",
+                tmpfile,
+            ],
         )
         assert result.exit_code == 0
         outfiles = list(Path(tmpfile).parent.glob(f"{Path(tmpfile).name}_*"))
@@ -238,8 +268,9 @@ class TestSppHeader:
         outbase = str(Path(tmpdir) / "range")
         runner = CliRunner()
         result = runner.invoke(
-            spp_extract.main,
+            spp_io.main,
             [
+                "extract",
                 "channels",
                 filfile_8bit_1,
                 "--chan-start",
@@ -257,8 +288,20 @@ class TestSppHeader:
     def test_bands(self, filfile_8bit_1: str, tmpfile: str) -> None:
         runner = CliRunner()
         result = runner.invoke(
-            spp_extract.main,
-            ["bands", filfile_8bit_1, "-s", "0", "-n", "10", "-c", "2", "-o", tmpfile],
+            spp_io.main,
+            [
+                "extract",
+                "bands",
+                filfile_8bit_1,
+                "-s",
+                "0",
+                "-n",
+                "10",
+                "-c",
+                "2",
+                "-o",
+                tmpfile,
+            ],
         )
         assert result.exit_code == 0
         outfiles = list(Path(tmpfile).parent.glob(f"{Path(tmpfile).name}_*"))
@@ -313,7 +356,9 @@ class TestSppBandpass:
 class TestSppZerodm:
     def test_main(self, filfile_8bit_1: str, tmpfile: str) -> None:
         runner = CliRunner()
-        result = runner.invoke(spp_zerodm.main, [filfile_8bit_1, "-o", tmpfile])
+        result = runner.invoke(
+            spp_clean.main, ["zerodm", filfile_8bit_1, "-o", tmpfile]
+        )
         assert result.exit_code == 0
         assert Path(tmpfile).exists()
 
@@ -329,8 +374,8 @@ class TestSppMergeSplice:
         src.extract_samps(n, n, outfile_name=b)
         runner = CliRunner()
         result = runner.invoke(
-            spp_merge.main,
-            [a, b, "-a", "time", "-o", out],
+            spp_io.main,
+            ["merge", a, b, "-a", "time", "-o", out],
         )
         assert result.exit_code == 0
         assert FilReader(out).header.nsamples == 2 * n
@@ -347,7 +392,7 @@ class TestSppMergeSplice:
         )
         out = str(Path(tmpdir) / "spliced.fil")
         runner = CliRunner()
-        result = runner.invoke(spp_splice.main, [*files, "-o", out])
+        result = runner.invoke(spp_io.main, ["splice", *files, "-o", out])
         assert result.exit_code == 0
         merged = FilReader(out)
         assert merged.header.nchans == half * len(files)
@@ -478,6 +523,18 @@ class TestSppClean:
         original = src.read_block(0, src.header.nsamples).data
         np.testing.assert_array_equal(zapped[:2], 0)
         np.testing.assert_array_equal(zapped[2:], original[2:])
+
+    def test_zap_channels_requires_a_selection(
+        self, filfile_8bit_1: str, tmp_path: Path
+    ) -> None:
+        out = tmp_path / "zapped.fil"
+        result = CliRunner().invoke(
+            spp_clean.main,
+            ["zap-channels", filfile_8bit_1, "-o", str(out)],
+        )
+        assert result.exit_code == 2
+        assert "chans" in result.output
+        assert not out.exists()
 
     def test_zap_times(self, filfile_8bit_1: str, tmpfile: str) -> None:
         runner = CliRunner()

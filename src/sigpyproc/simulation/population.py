@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Literal, cast
 import attrs
 import numpy as np
 
-from sigpyproc.simulation.furby import FurbyGenerator, PulseParams
+from sigpyproc.simulation.furby import SPEC_KINDS, FurbyGenerator, PulseParams
 from sigpyproc.simulation.inject import Injector
 
 
@@ -98,6 +98,9 @@ class BurstDistribution:
         if not self.spec_kinds:
             msg = "spec_kinds must contain at least one spectral structure type"
             raise ValueError(msg)
+        if any(kind not in SPEC_KINDS for kind in self.spec_kinds):
+            msg = f"spec_kinds must be drawn from {SPEC_KINDS}, got {self.spec_kinds}"
+            raise ValueError(msg)
         _ordered("dm_range", self.dm_range, lower=0.0)
         _ordered("width_range", self.width_range, lower=0.0, positive=True)
         _ordered("snr_range", self.snr_range, positive=True)
@@ -110,6 +113,16 @@ class BurstDistribution:
             raise ValueError(msg)
         if self.shape not in {"gaussian", "boxcar"}:
             msg = f"shape must be 'gaussian' or 'boxcar', got {self.shape!r}"
+            raise ValueError(msg)
+        for name, value in (("scatt_idx", self.scatt_idx), ("disp_ind", self.disp_ind)):
+            if not np.isfinite(value):
+                msg = f"{name} must be finite, got {value}"
+                raise ValueError(msg)
+        if isinstance(self.os_fact, bool) or not isinstance(self.os_fact, int):
+            msg = f"os_fact must be an integer >= 1, got {self.os_fact!r}"
+            raise TypeError(msg)
+        if self.os_fact < 1:
+            msg = f"os_fact must be an integer >= 1, got {self.os_fact!r}"
             raise ValueError(msg)
 
 

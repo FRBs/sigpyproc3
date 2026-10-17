@@ -1,4 +1,11 @@
-# sigpyproc
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/_static/logo/logo-tagline-dark.svg">
+    <img alt="sigpyproc: pulsar and FRB I/O" src="docs/_static/logo/logo-tagline.svg" width="480">
+  </picture>
+</p>
+
+<div align="center">
 
 [![GitHub CI](https://github.com/FRBs/sigpyproc3/workflows/GitHub%20CI/badge.svg)](https://github.com/FRBs/sigpyproc3/actions)
 [![PyPI](https://img.shields.io/pypi/v/sigpyproc)](https://pypi.org/project/sigpyproc/)
@@ -7,6 +14,8 @@
 [![License](https://img.shields.io/github/license/FRBs/sigpyproc3)](https://github.com/FRBs/sigpyproc3/blob/main/LICENSE)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![Scientific Python Ecosystem Coordination](https://img.shields.io/badge/SPEC-0,1-green?labelColor=%23004811&color=%235CA038)](https://scientific-python.org/specs/)
+
+</div>
 
 `sigpyproc` is a Python library for pulsar and FRB data. It reads [SIGPROC filterbank](http://sigproc.sourceforge.net), [PSRFITS](https://www.atnf.csiro.au/research/pulsar/psrfits_definition/Psrfits.html), time series, and Fourier series as objects, and runs the numerical work with [Numba](https://numba.pydata.org/). Use it to inspect a file, try a processing step, and prototype a search ahead of a survey pipeline.
 

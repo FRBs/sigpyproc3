@@ -1,8 +1,9 @@
-2.0.0 (2026-10-16)
+2.0.0 (2026-10-17)
 ++++++++++++++++++
 
 - Stable API.
 - CLI logs go to stderr. ``--quiet`` turns progress bars off.
+- ``spp_merge``, ``spp_splice`` and ``spp_extract`` are now ``spp_io merge``, ``spp_io splice`` and ``spp_io extract``. ``spp_zerodm`` is ``spp_clean zerodm``.
 - Streaming writes refuse an output path that is the same file as an input, including symlinks and hard links.
 - ``remove_zerodm`` restores the mean bandpass.
 - ``TimeSeries.find_pulses`` and ``spp_search pulses`` default to a modular PRESTO-inspired pipeline with configurable width banks and preprocessing, and width-dependent pruning.

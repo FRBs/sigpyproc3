@@ -82,9 +82,9 @@ class PulsarParams:
         if self.pdot != 0.0 and self.accel != 0.0:
             msg = "pdot and accel are mutually exclusive"
             raise ValueError(msg)
-        for name in ("dm", "snr", "pdot", "accel"):
+        for name in ("dm", "snr", "pdot", "accel", "period", "pulse_time", "width"):
             value = getattr(self, name)
-            if not np.isfinite(value):
+            if value is not None and not np.isfinite(value):
                 msg = f"{name} must be finite, got {value}"
                 raise ValueError(msg)
         if self.snr <= 0:
@@ -121,6 +121,18 @@ def make_header(
     period: float = 0.0,
 ) -> Header:
     """Build a SIGPROC-like filterbank header (defaults match ``fake``)."""
+    for name, value in (
+        ("tsamp", tsamp),
+        ("tobs", tobs),
+        ("tstart", tstart),
+        ("fch1", fch1),
+        ("foff", foff),
+        ("dm", dm),
+        ("period", period),
+    ):
+        if not np.isfinite(value):
+            msg = f"{name} must be finite, got {value}"
+            raise ValueError(msg)
     if tsamp <= 0.0:
         msg = "tsamp must be positive"
         raise ValueError(msg)

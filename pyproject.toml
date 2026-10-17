@@ -26,7 +26,14 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Astronomy",
 ]
-keywords = ["pulsar", "FRB", "filterbank", "SIGPROC", "PSRFITS", "radio astronomy"]
+keywords = [
+    "pulsar",
+    "FRB",
+    "filterbank",
+    "SIGPROC",
+    "PSRFITS",
+    "radio astronomy",
+]
 dependencies = [
     "numpy>=2.0",
     "numba>=0.61",
@@ -45,6 +52,7 @@ dependencies = [
 ]
 
 [project.urls]
+Homepage = "https://sigpyproc3.readthedocs.io"
 Repository = "https://github.com/FRBs/sigpyproc3"
 Documentation = "https://sigpyproc3.readthedocs.io"
 Changelog = "https://sigpyproc3.readthedocs.io/en/latest/changes.html"
@@ -60,10 +68,7 @@ tests = [
     "pytest-mock",
     "scipy>=1.13",
 ]
-dev = [
-    "ruff",
-    "ty",
-]
+dev = ["ruff", "ty"]
 docs = [
     "sphinx",
     "sphinx-book-theme",
@@ -77,14 +82,11 @@ docs = [
 
 [project.scripts]
 spp_header = "sigpyproc.apps.spp_header:main"
-spp_extract = "sigpyproc.apps.spp_extract:main"
+spp_io = "sigpyproc.apps.spp_io:main"
 spp_clean = "sigpyproc.apps.spp_clean:main"
 spp_stats = "sigpyproc.apps.spp_stats:main"
 spp_decimate = "sigpyproc.apps.spp_decimate:main"
 spp_bandpass = "sigpyproc.apps.spp_bandpass:main"
-spp_zerodm = "sigpyproc.apps.spp_zerodm:main"
-spp_merge = "sigpyproc.apps.spp_merge:main"
-spp_splice = "sigpyproc.apps.spp_splice:main"
 spp_dedisperse = "sigpyproc.apps.spp_dedisperse:main"
 spp_fold = "sigpyproc.apps.spp_fold:main"
 spp_fake = "sigpyproc.apps.spp_fake:main"
@@ -94,7 +96,13 @@ spp_view = "sigpyproc.apps.spp_view:main"
 
 
 [tool.ruff]
-include = ["pyproject.toml", "src/**/*.py", "src/**/*.pyi", "tests/**/*.py", "docs/**/*.py"]
+include = [
+    "pyproject.toml",
+    "src/**/*.py",
+    "src/**/*.pyi",
+    "tests/**/*.py",
+    "docs/**/*.py",
+]
 line-length = 88
 indent-width = 4
 target-version = "py312"
@@ -113,13 +121,27 @@ ignore = ["COM812", "CPY001", "D1", "D301", "PLR2004", "G004", "PLC0415"]
 "src/sigpyproc/apps/spp_fake.py" = ["PLR0913", "PLR0917"]
 "src/sigpyproc/apps/spp_digifil.py" = ["PLR0913"]
 "src/sigpyproc/apps/spp_view.py" = ["PLR0913", "PLR0917"]
-"src/sigpyproc/viz/**.py" = ["PLR0913", "PLR0912", "PLR0915", "PLR0917", "FBT001", "FBT002", "T201", "C901"]
+"src/sigpyproc/viz/**.py" = [
+    "PLR0913",
+    "PLR0912",
+    "PLR0915",
+    "PLR0917",
+    "FBT001",
+    "FBT002",
+    "T201",
+    "C901",
+]
 "tests/**/*.py" = ["S101", "FBT", "PLR2004", "PT011", "SLF001"]
 "docs/**" = ["INP001", "ARG001", "ANN401"]
+"docs/logo-src/**.py" = ["E501"]
 "bench/**" = ["INP001", "S603"]
 
 [tool.ruff.lint.pylint]
 max-args = 15
+
+[tool.ruff.lint.mccabe]
+max-complexity = 15
+
 
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"
@@ -160,7 +182,7 @@ omit = ["tests/*", "docs/*", "*__init__.py", "*_types.py"]
 
 [tool.coverage.report]
 show_missing = true
-fail_under = 90
+fail_under = 95
 ignore_errors = false
 exclude_lines = [
     'raise NotImplementedError',

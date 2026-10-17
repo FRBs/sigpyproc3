@@ -167,3 +167,21 @@ class TestPulseExtractor:
         block = pulse.get_data()
         assert isinstance(block, FilterbankBlock)
         np.testing.assert_equal(block.header.nchans, 832)
+
+
+@pytest.mark.parametrize("small_reads", [None, False, True])
+def test_filterbank_dedispersion_streams_match_bulk(
+    filfile_8bit_1: str,
+    small_reads: bool | None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from sigpyproc import readers
+
+    with FilReader(filfile_8bit_1) as reader:
+        expected = reader.read_dedisp_block(0, 16, 10, small_reads=False)
+        monkeypatch.setattr(readers, "_BULK_BYTES", 1)
+        monkeypatch.setattr(readers, "_STREAM_GULP_BYTES", reader.header.nchans * 2)
+        actual = reader.read_dedisp_block(0, 16, 10, small_reads=small_reads)
+        np.testing.assert_array_equal(actual.data, expected.data)
+        assert actual.header.tstart == expected.header.tstart
+        assert actual.dm == expected.dm

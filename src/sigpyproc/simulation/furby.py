@@ -118,7 +118,14 @@ class PulseParams:
         if self.spec_kind not in SPEC_KINDS:
             msg = f"spec_kind must be one of {SPEC_KINDS}, got {self.spec_kind!r}"
             raise ValueError(msg)
-        for name in ("disp_ind", "scatt_idx", "spec_idx"):
+        for name in (
+            "disp_ind",
+            "scatt_idx",
+            "spec_idx",
+            "tau0",
+            "tau_ref_freq",
+            "noise",
+        ):
             value = getattr(self, name)
             if not np.isfinite(value):
                 msg = f"{name} must be finite, got {value}"

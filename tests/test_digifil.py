@@ -735,3 +735,60 @@ class TestDigifilCli:
         runner = CliRunner()
         result = runner.invoke(digifil_cli, [filfile_8bit_1, "-b", "3"])
         assert result.exit_code != 0
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"nbits": 12},
+        {"npol": 0},
+        {"poln_select": -2},
+        {"gulp": 0},
+        {"rescale_seconds": np.nan},
+        {"rescale_seconds": -1},
+        {"tscrunch_factor": True},
+        {"fscrunch_factor": 1.5},
+        {"scale_fac": 0},
+        {"scale_fac": np.inf},
+    ],
+)
+def test_conversion_configuration_rejects_invalid_requests(changes: dict) -> None:
+    with pytest.raises(ValueError):
+        DigifilConfig(**changes)
+
+
+@pytest.mark.parametrize("npol", [2, 3, 4])
+def test_conversion_rejects_multifeed_output_before_writing(npol: int) -> None:
+    with pytest.raises(NotImplementedError, match="Stokes I"):
+        DigifilConfig(npol=npol)
+
+
+@pytest.mark.parametrize(
+    "window", [{"start": -1}, {"start": 10**12}, {"nsamps": 0}, {"nsamps": 10**12}]
+)
+def test_conversion_bad_window_preserves_existing_destination(
+    filfile_8bit_1: str,
+    tmp_path: Path,
+    window: dict,
+) -> None:
+    destination = tmp_path / "existing.fil"
+    destination.write_bytes(b"keep this file")
+    with pytest.raises(ValueError):
+        digifil(filfile_8bit_1, str(destination), **window)
+    assert destination.read_bytes() == b"keep this file"
+
+
+def test_conversion_default_name_cannot_alias_filterbank_input(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sigpyproc.simulation.pulsar import fake_filterbank, make_header
+
+    monkeypatch.chdir(tmp_path)
+    header = make_header(
+        filename="noise.fil", nchans=4, nbits=32, tsamp=0.001, tobs=0.064
+    )
+    fake_filterbank(header, seed=7)
+    original = Path("noise.fil").read_bytes()
+    output = digifil("noise.fil", config=DigifilConfig(nbits=-32, rescale_seconds=0.0))
+    assert Path(output).name == "noise_digi.fil"
+    assert Path("noise.fil").read_bytes() == original

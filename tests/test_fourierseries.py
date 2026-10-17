@@ -278,3 +278,27 @@ def test_spectrum_readers_reject_wrong_kind_and_truncation(tmp_path: Path) -> No
     path.write_bytes(path.read_bytes()[:-4])
     with pytest.raises(ValueError, match="payload"):
         FourierSeries.from_spec(path)
+
+
+@pytest.mark.parametrize(("order", "method"), [(0, "lyne"), (1, "unknown")])
+def test_harmonic_folds_reject_invalid_requests(order: int, method: str) -> None:
+    spectrum = PowerSpectrum(np.ones(65, dtype=np.float32), _synthetic_series_header())
+    with pytest.raises(ValueError):
+        spectrum.harmonic_fold(order, method=method)
+
+
+@pytest.mark.parametrize(("frequency", "harmonics"), [(0.0, 4), (10.0, 0), (1000.0, 4)])
+def test_profile_reconstruction_requires_available_harmonics(
+    frequency: float, harmonics: int
+) -> None:
+    fourier = FourierSeries(np.ones(65, dtype=np.complex64), _synthetic_series_header())
+    with pytest.raises(ValueError):
+        fourier.recon_prof(frequency, nharms=harmonics)
+
+
+@pytest.mark.parametrize("data", [np.ones((2, 2)), np.empty(0)])
+def test_amplitude_spectrum_requires_nonempty_one_dimensional_data(
+    data: np.ndarray,
+) -> None:
+    with pytest.raises(ValueError):
+        PowerSpectrum(data, _synthetic_series_header())

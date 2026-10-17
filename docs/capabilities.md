@@ -7,7 +7,7 @@ or the old binary names.
 | Operation | What 2.0 does |
 | --- | --- |
 | SIGPROC header inspection and edit | `Header` and `spp_header`. In-place edits stay on the requested file. A streaming transform will not overwrite its own input. |
-| Sample, channel, and band extraction | `extract_samps`, `extract_chans`, `extract_bands`, and `spp_extract`. Output epochs follow the selected samples. Signed 8-bit values are preserved. |
+| Sample, channel, and band extraction | `extract_samps`, `extract_chans`, `extract_bands`, and `spp_io extract`. Output epochs follow the selected samples. Signed 8-bit values are preserved. |
 | Decimation, bandpass, statistics, zero-DM, RFI | Library methods and the matching `spp_*` commands. Zero-DM restores the mean bandpass. Channel moments use the samples actually read. |
 | Dedispersion, sub-bands, Taylor tree, DM plan | `dedisperse`, `subband`, `tree_dedisperse`, and `DMPlan`. One-channel delay arrays keep a frequency axis. Trials that collide at three decimals are rejected before any file is opened. |
 | Folding | `Filterbank.fold` and `spp_fold`. Phase-bin duration is `period / nbins`. DM and period updates are measured from the original fold. Archives reload with `FoldedData.from_npz`. A selected sample range is not yet partitioned across sub-integrations. |
