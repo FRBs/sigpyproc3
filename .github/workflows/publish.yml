@@ -31,13 +31,15 @@ jobs:
         run: uvx twine check dist/*
 
       - name: Record checksums
-        run: sha256sum dist/* | tee dist/SHA256SUMS
+        run: sha256sum dist/*.whl dist/*.tar.gz | tee SHA256SUMS
 
       - name: Upload distributions
         uses: actions/upload-artifact@v4
         with:
           name: sigpyproc-dist
-          path: dist/*
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
           if-no-files-found: error
 
   publish:
