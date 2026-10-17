@@ -25,6 +25,21 @@ if TYPE_CHECKING:
     from sigpyproc.core.candidates import CandidateTable
 
 
+def _lyne_on_fundamental(folded: np.ndarray) -> np.ndarray:
+    """Move each Lyne stretch onto the fundamental-bin axis.
+
+    Fold ``i`` stretches by ``H = 2**(i+1)``, so a sum stored at bin ``k``
+    belongs at fundamental bin ``k // H``. When several bins land on one
+    fundamental, the largest sum is kept.
+    """
+    placed = np.zeros_like(folded)
+    bins = np.arange(folded.shape[1])
+    for ifold in range(folded.shape[0]):
+        stretch = 2 ** (ifold + 1)
+        np.maximum.at(placed[ifold], bins // stretch, folded[ifold])
+    return placed
+
+
 class PowerSpectrum:
     """An array class to handle Fourier Power spectrum.
 
@@ -175,6 +190,8 @@ class PowerSpectrum:
             msg = f"method must be one of {tuple(kernels_by_method)}, got {method!r}"
             raise ValueError(msg)
         summed = kernel(self.data, nfolds)
+        if method == "lyne":
+            summed = _lyne_on_fundamental(summed)
         return [
             PowerSpectrum(summed[ifold], self.header.new_header())
             for ifold in range(nfolds)
@@ -275,12 +292,52 @@ class PowerSpectrum:
             Power spectrum object.
         """
         header = Header.from_sigproc(filename)
-        data = np.fromfile(
+        payload = np.fromfile(
             filename,
-            dtype=np.float32,
+            dtype=np.dtype("<f4"),
             offset=header.stream_info.entries[0].hdrlen,
         )
-        return cls(data, header)
+        if header.data_type != "amplitude spectrum":
+            msg = f"{filename} is not a sigpyproc amplitude spectrum"
+            raise ValueError(msg)
+        expect = header.nsamples // 2 + 1
+        if payload.size != expect:
+            msg = (
+                f"{filename} has {payload.size} bins, expected {expect} "
+                f"for nsamples={header.nsamples}"
+            )
+            raise ValueError(msg)
+        return cls(payload, header)
+
+    def to_spec(self, filename: str | None = None) -> str:
+        """Write this power spectrum, keeping the real transform length.
+
+        Parameters
+        ----------
+        filename : str, optional
+            Output path, by default ``basename.spec``.
+
+        Returns
+        -------
+        str
+            Output ``.spec`` file name.
+        """
+        if filename is None:
+            filename = f"{self.header.basename}.spec"
+        values = np.ascontiguousarray(self.data.astype("<f4", copy=False))
+        with self.header.prep_outfile(
+            filename,
+            updates={
+                "nbits": 32,
+                "nchans": 1,
+                "nifs": 1,
+                "data_type": "amplitude spectrum",
+            },
+            nbits=32,
+            write_nsamples=True,
+        ) as outfile:
+            outfile.cwrite(values)
+        return filename
 
     def view(self, **kwargs: Any) -> Any:  # noqa: ANN401
         """Open the interactive power spectrum viewer.
@@ -288,7 +345,7 @@ class PowerSpectrum:
         Parameters
         ----------
         **kwargs : dict
-            Keyword arguments passed to :class:`~sigpyproc.viz.spectrum.SpectrumViewer`.
+            Keyword arguments passed to :class:`~sigpyproc.viz.series.SpectrumViewer`.
 
         Returns
         -------
@@ -360,15 +417,16 @@ class FourierSeries:
 
     def ifft(
         self,
-        ifftn: Callable[[np.ndarray], np.ndarray] | None = None,
+        ifftn: Callable[[np.ndarray, int], np.ndarray] | None = None,
     ) -> timeseries.TimeSeries:
         """Perform 1-D complex to real inverse FFT.
 
         Parameters
         ----------
         ifftn : Callable[[np.ndarray, int], np.ndarray], optional
-            The ifft function to use. Own ifft implementation can be used,
-            e.g. `pyfftw.interfaces.numpy_fft.irfft`, by default None.
+            Inverse transform ``(spectrum, n) -> time``. ``n`` is the stored
+            real length, which keeps odd lengths. By default
+            ``sigpyproc.kernels.nb_irfft``.
 
         Returns
         -------
@@ -380,8 +438,12 @@ class FourierSeries:
         if not callable(ifftn):
             msg = f"Input ifftn is not callable: {ifftn}"
             raise TypeError(msg)
-        tim_ar = ifftn(self.data)
-        return timeseries.TimeSeries(tim_ar, self.header.new_header())
+        n_time = int(self.header.nsamples)
+        tim_ar = ifftn(self.data, n_time)
+        return timeseries.TimeSeries(
+            tim_ar,
+            self.header.new_header({"nsamples": int(tim_ar.size)}),
+        )
 
     def form_spec(self, *, interpolate: bool = False) -> PowerSpectrum:
         """Form the power spectrum.
@@ -425,6 +487,33 @@ class FourierSeries:
         FourierSeries
             Whitened fourier series.
         """
+        if start_width < 2 or end_width < start_width:
+            msg = (
+                "whitening windows must satisfy 2 <= start_width <= end_width, "
+                f"got {start_width} and {end_width}"
+            )
+            raise ValueError(msg)
+        if not np.isfinite(end_freq) or end_freq <= 0:
+            msg = f"end_freq must be finite and positive, got {end_freq}"
+            raise ValueError(msg)
+        if self.data.size < start_width + 2:
+            msg = (
+                f"spectrum length {self.data.size} is shorter than the "
+                f"whitening window {start_width}"
+            )
+            raise ValueError(msg)
+        if not np.isfinite(self.data).all():
+            msg = "whitening requires a finite spectrum"
+            raise ValueError(msg)
+        power = (
+            self.data.real.astype(np.float64) ** 2
+            + self.data.imag.astype(np.float64) ** 2
+        )
+        if np.any(power > np.finfo(np.float32).max):
+            msg = "spectrum power exceeds the float32 whitening range"
+            raise ValueError(msg)
+        if not np.any(power > 0):
+            return FourierSeries(np.array(self.data), self.header.new_header())
         end_freq_bin = round(end_freq / self.binwidth)
         out_ar = kernels.fs_running_median(
             self.data,
@@ -527,8 +616,19 @@ class FourierSeries:
         """
         if filename is None:
             filename = f"{self.header.basename}.spec"
-        with self.header.prep_outfile(filename, nbits=32) as outfile:
-            outfile.cwrite(self.data.view(np.float32))
+        payload = np.ascontiguousarray(self.data.astype("<c8", copy=False)).view("<f4")
+        with self.header.prep_outfile(
+            filename,
+            updates={
+                "nbits": 32,
+                "nchans": 1,
+                "nifs": 1,
+                "data_type": "complex spectrum",
+            },
+            nbits=32,
+            write_nsamples=True,
+        ) as outfile:
+            outfile.cwrite(payload)
         return filename
 
     @classmethod
@@ -580,28 +680,56 @@ class FourierSeries:
 
         Notes
         -----
-        This is not setup to handle ``.spec`` files such as are
-        created by Sigproc seek module. To do this would require
-        a new header parser for that file format.
+        A sigpyproc complex spectrum stores the real transform length in
+        ``nsamples`` and the bins as little-endian interleaved floats.
+        An older sigpyproc ``.spec`` that still carries the time-series data
+        type is read as an even-length transform: the float count ``N`` is
+        ``2 * (n/2 + 1)`` bins, so ``n = N - 2``. Odd lengths need the
+        declared ``nsamples``. Sigproc seek ``.spec`` files are a different
+        format and are not read here.
         """
         header = Header.from_sigproc(filename)
-        data = np.fromfile(
+        payload = np.fromfile(
             filename,
-            dtype=np.float32,
+            dtype=np.dtype("<f4"),
             offset=header.stream_info.entries[0].hdrlen,
         )
-        return cls(data.view(np.complex64), header)
+        if header.data_type == "complex spectrum":
+            data = payload.view(np.dtype("<c8"))
+        elif header.data_type == "amplitude spectrum":
+            msg = f"{filename} is a power spectrum, not a complex spectrum"
+            raise ValueError(msg)
+        else:
+            if payload.size % 2:
+                msg = f"{filename} has a truncated complex spectrum"
+                raise ValueError(msg)
+            n_time = payload.size - 2
+            if n_time < 1:
+                msg = f"{filename} does not contain a complex spectrum"
+                raise ValueError(msg)
+            data = payload.view(np.dtype("<c8"))
+            header = header.new_header(
+                {"nsamples": n_time, "data_type": "complex spectrum"},
+            )
+        expect = header.nsamples // 2 + 1
+        if data.size != expect:
+            msg = (
+                f"{filename} has {data.size} bins, expected {expect} "
+                f"for nsamples={header.nsamples}"
+            )
+            raise ValueError(msg)
+        return cls(np.array(data, dtype=np.complex64, copy=True), header)
 
     def view(self, **kwargs: Any) -> Any:  # noqa: ANN401
         """Open the interactive spectrum viewer for this Fourier series.
 
         Forms a power spectrum and launches
-        :class:`~sigpyproc.viz.spectrum.SpectrumViewer`.
+        :class:`~sigpyproc.viz.series.SpectrumViewer`.
 
         Parameters
         ----------
         **kwargs : dict
-            Keyword arguments passed to :class:`~sigpyproc.viz.spectrum.SpectrumViewer`.
+            Keyword arguments passed to :class:`~sigpyproc.viz.series.SpectrumViewer`.
 
         Returns
         -------

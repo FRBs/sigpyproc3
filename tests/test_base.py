@@ -8,6 +8,7 @@ import pytest
 from sigpyproc.core import rfi, stats
 from sigpyproc.core.dispersion import DMPlan
 from sigpyproc.foldedcube import FoldedData
+from sigpyproc.header import Header
 from sigpyproc.readers import FilReader
 from sigpyproc.timeseries import TimeSeries
 
@@ -140,6 +141,22 @@ class TestFilterbank:
         with pytest.raises(ValueError):
             fil.extract_chans(np.array([5000]))
 
+    def test_extract_chans_rejects_malformed_lists(
+        self, filfile_4bit: str, tmp_path: Path
+    ) -> None:
+        fil = FilReader(filfile_4bit)
+        out = str(tmp_path / "chans")
+        rejected = [
+            np.array([], dtype=int),
+            np.array([[0, 1]]),
+            np.array([0.5, 1.5]),
+            np.array([0, 0]),
+        ]
+        for chans in rejected:
+            with pytest.raises(ValueError):
+                fil.extract_chans(chans, outfile_base=out)
+        assert list(tmp_path.glob("chans*")) == []
+
     @pytest.mark.parametrize("chanpersub", [None, 32])
     def test_extract_bands(self, filfile_4bit: str, chanpersub: int | None) -> None:
         chanstart = 10
@@ -151,6 +168,8 @@ class TestFilterbank:
             chanpersub=chanpersub,
         )
         nchans_out = nchans if chanpersub is None else chanpersub
+        expected_files = 1 if chanpersub is None else nchans // chanpersub
+        assert len(subfiles) == expected_files
         for subfile in subfiles:
             subfile_path = Path(subfile)
             assert subfile_path.is_file()
@@ -172,6 +191,35 @@ class TestFilterbank:
                     nchans=nchans + 1,
                     chanpersub=chanpersub,
                 )
+
+    def test_extract_uses_the_selected_epoch(
+        self,
+        filfile_4bit: str,
+        tmp_path: Path,
+    ) -> None:
+        fil = FilReader(filfile_4bit)
+        start = 20
+        sub = fil.extract_bands(
+            chanstart=0,
+            nchans=8,
+            chanpersub=4,
+            outfile_base=str(tmp_path / "band"),
+            start=start,
+            nsamps=30,
+        )
+        assert len(sub) == 2
+        loaded = FilReader(sub[0])
+        assert loaded.header.nsamples == 30
+        assert loaded.header.tstart == pytest.approx(fil.header.mjd_after_nsamps(start))
+        chans = fil.extract_chans(
+            np.array([0, 1]),
+            outfile_base=str(tmp_path / "chan"),
+            start=start,
+            nsamps=30,
+        )
+        tim = TimeSeries.from_tim(chans[0])
+        assert tim.header.nsamples == 30
+        assert tim.header.tstart == pytest.approx(fil.header.mjd_after_nsamps(start))
 
     def test_requantize(self, filfile_8bit_1: str, tmpfile: str) -> None:
         fil = FilReader(filfile_8bit_1)
@@ -277,6 +325,73 @@ class TestFilterbank:
         np.testing.assert_equal(tim.header.nchans, 1)
         np.testing.assert_equal(tim.header.nbits, 32)
 
+    def test_dedisperse_plan_rejects_unusable_trials(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        path = tmp_path / "short.fil"
+        header = Header(
+            filename=str(path),
+            data_type="filterbank",
+            nchans=4,
+            foff=-1.0,
+            fch1=1400.0,
+            nbits=8,
+            tsamp=0.001,
+            tstart=50000.0,
+            nsamples=8,
+            source="J0000+0000",
+        )
+        with header.prep_outfile(str(path), sources=()) as writer:
+            writer.cwrite(np.zeros(header.nsamples * header.nchans, dtype=np.uint8))
+        fil = FilReader(path)
+        with pytest.raises(ValueError, match="empty"):
+            fil.dedisperse_plan(
+                DMPlan(dms=np.array([])), outfile_base=str(tmp_path / "empty")
+            )
+        with pytest.raises(ValueError, match="Not enough samples"):
+            fil.dedisperse_plan(
+                DMPlan(dms=np.array([1.0e6])),
+                nsamps=4,
+                outfile_base=str(tmp_path / "delay"),
+            )
+        with pytest.raises(ValueError, match="not unique"):
+            fil.dedisperse_plan(
+                DMPlan(dms=np.array([1.0001, 1.0004])),
+                outfile_base=str(tmp_path / "clash"),
+            )
+        assert list(tmp_path.glob("*.tim")) == []
+        monkeypatch.chdir(tmp_path)
+        written = fil.dedisperse_plan(DMPlan(dms=np.array([0.0])))
+        assert len(written) == 1
+        assert Path(written[0]).is_file()
+
+    def test_tree_dedisperse_rejects_bad_controls(self, tmp_path: Path) -> None:
+        path = tmp_path / "tree.fil"
+        header = Header(
+            filename=str(path),
+            data_type="filterbank",
+            nchans=8,
+            foff=-1.0,
+            fch1=1400.0,
+            nbits=8,
+            tsamp=0.001,
+            tstart=50000.0,
+            nsamples=32,
+            source="J0000+0000",
+        )
+        with header.prep_outfile(str(path), sources=()) as writer:
+            writer.cwrite(np.zeros(header.nsamples * header.nchans, dtype=np.uint8))
+        fil = FilReader(path)
+        with pytest.raises(ValueError, match="chunk"):
+            fil.tree_dedisperse(chunk=0, outfile_base=str(tmp_path / "chunk"))
+        with pytest.raises(ValueError, match="DM index"):
+            fil.tree_dedisperse(dm_lo=5, dm_hi=2, outfile_base=str(tmp_path / "range"))
+        with pytest.raises(ValueError, match="max_gb"):
+            fil.tree_dedisperse(max_gb=1e-12, outfile_base=str(tmp_path / "ram"))
+        paths = fil.tree_dedisperse(nsamps=16, outfile_base=str(tmp_path / "tree"))
+        assert len(paths) == header.nchans
+        assert all(Path(name).is_file() for name in paths)
+
     def test_fold(self, filfile_4bit: str) -> None:
         fil = FilReader(filfile_4bit)
         cube = fil.fold(period=1, dm=10, nints=16, nbins=50)
@@ -310,3 +425,45 @@ class TestFilterbank:
         mask_file = Path(rfimask.to_file())
         assert mask_file.is_file()
         mask_file.unlink()
+
+
+@pytest.mark.parametrize(
+    ("method", "kwargs"),
+    [
+        ("collapse", {"method": "median"}),
+        ("bandpass", {"method": "median"}),
+        ("collapse", {"start": -1}),
+        ("bandpass", {"nsamps": 0}),
+        ("downsample", {"tfactor": 0}),
+        ("downsample", {"ffactor": 3}),
+        ("apply_channel_mask", {"chan_mask": np.zeros(1, dtype=bool)}),
+        ("zap_times", {"intervals": [(0, 1)], "mode": "unknown"}),
+        ("extract_chans", {"batch_size": 0}),
+        ("extract_bands", {"chanstart": 0, "nchans": 4, "batch_size": 0}),
+        ("requantize", {"nbits_out": 12}),
+        ("subband", {"dm": 10.0, "nsub": 0}),
+        ("subband", {"dm": 100.0, "nsub": 1, "nsamps": 1}),
+        ("dedisperse", {"dm": 100.0, "nsamps": 1}),
+        ("clean_rfi", {"method": "unknown"}),
+    ],
+)
+def test_invalid_processing_requests_do_not_create_outputs(
+    filfile_8bit_1: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    method: str,
+    kwargs: dict,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    with FilReader(filfile_8bit_1) as reader, pytest.raises(ValueError):
+        getattr(reader, method)(**kwargs)
+    assert not list(tmp_path.iterdir())
+
+
+def test_default_remaining_window_tracks_its_epoch(filfile_8bit_1: str) -> None:
+    with FilReader(filfile_8bit_1) as reader:
+        count, epoch = reader._sample_window(10, None)
+        assert count == reader.header.nsamples - 10
+        assert epoch == reader.header.mjd_after_nsamps(10)
+        with pytest.raises(ValueError, match="out of range"):
+            reader._sample_window(reader.header.nsamples + 1, None)

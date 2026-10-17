@@ -1,0 +1,58 @@
+/* Primary colour matches the logo's sweep. The theme sets these on
+   html[data-theme], so a bare :root override would lose. */
+html[data-theme="light"] {
+    --pst-color-primary: #0284c7;
+    --pst-color-primary-highlight: #0369a1;
+}
+
+html[data-theme="dark"] {
+    --pst-color-primary: #38bdf8;
+    --pst-color-primary-highlight: #7dd3fc;
+}
+
+/* Sidebar lockup is wide, so cap its height. */
+.navbar-brand img.logo__image {
+    height: 2.15rem;
+    width: auto;
+    max-width: 100%;
+}
+
+.spp-hero-card {
+    display: flex;
+    align-items: center;
+    gap: 28px;
+    border-radius: 12px;
+    padding: 24px 28px;
+    margin: 0.25rem 0 1.5rem;
+    background: linear-gradient(135deg, rgba(2, 132, 199, 0.08), rgba(217, 119, 6, 0.05));
+    border: 1px solid rgba(2, 132, 199, 0.18);
+}
+
+html[data-theme="dark"] .spp-hero-card {
+    background: linear-gradient(135deg, rgba(56, 189, 248, 0.08), rgba(245, 158, 11, 0.05));
+    border-color: rgba(56, 189, 248, 0.22);
+}
+
+.spp-hero-mark {
+    flex: 0 0 auto;
+    width: 104px;
+    height: auto;
+}
+
+.spp-hero-lede {
+    margin: 0;
+    font-size: 1.15rem;
+    line-height: 1.6;
+    color: var(--pst-color-text-muted);
+}
+
+@media (max-width: 576px) {
+    .spp-hero-card {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .spp-hero-mark {
+        width: 80px;
+    }
+}

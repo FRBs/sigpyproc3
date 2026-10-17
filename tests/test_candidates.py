@@ -3,6 +3,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from astropy import units as u
 from astropy.table import QTable
 
 from sigpyproc.core.candidates import (
@@ -193,3 +194,91 @@ class TestPulseCSV:
             cands = CandidateTable.from_rows([{"kind": "pulse", "width_s": width}])
             with pytest.raises(ValueError, match="whole numbers"):
                 cands.to_pulse_csv(StringIO(), 0.001)
+
+    def test_quantities_are_converted_before_export_and_clustering(
+        self, tmp_path: Path
+    ) -> None:
+        loud = CandidateTable.from_rows(
+            [
+                {
+                    "period_s": 1000 * u.ms,
+                    "freq_hz": 1 * u.Hz,
+                    "snr": 20.0,
+                    "dm": (1 * u.pc / u.m**3),
+                    "width_s": 2 * u.ms,
+                    "accel": 100 * u.cm / u.s**2,
+                    "bin_origin": "center",
+                },
+            ],
+        )
+        quiet = CandidateTable.from_rows(
+            [{"period_s": 1.0 * u.s, "snr": 9.0, "bin_origin": "start"}],
+        )
+        np.testing.assert_allclose(loud.values("period_s"), 1.0)
+        np.testing.assert_allclose(loud.values("dm"), 1e-6)
+        np.testing.assert_allclose(loud.values("width_s"), 0.002)
+        np.testing.assert_allclose(loud.values("accel"), 1.0)
+        assert loud.table["bin_origin"][0] == "center"
+        clustered = (loud + quiet).cluster(snr_min=1.0)
+        assert len(clustered) == 1
+        np.testing.assert_allclose(clustered.values("snr"), 20.0)
+
+        path = tmp_path / "units.csv"
+        loud.to_csv(path)
+        loaded = CandidateTable.from_csv(path)
+        np.testing.assert_allclose(loaded.values("period_s"), 1.0)
+        np.testing.assert_allclose(loaded.values("accel"), 1.0)
+        assert loaded.table["bin_origin"][0] == "center"
+
+        with pytest.raises(ValueError, match="period_s"):
+            CandidateTable.from_rows([{"period_s": 1.0 * u.m, "snr": 1.0}])
+        with pytest.raises(ValueError, match="scalar"):
+            CandidateTable.from_rows([{"period_s": [1.0, 2.0] * u.s, "snr": 1.0}])
+
+
+def test_candidate_display_units_do_not_change_physics(tmp_path: Path) -> None:
+    table = CandidateTable.from_rows(
+        [
+            {"period_s": 1.0, "freq_hz": 1.0, "snr": 20.0, "dm": 2.0, "accel": 3.0},
+            {"period_s": 0.5, "freq_hz": 2.0, "snr": 10.0, "dm": 2.0, "accel": 3.0},
+        ]
+    )
+    table.table["period_s"] = table.table["period_s"].to(u.ms)
+    table.table["freq_hz"] = table.table["freq_hz"].to(u.kHz)
+    table.table["dm"] = table.table["dm"].to(u.pc / u.m**3)
+    table.table["accel"] = table.table["accel"].to(u.cm / u.s**2)
+    np.testing.assert_allclose(table.values("period_s"), [1.0, 0.5])
+    np.testing.assert_allclose(table.values("freq_hz"), [1.0, 2.0])
+    assert len(table.cluster()) == 1
+    path = tmp_path / "canonical.csv"
+    table.to_csv(path)
+    loaded = CandidateTable.from_csv(path)
+    for name in ("period_s", "freq_hz", "dm", "accel"):
+        np.testing.assert_allclose(loaded.values(name), table.values(name))
+    assert table.table["period_s"].unit == u.ms
+    table.table["period_s"] = np.ones(2) * u.m
+    with pytest.raises(ValueError, match="incompatible"):
+        table.to_csv(path)
+
+
+def test_pulse_export_preserves_display_units_and_origin(tmp_path: Path) -> None:
+    pulses = CandidateTable.from_rows(
+        [
+            {
+                "kind": "pulse",
+                "bin": 12,
+                "width_s": 0.004,
+                "snr": 8.0,
+                "bin_origin": "start",
+            }
+        ]
+    )
+    pulses.table["width_s"] = pulses.table["width_s"].to(u.ms)
+    output = StringIO()
+    pulses.to_pulse_csv(output, 0.001)
+    path = tmp_path / "pulses.csv"
+    path.write_text(output.getvalue())
+    loaded = CandidateTable.from_csv(path)
+    np.testing.assert_allclose(loaded.values("width_s"), 0.004)
+    assert loaded.values("bin_origin").tolist() == ["start"]
+    assert pulses.table["width_s"].unit == u.ms

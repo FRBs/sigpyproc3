@@ -17,7 +17,7 @@ import numpy as np
 
 from sigpyproc.header import Header
 from sigpyproc.io import sigproc
-from sigpyproc.io.fileio import FileWriter
+from sigpyproc.io.fileio import FileWriter, ensure_output_does_not_alias
 from sigpyproc.io.pfits import PFITSFile, SubintHdr
 from sigpyproc.kernels.digitizer import (
     accumulate_stats,
@@ -201,6 +201,9 @@ def dspsr_block_samples(
     int
         Block length in input samples.
     """
+    if not math.isfinite(max_ram_bytes) or max_ram_bytes <= 0:
+        msg = f"max_ram_bytes must be finite and positive, got {max_ram_bytes}"
+        raise ValueError(msg)
     nbyte_dat = (nbit_in / 8 + 4 * copies) * npol * nchan
     nblock = math.floor(max_ram_bytes / nbyte_dat)
     resolution = max(1, resolution)
@@ -330,9 +333,12 @@ class DigifilConfig:
         Keep the offset and scale constant after the first estimate,
         by default False.
     tscrunch_factor : int, optional
-        Time decimation factor, by default 1.
+        Time decimation factor, by default 1. ``0`` is the same as ``1``:
+        no time scrunch.
     fscrunch_factor : int, optional
-        Frequency decimation factor, by default 1.
+        Frequency decimation factor, by default 1. ``0`` is the same as ``1``:
+        no frequency scrunch. A factor greater than 1 must divide ``nchans``
+        and must not exceed it.
     scale_fac : float, optional
         Additional scale factor applied before digitising, by default 1.
     scloffs : bool, optional
@@ -380,14 +386,18 @@ class DigifilConfig:
         if self.gulp is not None and self.gulp <= 0:
             msg = f"gulp must be positive, got {self.gulp}"
             raise ValueError(msg)
-        if self.rescale_seconds < 0:
-            msg = f"rescale_seconds must be >= 0, got {self.rescale_seconds}"
+        if not math.isfinite(self.rescale_seconds) or self.rescale_seconds < 0:
+            msg = f"rescale_seconds must be finite and >= 0, got {self.rescale_seconds}"
             raise ValueError(msg)
-        if self.tscrunch_factor < 0 or self.fscrunch_factor < 0:
-            msg = "tscrunch_factor and fscrunch_factor must be >= 0"
-            raise ValueError(msg)
-        if self.scale_fac == 0:
-            msg = "scale_fac must be non-zero"
+        for name, factor in (
+            ("tscrunch_factor", self.tscrunch_factor),
+            ("fscrunch_factor", self.fscrunch_factor),
+        ):
+            if isinstance(factor, bool) or not isinstance(factor, int) or factor < 0:
+                msg = f"{name} must be an integer >= 0, got {factor!r}"
+                raise ValueError(msg)
+        if not math.isfinite(self.scale_fac) or self.scale_fac == 0:
+            msg = f"scale_fac must be finite and non-zero, got {self.scale_fac}"
             raise ValueError(msg)
 
 
@@ -842,28 +852,37 @@ def _output_header(
     nsamples_out: int,
     tsamp_out: float,
     nbits_out: int,
+    *,
+    start: int = 0,
 ) -> Header:
     """Build the output sigproc header as dspsr digifil does.
 
     The output bandwidth is negative (dspsr's convention), so the channels are
-    reversed when the input bandwidth is positive. Optional keys of the input, such as
-    ``rawdatafile`` and the azimuth and zenith angles, are carried over unchanged.
+    reversed when the input bandwidth is positive. ``start`` is the first input
+    sample, and the output epoch is that sample's time. Optional keys of the
+    input, such as ``rawdatafile`` and the azimuth and zenith angles, are
+    carried over unchanged. Frequency scrunch is only used when the factor
+    divides ``nchan_in``, so this bandwidth is the band that was actually summed.
     """
     bw_abs = abs(hdr_in.foff) * nchan_in
     centre = hdr_in.fch1 + 0.5 * hdr_in.foff * (nchan_in - 1)
     foff_out = -bw_abs / nchan_out
     fch1_out = centre + 0.5 * bw_abs - 0.5 * (bw_abs / nchan_out)
-    return hdr_in.new_header(
-        {
-            "nchans": nchan_out,
-            "foff": foff_out,
-            "fch1": fch1_out,
-            "tsamp": tsamp_out,
-            "nbits": nbits_out,
-            "nifs": npol_out,
-            "nsamples": nsamples_out,
-        },
-    )
+    updates: dict[str, int | float | bool] = {
+        "nchans": nchan_out,
+        "foff": foff_out,
+        "fch1": fch1_out,
+        "tsamp": tsamp_out,
+        "nbits": nbits_out,
+        "nifs": npol_out,
+        "nsamples": nsamples_out,
+        "tstart": hdr_in.mjd_after_nsamps(start),
+    }
+    # quantise_rows and float_rows write unsigned levels or float32. Clear a
+    # signed flag inherited from 8-bit input; do not invent one that was absent.
+    if hdr_in.signed:
+        updates["signed"] = False
+    return hdr_in.new_header(updates)
 
 
 DSPSR_MAX_RAM_MB = 256.0
@@ -935,6 +954,41 @@ def default_gulp(
     return _dspsr_default_gulp(src, cfg, pscrunch=pscrunch, max_ram_mb=max_ram_mb)
 
 
+def _validate_request(
+    cfg: DigifilConfig,
+    src: _Source,
+    start: int,
+    nsamps: int | None,
+) -> None:
+    """Reject a window or frequency factor before any output file exists.
+
+    A frequency factor of 0 or 1 keeps every channel. A larger factor must
+    divide ``nchans`` so the output grid is the centres of those groups, not
+    the original bandwidth stretched over a shorter channel axis.
+    """
+    if start < 0:
+        msg = f"start must be >= 0, got {start}"
+        raise ValueError(msg)
+    available = src.header.nsamples - start
+    if nsamps is None:
+        if available < 1:
+            msg = f"start={start} is outside the file ({src.header.nsamples} samples)"
+            raise ValueError(msg)
+    elif nsamps < 1 or nsamps > available:
+        msg = (
+            f"requested samples are out of range: start={start}, "
+            f"nsamps={nsamps}, nsamples={src.header.nsamples}"
+        )
+        raise ValueError(msg)
+    factor = cfg.fscrunch_factor
+    if factor > src.nchan:
+        msg = f"fscrunch_factor={factor} exceeds nchans={src.nchan}"
+        raise ValueError(msg)
+    if factor > 1 and src.nchan % factor != 0:
+        msg = f"fscrunch_factor={factor} must divide nchans={src.nchan}"
+        raise ValueError(msg)
+
+
 def _default_outfile(infile: str) -> str:
     stem = Path(infile).stem
     outfile = f"{stem}.fil"
@@ -991,6 +1045,7 @@ def digifil(
     filename = src.filename
     if outfile is None:
         outfile = _default_outfile(filename)
+    _validate_request(cfg, src, start, nsamps)
 
     _, pscrunch, npol_out = _polarisation_plan(
         src.npol,
@@ -1007,6 +1062,7 @@ def digifil(
         src.nsamples // tscr,
         1.0 / pipeline.rate_out,
         pipeline.nbits_out,
+        start=start,
     )
 
     block = (
@@ -1019,7 +1075,13 @@ def digifil(
         )
     )
     exact = cfg.rescale_seconds != 0
-    out_file = FileWriter(outfile, mode="w+", nbits=pipeline.nbits_out)
+    ensure_output_does_not_alias([filename], [outfile])
+    out_file = FileWriter(
+        outfile,
+        mode="w+",
+        nbits=pipeline.nbits_out,
+        signed=hdr_out.signed,
+    )
     out_sig = hdr_out.to_sigproc()
     out_file.write(sigproc.encode_header(out_sig))
     for raw in src.blocks(block, exact=exact):

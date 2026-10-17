@@ -140,3 +140,11 @@ class TestFrequencyChannels:
         arr = [1, 2, 4, 7]
         with np.testing.assert_raises(ValueError):
             utils.FrequencyChannels(arr)  # type: ignore[arg-type]
+
+    def test_one_channel_is_rejected(self) -> None:
+        with pytest.raises(ValueError, match="at least two"):
+            utils.FrequencyChannels([1400.0])
+        with pytest.raises(ValueError, match="at least two"):
+            utils.FrequencyChannels.from_sig(1400.25, -0.5, 1)
+        with pytest.raises(ValueError, match="at least two"):
+            utils.FrequencyChannels.from_pfits(1500.0, -2.0, 1)

@@ -31,6 +31,7 @@ from sigpyproc.kernels.digitizer import (
     tscrunch,
 )
 from sigpyproc.readers import FilReader
+from sigpyproc.simulation.pulsar import make_header
 
 NCHAN_8BIT = 832
 NSAMP_8BIT = 4096
@@ -576,6 +577,80 @@ class TestDigifilDriver:
                 DigifilConfig(gulp=0),
             )
 
+    def test_selected_start_and_dividing_fscrunch(self, tmpdir: str) -> None:
+        nsamps, nchans = 40, 4
+        tsamp = 1e-3
+        data = np.arange(nsamps * nchans, dtype=np.float32).reshape(nsamps, nchans)
+        path = _out(tmpdir, "epoch_in.fil")
+        header = make_header(
+            filename=path,
+            nchans=nchans,
+            nbits=32,
+            tsamp=tsamp,
+            tobs=nsamps * tsamp,
+            tstart=50000.0,
+            fch1=1400.0,
+            foff=-1.0,
+        )
+        with header.prep_outfile(path, nbits=32, sources=()) as writer:
+            writer.cwrite(data.ravel())
+
+        out = _out(tmpdir, "epoch_out.fil")
+        digifil(
+            path,
+            out,
+            DigifilConfig(nbits=-32, rescale_seconds=0, gulp=8, fscrunch_factor=2),
+            start=20,
+            nsamps=12,
+        )
+        got = FilReader(out)
+        assert got.header.nsamples == 12
+        assert got.header.tstart == pytest.approx(header.mjd_after_nsamps(20))
+        # Pairs (1400, 1399) and (1398, 1397). foff < 0 keeps that order.
+        assert got.header.fch1 == pytest.approx(1399.5)
+        assert got.header.foff == pytest.approx(-2.0)
+        np.testing.assert_allclose(got.header.chan_freqs, [1399.5, 1397.5])
+        selected = data[20:32]
+        expected = np.stack(
+            [
+                (selected[:, 0] + selected[:, 1]) / 2,
+                (selected[:, 2] + selected[:, 3]) / 2,
+            ],
+            axis=1,
+        )
+        np.testing.assert_allclose(got.read_block(0, 12).data.T, expected)
+
+        bad = _out(tmpdir, "not_a_divisor.fil")
+        with pytest.raises(ValueError, match="divide"):
+            digifil(
+                path,
+                bad,
+                DigifilConfig(nbits=-32, rescale_seconds=0, fscrunch_factor=3),
+            )
+        assert not Path(bad).exists()
+
+        too_wide = _out(tmpdir, "too_wide.fil")
+        with pytest.raises(ValueError, match="exceeds"):
+            digifil(
+                path,
+                too_wide,
+                DigifilConfig(nbits=-32, rescale_seconds=0, fscrunch_factor=5),
+            )
+        assert not Path(too_wide).exists()
+
+        identity = _out(tmpdir, "factor0.fil")
+        digifil(
+            path,
+            identity,
+            DigifilConfig(nbits=-32, rescale_seconds=0, fscrunch_factor=0),
+        )
+        assert FilReader(identity).header.nchans == nchans
+
+        with pytest.raises(ValueError, match="scale_fac"):
+            DigifilConfig(scale_fac=float("nan"))
+        with pytest.raises(ValueError, match="max_ram"):
+            default_gulp(path, max_ram_mb=float("nan"))
+
 
 class TestDspsrBlocks:
     @pytest.mark.parametrize(
@@ -660,3 +735,60 @@ class TestDigifilCli:
         runner = CliRunner()
         result = runner.invoke(digifil_cli, [filfile_8bit_1, "-b", "3"])
         assert result.exit_code != 0
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"nbits": 12},
+        {"npol": 0},
+        {"poln_select": -2},
+        {"gulp": 0},
+        {"rescale_seconds": np.nan},
+        {"rescale_seconds": -1},
+        {"tscrunch_factor": True},
+        {"fscrunch_factor": 1.5},
+        {"scale_fac": 0},
+        {"scale_fac": np.inf},
+    ],
+)
+def test_conversion_configuration_rejects_invalid_requests(changes: dict) -> None:
+    with pytest.raises(ValueError):
+        DigifilConfig(**changes)
+
+
+@pytest.mark.parametrize("npol", [2, 3, 4])
+def test_conversion_rejects_multifeed_output_before_writing(npol: int) -> None:
+    with pytest.raises(NotImplementedError, match="Stokes I"):
+        DigifilConfig(npol=npol)
+
+
+@pytest.mark.parametrize(
+    "window", [{"start": -1}, {"start": 10**12}, {"nsamps": 0}, {"nsamps": 10**12}]
+)
+def test_conversion_bad_window_preserves_existing_destination(
+    filfile_8bit_1: str,
+    tmp_path: Path,
+    window: dict,
+) -> None:
+    destination = tmp_path / "existing.fil"
+    destination.write_bytes(b"keep this file")
+    with pytest.raises(ValueError):
+        digifil(filfile_8bit_1, str(destination), **window)
+    assert destination.read_bytes() == b"keep this file"
+
+
+def test_conversion_default_name_cannot_alias_filterbank_input(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sigpyproc.simulation.pulsar import fake_filterbank, make_header
+
+    monkeypatch.chdir(tmp_path)
+    header = make_header(
+        filename="noise.fil", nchans=4, nbits=32, tsamp=0.001, tobs=0.064
+    )
+    fake_filterbank(header, seed=7)
+    original = Path("noise.fil").read_bytes()
+    output = digifil("noise.fil", config=DigifilConfig(nbits=-32, rescale_seconds=0.0))
+    assert Path(output).name == "noise_digi.fil"
+    assert Path("noise.fil").read_bytes() == original

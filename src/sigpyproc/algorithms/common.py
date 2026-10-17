@@ -157,6 +157,7 @@ def pulse_candidates(
     *,
     dm: float = 0.0,
     accel: float = 0.0,
+    bin_origin: str = "center",
 ) -> CandidateTable:
     """Convert detection arrays to the shared pulse candidate table schema.
 
@@ -189,6 +190,7 @@ def pulse_candidates(
             "bin": int(bin_),
             "width_s": int(width) * tsamp,
             "kind": "pulse",
+            "bin_origin": bin_origin,
         }
         for bin_, snr, width in zip(
             detections.bins,

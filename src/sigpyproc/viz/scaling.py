@@ -144,13 +144,17 @@ SCALERS: list[Scaler] = [
 def frequency_oriented(
     image: np.ndarray,
     freqs: np.ndarray,
+    *,
+    foff: float | None = None,
 ) -> tuple[np.ndarray, float, float]:
     """Return ``image`` with row 0 at the lowest frequency.
 
     Filterbank blocks store channel 0 at ``fch1``. When ``foff`` is negative
     that row is the top of the band. ``imshow(..., origin="lower")`` pins row 0
     to the bottom of the extent, so this flips that layout. The returned
-    frequencies are ``(f_low, f_high)`` in MHz.
+    frequencies are channel edges in MHz: half a channel outside the
+    extreme centres. Pass ``foff`` for that width, including a one-channel
+    view.
 
     Parameters
     ----------
@@ -166,8 +170,15 @@ def frequency_oriented(
     """
     if freqs.size == 0:
         return image, 0.0, 1.0
-    f_lo = float(np.min(freqs))
-    f_hi = float(np.max(freqs))
-    if float(freqs[0]) > float(freqs[-1]):
+    centres = np.asarray(freqs, dtype=np.float64)
+    if foff is None:
+        half = 0.0 if centres.size < 2 else abs(float(centres[1] - centres[0])) / 2.0
+    else:
+        half = abs(float(foff)) / 2.0
+    f_lo = float(np.min(centres)) - half
+    f_hi = float(np.max(centres)) + half
+    if f_hi <= f_lo:
+        f_hi = f_lo + 1.0
+    if float(centres[0]) > float(centres[-1]):
         return np.ascontiguousarray(image[::-1]), f_lo, f_hi
     return image, f_lo, f_hi

@@ -244,7 +244,8 @@ def dmt_block(arr: np.ndarray, dm_delays: np.ndarray) -> np.ndarray:
     ndms, _ = dm_delays.shape
     res = np.empty((ndms, nsamps), dtype=arr.dtype)
     for idm in range(ndms):
-        res[idm] = np.sum(roll_block(arr, dm_delays[idm]), axis=0)
+        # Same sign as FilterbankBlock.dedisperse, which rolls by -delay.
+        res[idm] = np.sum(roll_block(arr, -dm_delays[idm]), axis=0)
     return res
 
 
@@ -257,10 +258,18 @@ def dmt_block_valid(arr: np.ndarray, dm_delays: np.ndarray) -> np.ndarray:
         msg = "Number of chans must be same in both arrays."
         raise ValueError(msg)
     _, nsamps = arr.shape
-    ndms, _ = dm_delays.shape
-    max_pos_shift = max(0, np.max(dm_delays))
-    min_neg_shift = min(0, np.min(dm_delays))
-    valid_samples = nsamps + min_neg_shift - max_pos_shift
+    ndms, nchans = dm_delays.shape
+    # One window covers every trial. Negated delays match block dedispersion.
+    max_pos_shift = 0
+    min_neg_shift = 0
+    for idm in range(ndms):
+        for ichan in range(nchans):
+            shift = -dm_delays[idm, ichan]
+            max_pos_shift = max(max_pos_shift, shift)
+            min_neg_shift = min(min_neg_shift, shift)
+    start_col = max_pos_shift
+    end_col = nsamps + min_neg_shift
+    valid_samples = end_col - start_col
     if valid_samples <= 0:
         msg = (
             f"Not enough samples. Required at least {max_pos_shift - min_neg_shift} "
@@ -269,7 +278,11 @@ def dmt_block_valid(arr: np.ndarray, dm_delays: np.ndarray) -> np.ndarray:
         raise ValueError(msg)
     res = np.empty((ndms, valid_samples), dtype=arr.dtype)
     for idm in range(ndms):
-        res[idm] = np.sum(roll_block_valid(arr, dm_delays[idm]), axis=0)
+        total = np.zeros(valid_samples, dtype=arr.dtype)
+        for ichan in range(nchans):
+            shift = -dm_delays[idm, ichan]
+            total += arr[ichan, start_col - shift : end_col - shift]
+        res[idm] = total
     return res
 
 

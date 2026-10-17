@@ -79,6 +79,20 @@ class PulsarParams:
         if self.period is not None and self.pulse_time is not None:
             msg = "period and pulse_time are mutually exclusive"
             raise ValueError(msg)
+        if self.pdot != 0.0 and self.accel != 0.0:
+            msg = "pdot and accel are mutually exclusive"
+            raise ValueError(msg)
+        for name in ("dm", "snr", "pdot", "accel", "period", "pulse_time", "width"):
+            value = getattr(self, name)
+            if value is not None and not np.isfinite(value):
+                msg = f"{name} must be finite, got {value}"
+                raise ValueError(msg)
+        if self.snr <= 0:
+            msg = f"snr must be positive, got {self.snr}"
+            raise ValueError(msg)
+        if self.dm < 0:
+            msg = f"dm must be >= 0, got {self.dm}"
+            raise ValueError(msg)
 
     def resolved_width(self) -> float:
         """Intrinsic width in seconds after applying the pulsar default."""
@@ -107,6 +121,18 @@ def make_header(
     period: float = 0.0,
 ) -> Header:
     """Build a SIGPROC-like filterbank header (defaults match ``fake``)."""
+    for name, value in (
+        ("tsamp", tsamp),
+        ("tobs", tobs),
+        ("tstart", tstart),
+        ("fch1", fch1),
+        ("foff", foff),
+        ("dm", dm),
+        ("period", period),
+    ):
+        if not np.isfinite(value):
+            msg = f"{name} must be finite, got {value}"
+            raise ValueError(msg)
     if tsamp <= 0.0:
         msg = "tsamp must be positive"
         raise ValueError(msg)
@@ -190,7 +216,7 @@ def fake_filterbank(
     width_eff = _effective_width(header, params, width)
     snr_chan = params.snr / np.sqrt(header.nchans)
 
-    with header.prep_outfile(outfile, rescale=False) as out:
+    with header.prep_outfile(outfile, rescale=False, sources=()) as out:
         start = 0
         while start < header.nsamples:
             nsamp = min(gulp, header.nsamples - start)

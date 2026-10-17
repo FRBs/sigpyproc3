@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     context_settings={"help_option_names": ["-h", "--help"], "show_default": True},
 )
 def main(verbose: int, *, quiet: bool) -> None:
-    """Search a time series (fft | pulses | ffa | cluster)."""
+    """Search a time series (fft | pulses | cluster)."""
     setup_cli_logging(verbose, quiet=quiet)
 
 
@@ -303,67 +303,6 @@ def pulses(  # noqa: PLR0913 - method-specific Click options
     except (ValueError, OSError) as exc:
         raise click.ClickException(str(exc)) from exc
     _write_cands(cands, outfile, timfile, "pulses", pulse_tsamp=series.header.tsamp)
-
-
-@main.command()
-@click.argument("timfile", type=click.Path(exists=True))
-@click.option(
-    "--pmin-ms",
-    type=float,
-    required=True,
-    help="Shortest period (ms); converted to seconds immediately",
-)
-@click.option(
-    "--pmax-ms",
-    type=float,
-    required=True,
-    help="Longest period (ms); converted to seconds immediately",
-)
-@click.option("--rebin", type=int, default=1, help="Mean-downsample factor")
-@click.option(
-    "--search-width",
-    is_flag=True,
-    default=False,
-    help="Loop rebin in {1, 2, 4, 8, 16} (exclusive with --rebin != 1)",
-)
-@click.option(
-    "--zero-pad",
-    is_flag=True,
-    default=False,
-    help="Pad to the next power of two",
-)
-@click.option("--snr", type=float, default=8.0, help="Minimum profile SNR")
-@click.option("--npeaks", type=int, default=100, help="Maximum candidates to keep")
-@click.option(
-    "-o",
-    "--outfile",
-    type=click.Path(exists=False, allow_dash=True),
-    default=None,
-    help="Output CSV (default: <stem>_ffa.csv; '-' for stdout)",
-)
-def ffa(
-    timfile: str,
-    pmin_ms: float,
-    pmax_ms: float,
-    rebin: int,
-    snr: float,
-    npeaks: int,
-    outfile: str | None,
-    *,
-    search_width: bool,
-    zero_pad: bool,
-) -> None:
-    """Fast Folding Analysis of a SIGPROC time series (.tim)."""
-    cands = TimeSeries.from_tim(timfile).ffa(
-        pmin_ms / 1000.0,
-        pmax_ms / 1000.0,
-        nrebin=rebin,
-        search_width=search_width,
-        snr_min=snr,
-        npeaks=npeaks,
-        zero_pad=zero_pad,
-    )
-    _write_cands(cands, outfile, timfile, "ffa")
 
 
 @main.command()

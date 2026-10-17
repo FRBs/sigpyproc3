@@ -12,6 +12,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.figure import Figure
 from rich.progress import Progress
 
+from sigpyproc.core.logging import progress_disabled
 from sigpyproc.viz._backend import paint_theme, viewer_rc
 from sigpyproc.viz.scaling import SCALERS
 from sigpyproc.viz.waterfall import WaterfallModel, WaterfallState
@@ -135,24 +136,43 @@ def _render_single_block_fig(
     return fig
 
 
+def _stream_filenames(fil: Filterbank) -> list[str]:
+    """Every file in a multi-file stream, not only ``header.filename``."""
+    entries = getattr(fil.header, "stream_info", None)
+    names = [entry.filename for entry in getattr(entries, "entries", [])]
+    names = [name for name in names if name]
+    if names:
+        return names
+    return [str(fil.header.filename)]
+
+
 def _batch_one(task: dict[str, Any]) -> str:
     """Render one gulp in this process. Safe to call from a spawn pool."""
     # Local import: viz is loaded while readers is still initialising.
-    from sigpyproc.readers import open_filterbank
+    from sigpyproc.readers import FilReader, open_filterbank
 
-    fil = open_filterbank(task["filename"])
-    raw_mask = task["mask"]
-    mask = _load_mask(raw_mask) if isinstance(raw_mask, (str, Path)) else raw_mask
-    state = WaterfallState(**task["state"])
-    fig = _render_single_block_fig(
-        fil,
-        state,
-        mask=mask,
-        theme=task["theme"],
-    )
-    out = str(task["out"])
-    fig.savefig(out, dpi=120)
-    return out
+    names = task["filenames"]
+    fil = FilReader(names) if len(names) > 1 else open_filterbank(names[0])
+    fig = None
+    try:
+        raw_mask = task["mask"]
+        mask = _load_mask(raw_mask) if isinstance(raw_mask, (str, Path)) else raw_mask
+        state = WaterfallState(**task["state"])
+        fig = _render_single_block_fig(
+            fil,
+            state,
+            mask=mask,
+            theme=task["theme"],
+        )
+        out = str(task["out"])
+        fig.savefig(out, dpi=120)
+        return out
+    finally:
+        fil.close()
+        if fig is not None:
+            import matplotlib.pyplot as plt
+
+            plt.close(fig)
 
 
 def _run_tasks(tasks: list[dict[str, Any]], jobs: int) -> list[str]:
@@ -160,7 +180,7 @@ def _run_tasks(tasks: list[dict[str, Any]], jobs: int) -> list[str]:
         return []
     if jobs <= 1:
         outs: list[str] = []
-        with Progress() as progress:
+        with Progress(disable=progress_disabled()) as progress:
             bar = progress.add_task("spp_view", total=len(tasks))
             for task in tasks:
                 outs.append(_batch_one(task))
@@ -168,7 +188,7 @@ def _run_tasks(tasks: list[dict[str, Any]], jobs: int) -> list[str]:
         return outs
 
     ctx = mp.get_context("spawn")
-    with Progress() as progress, ctx.Pool(jobs) as pool:
+    with Progress(disable=progress_disabled()) as progress, ctx.Pool(jobs) as pool:
         bar = progress.add_task("spp_view", total=len(tasks))
         outs = []
         for out in pool.imap(_batch_one, tasks):
@@ -272,7 +292,10 @@ def render_waterfall_batch(
     if out_format == "pdf-multi" and jobs <= 1:
         multi_pdf_path = out_dir_path / f"{fil.header.basename}_dm{dm:.2f}.pdf"
         loaded = _load_mask(mask)
-        with PdfPages(multi_pdf_path) as pdf, Progress() as progress:
+        with (
+            PdfPages(multi_pdf_path) as pdf,
+            Progress(disable=progress_disabled()) as progress,
+        ):
             bar = progress.add_task("spp_view", total=len(starts))
             for sample in starts:
                 fig = _render_single_block_fig(
@@ -296,7 +319,7 @@ def render_waterfall_batch(
             )
         tasks.append(
             {
-                "filename": str(fil.header.filename),
+                "filenames": _stream_filenames(fil),
                 "mask": mask_for_task,
                 "theme": theme,
                 "state": _state(sample),

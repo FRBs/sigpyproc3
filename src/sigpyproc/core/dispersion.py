@@ -29,6 +29,42 @@ K_SIGPROC = 8.3
 """Dispersion smearing constant used by SIGPROC ``getDMtable.C`` (µs, MHz, GHz)."""
 
 
+def _delay_inputs(
+    freqs: ArrayLike,
+    dm: float | ArrayLike,
+    tsamp: float,
+    ref_freq: float,
+    index: float,
+) -> tuple[np.ndarray, np.ndarray, bool, float]:
+    """Return checked frequencies, DM rows, whether DM was scalar, and the reference."""
+    if not np.isfinite(index) or index == 0.0:
+        msg = f"dispersion index must be finite and non-zero, got {index}"
+        raise ValueError(msg)
+    if not np.isfinite(tsamp) or tsamp <= 0:
+        msg = f"tsamp must be positive and finite, got {tsamp}"
+        raise ValueError(msg)
+    ref = float(ref_freq)
+    if not np.isfinite(ref) or ref <= 0:
+        msg = f"ref_freq must be positive and finite, got {ref_freq}"
+        raise ValueError(msg)
+    freqs_arr = np.atleast_1d(np.asarray(freqs, dtype=np.float64))
+    if freqs_arr.ndim != 1 or freqs_arr.size == 0:
+        msg = "freqs must be a non-empty 1-D array"
+        raise ValueError(msg)
+    if not np.all(np.isfinite(freqs_arr)) or np.any(freqs_arr <= 0):
+        msg = "freqs must be positive and finite"
+        raise ValueError(msg)
+    dm_input = np.asarray(dm, dtype=np.float64)
+    if dm_input.ndim > 1:
+        msg = "dm must be a scalar or a 1-D array"
+        raise ValueError(msg)
+    dm_arr = np.atleast_1d(dm_input)
+    if not np.all(np.isfinite(dm_arr)):
+        msg = "dm must be finite"
+        raise ValueError(msg)
+    return freqs_arr, dm_arr, dm_input.ndim == 0, ref
+
+
 def compute_dmdelays(
     freqs: ArrayLike,
     dm: float | ArrayLike,
@@ -64,22 +100,34 @@ def compute_dmdelays(
         If dm is a scalar, returns a 1D array of delays. If dm is an array,
         returns a 2D array with shape ``(len(dm), len(freqs))``.
     """
-    if index == 0.0:
-        msg = "dispersion index must be non-zero"
-        raise ValueError(msg)
-    freqs = np.atleast_1d(np.asarray(freqs, dtype=np.float64))
-    dm = np.atleast_1d(dm)[:, np.newaxis].astype(np.float64)
-    ref = float(ref_freq)
+    freqs_arr, dm_arr, scalar_dm, ref = _delay_inputs(
+        freqs,
+        dm,
+        tsamp,
+        ref_freq,
+        index,
+    )
     if index == -2.0:
-        phase = (freqs**-2) - (ref**-2)
+        phase = (freqs_arr**-2) - (ref**-2)
     else:
-        phase = (-2.0 / index) * (freqs**index - (ref**index))
-    delays = dm * DM_CONSTANT_LK * phase
+        phase = (-2.0 / index) * (freqs_arr**index - (ref**index))
+    delays = dm_arr[:, np.newaxis] * DM_CONSTANT_LK * phase
     if in_samples:
-        delays = (delays / tsamp).round().astype(np.int32)
+        samples = delays / tsamp
+        if not np.all(np.isfinite(samples)):
+            msg = "dispersion delay is not finite"
+            raise ValueError(msg)
+        rounded = np.rint(samples)
+        limit = np.iinfo(np.int32).max
+        if np.any(np.abs(rounded) > limit):
+            msg = "dispersion delay does not fit in a 32-bit sample count"
+            raise ValueError(msg)
+        out = rounded.astype(np.int32)
     else:
-        delays = delays.astype(np.float32)
-    return delays.squeeze()
+        out = delays.astype(np.float32)
+    if scalar_dm:
+        return out.reshape(freqs_arr.size)
+    return out.reshape(dm_arr.size, freqs_arr.size)
 
 
 def align_delays(delays: ArrayLike) -> tuple[NDArray[np.int32], NDArray[np.int32]]:

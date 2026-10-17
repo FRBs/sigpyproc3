@@ -388,7 +388,7 @@ class WaterfallModel:
                     mode=state.lod_mode,
                 )
 
-        image, f_lo, f_hi = frequency_oriented(decimated, freqs)
+        image, f_lo, f_hi = frequency_oriented(decimated, freqs, foff=hdr.foff)
         extent = (t0, t1, f_lo, f_hi)
 
         def _finite(value: float, fallback: float = 0.0) -> float:
@@ -448,11 +448,15 @@ class WaterfallViewer:
         zerodm: bool = False,
         flatten: bool = False,
         batch: bool = False,
+        gui: bool | None = None,
     ) -> None:
         if batch:
             use_headless_backend()
         else:
             ensure_interactive_backend()
+        # Batch mode is the headless path. Building the widget figure reads a
+        # gulp and draws it, which dominates viewer tests that only check state.
+        self._gui = (not batch) if gui is None else gui
 
         from sigpyproc.base import Filterbank
         from sigpyproc.readers import open_filterbank
@@ -460,12 +464,15 @@ class WaterfallViewer:
         if isinstance(files, Filterbank):
             self.file_list = [str(files.header.filename)]
             self.fil = files
+            self._owns_reader = False
         elif isinstance(files, (str, Path)):
             self.file_list = [str(files)]
             self.fil = open_filterbank(self.file_list[0])
+            self._owns_reader = True
         else:
             self.file_list = [str(f) for f in files]
             self.fil = open_filterbank(self.file_list[0])
+            self._owns_reader = True
 
         self.file_idx = 0
         self.rfimask = self._load_mask(mask)
@@ -509,8 +516,9 @@ class WaterfallViewer:
         self._file_buttons: list[Any] = []
         self._textboxes: list[Any] = []
 
-        self._build_figure()
-        self.update_view()
+        if self._gui:
+            self._build_figure()
+            self.update_view()
 
     @staticmethod
     def _load_mask(mask: str | Path | RFIMask | None) -> RFIMask | None:
@@ -1036,6 +1044,8 @@ class WaterfallViewer:
     def update_view(self) -> None:
         """Refresh artists from the current state."""
         self.state = self.model.clamp(self.state)
+        if not self._gui:
+            return
         screen = (0, 0) if self.state.hires else self._screen_size()
         key = self._data_key(screen)
         if self._products is None or key != self._data_key_last:
@@ -1205,6 +1215,8 @@ class WaterfallViewer:
     def _clear_fit(self) -> None:
         self._fit_points.clear()
         self._dm_fit_armed = False
+        if not self._gui:
+            return
         self.fit_marks.set_offsets(np.empty((0, 2)))
         self.fit_curve.set_data([], [])
 
@@ -1353,8 +1365,11 @@ class WaterfallViewer:
     def _open_index(self, idx: int) -> None:
         from sigpyproc.readers import open_filterbank
 
+        if self._owns_reader:
+            self.fil.close()
         self.file_idx = idx % len(self.file_list)
         self.fil = open_filterbank(self.file_list[self.file_idx])
+        self._owns_reader = True
         self.model = WaterfallModel(self.fil, mask=self.rfimask)
         self.state.start = 0
         self.state.zapped_channels = set()
@@ -1434,13 +1449,33 @@ class WaterfallViewer:
         self.fig.savefig(out, dpi=150)
         print(f"Saved {out}")
 
-    def save_npz(self) -> None:
-        """Save the current processed block to ``.npz``."""
+    def save_npz(self, filename: str | None = None) -> str:
+        """Save the current processed block to a pickle-free ``.npz``.
+
+        The arrays are the block that is on screen, including its epoch,
+        sampling interval, frequency grid, and DM. They are not the original
+        file header.
+        """
         blk, _ = self.model.get_block(self.state)
-        out = f"{self.fil.header.basename}_t{self.state.start}_dm{self.state.dm}.npz"
-        hdr_dict = self.fil.header.to_dict()
-        np.savez(out, data=blk.data, header=np.array([hdr_dict], dtype=object))
-        print(f"Saved {out}")
+        out = filename or (
+            f"{self.fil.header.basename}_t{self.state.start}_dm{self.state.dm}.npz"
+        )
+        hdr = blk.header
+        np.savez(
+            out,
+            data=np.asarray(blk.data, dtype=np.float32),
+            tstart=np.float64(hdr.tstart),
+            tsamp=np.float64(hdr.tsamp),
+            fch1=np.float64(hdr.fch1),
+            foff=np.float64(hdr.foff),
+            nchans=np.int64(hdr.nchans),
+            nsamples=np.int64(blk.data.shape[1]),
+            dm=np.float64(blk.dm),
+            source=np.asarray(hdr.source),
+        )
+        if filename is None:
+            print(f"Saved {out}")
+        return out
 
     def export_fil(self) -> None:
         """Write the current processed block as a 32-bit filterbank."""
@@ -1510,7 +1545,12 @@ class WaterfallViewer:
         plt.show()
 
     def close(self) -> None:
-        """Close the window."""
+        """Close the window and any file this viewer opened."""
+        if self._owns_reader:
+            self.fil.close()
+            self._owns_reader = False
+        if not self._gui:
+            return
         import matplotlib.pyplot as plt
 
         plt.close(self.fig)

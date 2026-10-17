@@ -138,3 +138,68 @@ class TestFakeFilterbank:
         header = _tiny_header(path, nbits=4, nchans=3)
         with pytest.raises(ValueError, match="multiple of 8"):
             fake_filterbank(header, seed=1)
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"pdot": 1.0, "accel": 1.0},
+        {"dm": np.nan},
+        {"dm": np.inf},
+        {"dm": -1.0},
+        {"snr": np.nan},
+        {"snr": 0.0},
+        {"snr": -1.0},
+        {"pdot": np.inf},
+        {"accel": -np.inf},
+    ],
+)
+def test_pulsar_parameters_reject_unphysical_values(changes: dict) -> None:
+    with pytest.raises(ValueError):
+        PulsarParams(**changes)
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [{"tsamp": 0.0}, {"tobs": 0.0}, {"nchans": 0}, {"tobs": 1e-8, "tsamp": 1.0}],
+)
+def test_simulation_geometry_cannot_create_empty_files(changes: dict) -> None:
+    with pytest.raises(ValueError):
+        make_header(**changes)
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["tsamp", "tobs", "tstart", "fch1", "foff", "dm", "period"],
+)
+@pytest.mark.parametrize("value", [np.nan, np.inf])
+def test_fake_header_rejects_nonfinite_metadata(field: str, value: float) -> None:
+    with pytest.raises(ValueError, match="finite"):
+        make_header(**{field: value})
+
+
+def test_fake_header_accepts_finite_metadata() -> None:
+    header = make_header(dm=12.5, period=0.25, tsamp=1e-3, tobs=0.1)
+    assert header.dm == pytest.approx(12.5)
+    assert header.period == pytest.approx(0.25)
+    assert header.nsamples == 100
+
+
+@pytest.mark.parametrize(
+    "params",
+    [PulsarParams(period=0.1, pdot=-1.0), PulsarParams(period=0.1, accel=-1e12)],
+)
+def test_period_evolution_cannot_cross_zero(
+    tmp_path: Path, params: PulsarParams
+) -> None:
+    path = tmp_path / "invalid.fil"
+    header = _tiny_header(str(path))
+    with pytest.raises(ValueError, match="period through zero"):
+        fake_filterbank(header, params)
+    assert not path.exists()
+
+
+@pytest.mark.parametrize("field", ["period", "pulse_time", "width"])
+def test_optional_pulsar_parameters_reject_infinite_values(field: str) -> None:
+    with pytest.raises(ValueError, match="finite"):
+        PulsarParams(**{field: np.inf})

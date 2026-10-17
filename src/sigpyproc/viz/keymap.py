@@ -18,13 +18,13 @@ class KeyMap:
     """Registry of viewer keybindings and generator for help text."""
 
     def __init__(self) -> None:
-        self._bindings: dict[str, tuple[Callable[[], None], str, str]] = {}
+        self._bindings: dict[str, tuple[Callable[[], object], str, str]] = {}
         self._entries: list[tuple[str, list[str], str]] = []  # (group, keys, desc)
 
     def bind(
         self,
         keys: str | Sequence[str],
-        action: Callable[[], None],
+        action: Callable[[], object],
         desc: str,
         group: str = "General",
     ) -> None:

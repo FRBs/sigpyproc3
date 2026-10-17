@@ -105,7 +105,7 @@ class BaseBlock(ABC):
             Normalised data block.
         """
         zscore_re = stats.estimate_zscore(self.data, loc_method, scale_method, axis)
-        return self.__class__(zscore_re.data, self.header.new_header())
+        return self._spawn(zscore_re.data, self.header.new_header())
 
     def pad_samples(
         self,
@@ -137,15 +137,24 @@ class BaseBlock(ABC):
         if pad_mode not in {"mean", "median"}:
             msg = f"pad_mode must be 'mean' or 'median', got {pad_mode}"
             raise ValueError(msg)
+        if offset < 0 or nsamps_final < offset + self.nsamples:
+            msg = (
+                f"pad offset {offset} and length {nsamps_final} "
+                f"cannot hold {self.nsamples} samples"
+            )
+            raise ValueError(msg)
         np_op = getattr(np, pad_mode)
         pad_values = np_op(self.data, axis=1)
         data_pad = np.ones((self.data.shape[0], nsamps_final), dtype=self.data.dtype)
         data_pad *= pad_values[:, None]
         data_pad[:, offset : offset + self.data.shape[1]] = self.data
-        return self.__class__(
-            data_pad,
-            self.header.new_header({"nsamples": nsamps_final}),
+        header = self.header.new_header(
+            {
+                "nsamples": nsamps_final,
+                "tstart": self.header.mjd_after_nsamps(-offset),
+            },
         )
+        return self._spawn(data_pad, header)
 
     @abstractmethod
     def plot(self, *args, **kwargs) -> Figure:  # noqa: ANN002, ANN003
@@ -164,6 +173,10 @@ class BaseBlock(ABC):
                 f"header nsamples ({self.header.nsamples})"
             )
             raise ValueError(msg)
+
+    def _spawn(self, data: np.ndarray, header: Header) -> Self:
+        """Return a block of this type carrying the same metadata."""
+        return self.__class__(data, header)
 
 
 class FilterbankBlock(BaseBlock):
@@ -186,7 +199,19 @@ class FilterbankBlock(BaseBlock):
 
     def __init__(self, data: np.ndarray, header: Header, dm: float = 0) -> None:
         super().__init__(data, header)
-        self._dm = dm
+        self._dm = float(dm)
+        if self.data.shape[0] != self.header.nchans:
+            msg = (
+                f"Input has {self.data.shape[0]} channels, "
+                f"header nchans is {self.header.nchans}"
+            )
+            raise ValueError(msg)
+        if not np.isfinite(self._dm):
+            msg = f"dm must be finite, got {dm}"
+            raise ValueError(msg)
+
+    def _spawn(self, data: np.ndarray, header: Header) -> FilterbankBlock:
+        return FilterbankBlock(data, header, dm=self._dm)
 
     @property
     def dm(self) -> float:
@@ -251,7 +276,7 @@ class FilterbankBlock(BaseBlock):
         t0 = 0.0
         t1 = self.nsamples * self.header.tsamp
         freqs = self.header.chan_freqs
-        image, f_lo, f_hi = frequency_oriented(prep, freqs)
+        image, f_lo, f_hi = frequency_oriented(prep, freqs, foff=self.header.foff)
         extent = (t0, t1, f_lo, f_hi)
 
         fig = plt.figure(figsize=figsize, layout="constrained")
@@ -333,7 +358,7 @@ class FilterbankBlock(BaseBlock):
             "nsamples": self.header.nsamples // tfactor,
             "nchans": self.header.nchans // ffactor,
         }
-        return FilterbankBlock(new_ar, self.header.new_header(changes))
+        return self._spawn(new_ar, self.header.new_header(changes))
 
     def get_tim(self) -> TimeSeries:
         """Sum across all frequencies for each time sample.
@@ -430,9 +455,18 @@ class FilterbankBlock(BaseBlock):
         dm_delays = self.header.get_dmdelays(dm_arr, ref_freq=ref_freq)
         if only_valid_samples:
             new_ar = kernels.dmt_block_valid(self.data, dm_delays)
+            dropped = max(0, int(np.max(-dm_delays)))
+            tstart = self.header.mjd_after_nsamps(dropped)
         else:
             new_ar = kernels.dmt_block(self.data, dm_delays)
-        return DMTBlock(new_ar, self.header.new_header({"nchans": 1}), dm_arr)
+            tstart = self.header.tstart
+        return DMTBlock(
+            new_ar,
+            self.header.new_header(
+                {"nchans": 1, "nsamples": int(new_ar.shape[1]), "tstart": tstart},
+            ),
+            dm_arr,
+        )
 
     def to_file(self, filename: str | None = None) -> str:
         """Write the data to file.
@@ -454,8 +488,8 @@ class FilterbankBlock(BaseBlock):
                 f"to_{mjd_after:.12f}.fil"
             )
         updates = {"nbits": 32}
-        out_file = self.header.prep_outfile(filename, updates=updates, nbits=32)
-        out_file.cwrite(self.data.transpose().ravel())
+        with self.header.prep_outfile(filename, updates=updates, nbits=32) as out_file:
+            out_file.cwrite(self.data.transpose().ravel())
         return filename
 
 
@@ -481,6 +515,9 @@ class DMTBlock(BaseBlock):
         super().__init__(data, header)
         self._dms = np.asarray(dms, dtype=np.float32)
         self._check_dm_input()
+
+    def _spawn(self, data: np.ndarray, header: Header) -> DMTBlock:
+        return DMTBlock(data, header, self._dms)
 
     @property
     def dms(self) -> np.ndarray:

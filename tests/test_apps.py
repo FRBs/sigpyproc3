@@ -10,18 +10,16 @@ from sigpyproc.apps import (
     spp_clean,
     spp_decimate,
     spp_dedisperse,
-    spp_extract,
     spp_fake,
     spp_fold,
     spp_header,
-    spp_merge,
+    spp_io,
     spp_search,
-    spp_splice,
     spp_stats,
     spp_view,
-    spp_zerodm,
 )
 from sigpyproc.core.candidates import PULSE_CANDIDATE_NAMES, CandidateTable
+from sigpyproc.fourierseries import FourierSeries
 from sigpyproc.header import Header
 from sigpyproc.io import sigproc
 from sigpyproc.readers import FilReader
@@ -193,8 +191,18 @@ class TestSppHeader:
         nsamples = 10
         runner = CliRunner()
         result = runner.invoke(
-            spp_extract.main,
-            ["samples", filfile_8bit_1, "-s", "0", "-n", "10", "-o", tmpfile],
+            spp_io.main,
+            [
+                "extract",
+                "samples",
+                filfile_8bit_1,
+                "-s",
+                "0",
+                "-n",
+                "10",
+                "-o",
+                tmpfile,
+            ],
         )
         assert result.exit_code == 0
         assert tmpfile in result.output
@@ -207,8 +215,9 @@ class TestSppHeader:
         duration = 10 * header.tsamp
         runner = CliRunner()
         result = runner.invoke(
-            spp_extract.main,
+            spp_io.main,
             [
+                "extract",
                 "samples",
                 filfile_8bit_1,
                 "--start-sec",
@@ -223,11 +232,33 @@ class TestSppHeader:
         result = runner.invoke(spp_header.main, ["get", tmpfile, "-k", "nsamples"])
         assert "nsamples = 10" in result.output
 
+    def test_samples_requires_a_length(
+        self, filfile_8bit_1: str, tmp_path: Path
+    ) -> None:
+        out = tmp_path / "window.fil"
+        result = CliRunner().invoke(
+            spp_io.main,
+            ["extract", "samples", filfile_8bit_1, "-o", str(out)],
+        )
+        assert result.exit_code == 2
+        assert "nsamps" in result.output
+        assert not out.exists()
+
     def test_channels(self, filfile_8bit_1: str, tmpfile: str) -> None:
         runner = CliRunner()
         result = runner.invoke(
-            spp_extract.main,
-            ["channels", filfile_8bit_1, "-c", "0", "-c", "1", "-o", tmpfile],
+            spp_io.main,
+            [
+                "extract",
+                "channels",
+                filfile_8bit_1,
+                "-c",
+                "0",
+                "-c",
+                "1",
+                "-o",
+                tmpfile,
+            ],
         )
         assert result.exit_code == 0
         outfiles = list(Path(tmpfile).parent.glob(f"{Path(tmpfile).name}_*"))
@@ -237,8 +268,9 @@ class TestSppHeader:
         outbase = str(Path(tmpdir) / "range")
         runner = CliRunner()
         result = runner.invoke(
-            spp_extract.main,
+            spp_io.main,
             [
+                "extract",
                 "channels",
                 filfile_8bit_1,
                 "--chan-start",
@@ -256,8 +288,20 @@ class TestSppHeader:
     def test_bands(self, filfile_8bit_1: str, tmpfile: str) -> None:
         runner = CliRunner()
         result = runner.invoke(
-            spp_extract.main,
-            ["bands", filfile_8bit_1, "-s", "0", "-n", "10", "-c", "2", "-o", tmpfile],
+            spp_io.main,
+            [
+                "extract",
+                "bands",
+                filfile_8bit_1,
+                "-s",
+                "0",
+                "-n",
+                "10",
+                "-c",
+                "2",
+                "-o",
+                tmpfile,
+            ],
         )
         assert result.exit_code == 0
         outfiles = list(Path(tmpfile).parent.glob(f"{Path(tmpfile).name}_*"))
@@ -312,7 +356,9 @@ class TestSppBandpass:
 class TestSppZerodm:
     def test_main(self, filfile_8bit_1: str, tmpfile: str) -> None:
         runner = CliRunner()
-        result = runner.invoke(spp_zerodm.main, [filfile_8bit_1, "-o", tmpfile])
+        result = runner.invoke(
+            spp_clean.main, ["zerodm", filfile_8bit_1, "-o", tmpfile]
+        )
         assert result.exit_code == 0
         assert Path(tmpfile).exists()
 
@@ -328,8 +374,8 @@ class TestSppMergeSplice:
         src.extract_samps(n, n, outfile_name=b)
         runner = CliRunner()
         result = runner.invoke(
-            spp_merge.main,
-            [a, b, "-a", "time", "-o", out],
+            spp_io.main,
+            ["merge", a, b, "-a", "time", "-o", out],
         )
         assert result.exit_code == 0
         assert FilReader(out).header.nsamples == 2 * n
@@ -346,7 +392,7 @@ class TestSppMergeSplice:
         )
         out = str(Path(tmpdir) / "spliced.fil")
         runner = CliRunner()
-        result = runner.invoke(spp_splice.main, [*files, "-o", out])
+        result = runner.invoke(spp_io.main, ["splice", *files, "-o", out])
         assert result.exit_code == 0
         merged = FilReader(out)
         assert merged.header.nchans == half * len(files)
@@ -477,6 +523,18 @@ class TestSppClean:
         original = src.read_block(0, src.header.nsamples).data
         np.testing.assert_array_equal(zapped[:2], 0)
         np.testing.assert_array_equal(zapped[2:], original[2:])
+
+    def test_zap_channels_requires_a_selection(
+        self, filfile_8bit_1: str, tmp_path: Path
+    ) -> None:
+        out = tmp_path / "zapped.fil"
+        result = CliRunner().invoke(
+            spp_clean.main,
+            ["zap-channels", filfile_8bit_1, "-o", str(out)],
+        )
+        assert result.exit_code == 2
+        assert "chans" in result.output
+        assert not out.exists()
 
     def test_zap_times(self, filfile_8bit_1: str, tmpfile: str) -> None:
         runner = CliRunner()
@@ -959,10 +1017,15 @@ class TestSppSearch:
             ["pulses", str(tim), "--method", method, "--engine", engine, "-o", out],
         )
         assert result.exit_code == 0, result.output
-        assert Path(out).read_text().splitlines()[0].split(",") == list(
-            PULSE_CANDIDATE_NAMES
-        )
+        assert Path(out).read_text().splitlines()[0].split(",") == [
+            *PULSE_CANDIDATE_NAMES,
+            "bin_origin",
+        ]
         actual = CandidateTable.from_csv(out)
+        assert np.all(
+            actual.values("bin_origin")
+            == ("start" if method == "matched_filter" else "center")
+        )
         expected = TimeSeries.from_tim(tim).find_pulses(method=method, engine=engine)
         assert len(actual) > 0
         for column in ("bin", "snr", "width_s"):
@@ -1000,7 +1063,10 @@ class TestSppSearch:
         # stdout must be CSV only, including when preprocessing controls are used.
         out = Path(tmpdir) / "stdout.csv"
         out.write_text(result.output)
-        assert result.output.splitlines()[0].split(",") == list(PULSE_CANDIDATE_NAMES)
+        assert result.output.splitlines()[0].split(",") == [
+            *PULSE_CANDIDATE_NAMES,
+            "bin_origin",
+        ]
         actual = CandidateTable.from_csv(out)
         expected = TimeSeries.from_tim(tim).find_pulses(
             engine="fft",
@@ -1080,43 +1146,6 @@ class TestSppSearch:
         lines = Path(out).read_text().strip().splitlines()
         assert len(lines) == 2  # header + loudest only
 
-    def test_ffa(self, tmpdir: str) -> None:
-        nsamp = 2048
-        tsamp = 0.001
-        path = Path(tmpdir) / "ffa.tim"
-        rng = np.random.default_rng(8)
-        data = rng.normal(0.0, 1.0, nsamp).astype(np.float32)
-        header = Header(
-            filename=path.name,
-            rawdatafile=path.name,
-            data_type="time series",
-            nchans=1,
-            foff=1.0,
-            fch1=1400.0,
-            nbits=32,
-            tsamp=tsamp,
-            tstart=50000.0,
-            nsamples=nsamp,
-        )
-        TimeSeries(data, header).to_tim(str(path))
-        out = str(Path(tmpdir) / "ffa.csv")
-        runner = CliRunner()
-        result = runner.invoke(
-            spp_search.main,
-            [
-                "ffa",
-                str(path),
-                "--pmin-ms",
-                "20",
-                "--pmax-ms",
-                "40",
-                "-o",
-                out,
-            ],
-        )
-        assert result.exit_code == 0
-        assert Path(out).is_file()
-
     def test_fft_stdout(self, tmpdir: str) -> None:
         tim = _write_search_tim(Path(tmpdir) / "inj.tim")
         runner = CliRunner()
@@ -1164,3 +1193,99 @@ class TestSppView:
         assert result.exit_code == 0
         pngs = list(tmp_path.glob("*.png"))
         assert len(pngs) == 2
+
+
+def _synthetic_series_header(nsamples: int = 128) -> Header:
+    return Header(
+        filename="synthetic.tim",
+        data_type="time series",
+        nchans=1,
+        foff=1.0,
+        fch1=1400.0,
+        nbits=32,
+        tsamp=0.001,
+        tstart=50000.0,
+        nsamples=nsamples,
+    )
+
+
+@pytest.mark.parametrize("n", [9, 16])
+def test_viewer_reads_complex_and_amplitude_spectra(tmp_path: Path, n: int) -> None:
+    series = FourierSeries(
+        np.fft.rfft(np.arange(n)).astype(np.complex64), _synthetic_series_header(n)
+    )
+    complex_path = series.to_spec(str(tmp_path / f"complex{n}.spec"))
+    power_path = series.form_spec().to_spec(str(tmp_path / f"power{n}.spec"))
+    for path in (complex_path, power_path):
+        loaded = spp_view._read_spectrum(path, ".spec")
+        assert loaded.header.nsamples == n
+        np.testing.assert_allclose(loaded.data, series.form_spec().data)
+    result = CliRunner().invoke(
+        spp_view.main,
+        [complex_path, power_path, "--batch", "-o", str(tmp_path / "plots")],
+    )
+    assert result.exit_code == 0, result.output
+    assert len(list((tmp_path / "plots").glob("*.png"))) == 2
+
+
+def _example_series_header(n: int = 256) -> Header:
+    return Header(
+        filename="example.tim",
+        data_type="time series",
+        nchans=1,
+        fch1=1400.0,
+        foff=1.0,
+        tsamp=0.001,
+        nbits=32,
+        tstart=50000.0,
+        nsamples=n,
+    )
+
+
+@pytest.mark.parametrize("suffix", [".tim", ".dat", ".fft"])
+def test_batch_viewer_handles_every_input_and_creates_output_directory(
+    suffix: str,
+    tmp_path: Path,
+) -> None:
+    series = TimeSeries(np.arange(256, dtype=np.float32), _example_series_header())
+    paths = []
+    for name in ("first", "second"):
+        base = tmp_path / name
+        if suffix == ".tim":
+            paths.append(series.to_tim(str(base.with_suffix(suffix))))
+        elif suffix == ".dat":
+            paths.append(series.to_dat(str(base)))
+        else:
+            paths.append(series.rfft().to_fft(str(base)))
+    output = tmp_path / "new" / "plots"
+    result = CliRunner().invoke(
+        spp_view.main,
+        [*paths, "--batch", "--start", "32", "--gulp", "64", "-o", str(output)],
+    )
+    assert result.exit_code == 0, result.output
+    assert len(list(output.glob("*.png"))) == 2
+    assert len(result.output.strip().splitlines()) == 2
+
+
+def test_viewer_refuses_ambiguous_multi_input_modes(tmp_path: Path) -> None:
+    series = TimeSeries(np.ones(256, dtype=np.float32), _example_series_header())
+    tim = series.to_tim(str(tmp_path / "one.tim"))
+    spec = series.rfft().to_spec(str(tmp_path / "one.spec"))
+    result = CliRunner().invoke(spp_view.main, [tim, spec, "--batch"])
+    assert result.exit_code != 0
+    assert "share one suffix" in result.output
+    result = CliRunner().invoke(spp_view.main, [tim, tim])
+    assert result.exit_code != 0
+    assert "pass one time series" in result.output
+
+
+def test_legacy_complex_spectrum_can_be_viewed(tmp_path: Path) -> None:
+    series = TimeSeries(
+        np.arange(16, dtype=np.float32), _example_series_header(16)
+    ).rfft()
+    legacy = tmp_path / "legacy.spec"
+    with series.header.prep_outfile(str(legacy), sources=()) as writer:
+        writer.cwrite(series.data.view(np.float32))
+    loaded = spp_view._read_spectrum(str(legacy), ".spec")
+    assert loaded.header.nsamples == 16
+    np.testing.assert_allclose(loaded.data, series.form_spec().data)

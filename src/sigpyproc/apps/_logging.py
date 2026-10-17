@@ -8,7 +8,7 @@ from typing import TypeVar
 
 import rich_click as click
 
-from sigpyproc.core.logging import configure_logging
+from sigpyproc.core.logging import configure_logging, set_progress_disabled
 
 C = TypeVar("C", bound=Callable[..., object])
 
@@ -21,6 +21,7 @@ def setup_cli_logging(verbose: int = 0, *, quiet: bool = False) -> None:
         level = logging.DEBUG
     else:
         level = logging.INFO
+    set_progress_disabled(disabled=quiet)
     configure_logging(level)
 
 
@@ -30,7 +31,13 @@ def _guard_invoke(invoke: Callable[..., object]) -> Callable[..., object]:
             return invoke(ctx)
         except click.ClickException:
             raise
-        except (ValueError, IndexError, OSError, NotImplementedError) as exc:
+        except (
+            ValueError,
+            IndexError,
+            OSError,
+            NotImplementedError,
+            TypeError,
+        ) as exc:
             raise click.ClickException(str(exc)) from exc
 
     return wrapped
@@ -39,8 +46,9 @@ def _guard_invoke(invoke: Callable[..., object]) -> Callable[..., object]:
 def logging_options[C: Callable[..., object]](cmd: C) -> C:
     """Attach ``-v`` / ``--verbose`` and ``-q`` / ``--quiet`` to a Click command.
 
-    ValueError, IndexError, OSError, and NotImplementedError raised by the
-    command become a Click error so the process exits with status 1.
+    ValueError, IndexError, OSError, NotImplementedError, and TypeError raised
+    by the command become a Click error so the process exits with status 1.
+    ``--quiet`` also turns streaming progress bars off. Logs go to stderr.
     """
     if isinstance(cmd, click.Command):
         cmd.invoke = _guard_invoke(cmd.invoke)  # ty: ignore[invalid-assignment]

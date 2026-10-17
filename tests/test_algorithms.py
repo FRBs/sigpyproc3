@@ -37,43 +37,6 @@ def _pulse_train(period: float, duty: float, amp: float, seed: int) -> np.ndarra
     return data
 
 
-class TestFFARobustness:
-    @pytest.mark.parametrize("seed", [1, 2, 3])
-    def test_recovers_duty_cycle_pulse_train(self, seed: int) -> None:
-        period = 0.05
-        data = _pulse_train(period, duty=0.05, amp=4.0, seed=seed)
-        cands = _series(data).ffa(0.04, 0.06, snr_min=8.0, npeaks=10)
-        assert len(cands) >= 1
-        assert abs(cands.values("period_s")[0] - period) <= TSAMP
-
-    def test_pure_noise_has_no_candidates(self) -> None:
-        rng = np.random.default_rng(4)
-        cands = _series(rng.normal(0.0, 1.0, NSAMP)).ffa(0.1, 0.2, snr_min=8.0)
-        assert len(cands) == 0
-
-    def test_window_shorter_than_series_is_empty(self) -> None:
-        cands = _series(np.ones(64)).ffa(0.5, 0.6, snr_min=1.0)
-        assert len(cands) == 0
-
-    def test_array_level_matches_method(self) -> None:
-        data = _pulse_train(0.05, duty=0.05, amp=4.0, seed=1)
-        direct = period.ffa_search(
-            data,
-            TSAMP,
-            0.04,
-            0.06,
-            snr_min=8.0,
-            zero_pad=False,
-            dm=0.0,
-            accel=0.0,
-        )
-        via_method = _series(data).ffa(0.04, 0.06, snr_min=8.0, npeaks=10)
-        np.testing.assert_allclose(
-            direct.values("period_s")[0],
-            via_method.values("period_s")[0],
-        )
-
-
 class TestPulseRobustness:
     def test_recovers_injected_boxcars(self) -> None:
         rng = np.random.default_rng(11)

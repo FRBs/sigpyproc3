@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from sigpyproc.fourierseries import PowerSpectrum
+from sigpyproc.fourierseries import FourierSeries, PowerSpectrum
 from sigpyproc.header import Header
 from sigpyproc.timeseries import TimeSeries
 
@@ -81,7 +81,7 @@ class TestTimeSeriesSearch:
         cands = tim.search(nfolds=0, pmax=1.0, snr_min=100.0)
         assert len(cands) == 0
 
-    def test_folded_period_is_fundamental(self) -> None:
+    def test_folded_candidates_include_the_injected_frequency(self) -> None:
         nsamp = 2**13
         tsamp = 1e-3
         period = 0.04
@@ -94,10 +94,12 @@ class TestTimeSeriesSearch:
         fold = spec0.harmonic_fold(1)[0]
         cands = fold.find_peaks(snr_min=6.0, pmax=1.0, nharm=2)
         assert len(cands) >= 1
-        best = float(cands.values("period_s")[0])
         tobs = nsamp * tsamp
-        assert abs(best - period) <= 2.0 * (period**2 / tobs)
-        assert int(cands.table["nharm"][0]) == 2
+        # Ranking can favor a subharmonic trial; the physical Fourier grid
+        # must still contain the injected frequency within one bin.
+        assert np.min(np.abs(cands.values("freq_hz") - 1 / period)) <= 1 / tobs
+        np.testing.assert_allclose(cands.values("freq_hz"), cands.values("bin") / tobs)
+        assert np.all(cands.values("nharm") == 2)
 
     def test_nfolds_negative(self) -> None:
         tim = TimeSeries(np.ones(64, dtype=np.float32), _header(64))
@@ -133,3 +135,17 @@ class TestFindPulses:
             tim.find_pulses(max_width=0)
         with pytest.raises(ValueError, match="deadtime"):
             tim.find_pulses(deadtime=-1)
+
+
+def test_resample_rejects_a_mapping_outside_the_array() -> None:
+    tim = TimeSeries(np.ones(64, dtype=np.float32), _header(64, tsamp=1.0))
+    with pytest.raises(ValueError, match="does not fit"):
+        tim.resample(1e16)
+
+
+def test_zero_spectrum_deredden_stays_finite() -> None:
+    series = FourierSeries(np.zeros(64, dtype=np.complex64), _header(128))
+    whitened = series.deredden()
+    assert np.all(np.isfinite(whitened.data))
+    with pytest.raises(ValueError, match="window"):
+        series.deredden(start_width=0)

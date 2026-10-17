@@ -56,6 +56,15 @@ class InjectedPulse:
         if self.delays.shape != (self.profile.shape[0],):
             msg = "delays must have one entry per channel"
             raise ValueError(msg)
+        if not np.isfinite(self.scale):
+            msg = f"scale must be finite, got {self.scale}"
+            raise ValueError(msg)
+        if not np.all(np.isfinite(self.profile)):
+            msg = "profile must be finite"
+            raise ValueError(msg)
+        if not np.all(np.isfinite(self.delays)):
+            msg = "delays must be finite"
+            raise ValueError(msg)
 
 
 class Injector:
@@ -436,9 +445,33 @@ def inject_file(
         If ``infile`` is not a sigproc filterbank.
     """
     reader = open_filterbank(infile)
-    if not isinstance(reader, FilReader):
-        msg = "inject reads sigproc filterbanks"
-        raise TypeError(msg)
+    try:
+        if not isinstance(reader, FilReader):
+            msg = "inject reads sigproc filterbanks"
+            raise TypeError(msg)
+        return _inject_open(
+            reader,
+            outfile,
+            injector,
+            gulp=gulp,
+            dm=dm,
+            preserve_bandpass=preserve_bandpass,
+            estimate_samples=estimate_samples,
+        )
+    finally:
+        reader.close()
+
+
+def _inject_open(
+    reader: FilReader,
+    outfile: str | Path,
+    injector: Injector,
+    *,
+    gulp: int,
+    dm: float | None,
+    preserve_bandpass: bool,
+    estimate_samples: int,
+) -> str:
     header = reader.header
     updates: dict[str, object] = {
         "filename": str(outfile),

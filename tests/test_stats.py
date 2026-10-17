@@ -624,3 +624,36 @@ class TestChannelStats:
             np.full(10, -3),
             decimal=self.deimal_precision,
         )
+
+
+def test_zscore_keeps_a_singleton_axis() -> None:
+    data = np.array([[1.0, 2.0, 3.0, 4.0, 10.0, 6.0]], dtype=np.float32)
+    result = stats.estimate_zscore(data, axis=1, scale_method="mad")
+    reference = stats.estimate_zscore(data[0], scale_method="mad")
+    assert result.data.shape == data.shape
+    np.testing.assert_allclose(result.data[0], reference.data)
+
+
+def test_channel_variance_uses_accumulated_count() -> None:
+    from sigpyproc.core.stats import ChannelStats
+
+    samples = np.array([[1, 10], [3, 10], [5, 10]], dtype=np.float32)
+    bag = ChannelStats(2, 128)
+    bag.push_data(samples.ravel(), 0, mode="full")
+    np.testing.assert_allclose(bag.var[0], np.var(samples[:, 0]))
+    assert bag.nsamps == 3
+
+
+def test_sn_follows_the_requested_axis() -> None:
+    data = np.array(
+        [
+            [0.0, 1.0, 2.0],
+            [0.0, 1.0, 3.0],
+            [0.0, 1.0, 10.0],
+            [0.0, 2.0, 11.0],
+        ],
+        dtype=np.float64,
+    )
+    columns = [stats.estimate_scale(data[:, index], method="sn") for index in range(3)]
+    got = stats.estimate_scale(data, method="sn", axis=0)
+    np.testing.assert_allclose(got, columns)

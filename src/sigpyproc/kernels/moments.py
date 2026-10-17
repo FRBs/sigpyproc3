@@ -7,7 +7,7 @@ from numba import njit, prange, types
 
 moments_dtype = np.dtype(
     [
-        ("count", np.int32),
+        ("count", np.int64),
         ("m1", np.float32),
         ("m2", np.float32),
         ("m3", np.float32),

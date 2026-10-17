@@ -17,6 +17,7 @@ from rich.progress import track
 
 from sigpyproc.base import Filterbank
 from sigpyproc.block import FilterbankBlock
+from sigpyproc.core.logging import progress_disabled
 from sigpyproc.header import Header
 from sigpyproc.io.bits import check_packed_length
 from sigpyproc.io.fileio import FileReader, allocate_buffer
@@ -41,6 +42,16 @@ logger = logging.getLogger(__name__)
 # the DM actually uses.
 _BULK_BYTES = 32 * 1024 * 1024
 _STREAM_GULP_BYTES = 8 * 1024 * 1024
+
+
+def _check_plan_args(gulp: int, start: int) -> None:
+    """Reject a read plan that would reach a kernel with a bad window."""
+    if gulp < 1:
+        msg = f"gulp must be >= 1, got {gulp}"
+        raise ValueError(msg)
+    if start < 0:
+        msg = f"start must be >= 0, got {start}"
+        raise ValueError(msg)
 
 
 def _chan_start(header: Header, fch1: float, nchans: int) -> int:
@@ -271,8 +282,17 @@ class FilReader(Filterbank):
         self.close()
 
     def _maybe_signed(self, data: np.ndarray) -> np.ndarray:
+        """Return samples in the dtype the streaming kernels accept.
+
+        Signed 8-bit storage is decoded to float32. A 16-bit gulp is copied
+        to float32, which holds every ``uint16`` value exactly. Packed and
+        unsigned 8-bit samples stay ``uint8``. 32-bit samples are already
+        float32.
+        """
         if self.header.signed and self.header.nbits == 8:
-            return data.view(np.int8).astype(np.float32)
+            return np.ascontiguousarray(data.view(np.int8), dtype=np.float32)
+        if self.header.nbits == 16:
+            return np.ascontiguousarray(data, dtype=np.float32)
         return data
 
     def read_block(
@@ -371,7 +391,7 @@ class FilReader(Filterbank):
         return FilterbankBlock(data, new_header, dm=dm)
 
     def _dedisp_dtype(self) -> np.dtype[np.generic]:
-        if self.header.signed and self.header.nbits == 8:
+        if self.header.nbits == 16 or (self.header.signed and self.header.nbits == 8):
             return np.dtype(np.float32)
         return self.bitsinfo.dtype
 
@@ -453,6 +473,7 @@ class FilReader(Filterbank):
         quiet: bool = False,
         allocator: Callable[[int], Buffer] | None = None,
     ) -> Iterator[tuple[int, int, np.ndarray]]:
+        _check_plan_args(gulp, start)
         if nsamps is None:
             nsamps = self.header.nsamples - start
         if description is None:
@@ -489,7 +510,11 @@ class FilReader(Filterbank):
         if lastread != 0:
             blocks.append((nreads, lastread * self.header.nchans, 0))
 
-        for ii, block, skip in track(blocks, description=description, disable=quiet):
+        for ii, block, skip in track(
+            blocks,
+            description=description,
+            disable=quiet or progress_disabled(),
+        ):
             logger.debug(
                 f"read_plan: Reading block {ii}/{nreads}, {block} elements, "
                 f"with skipback={skip}",
@@ -658,6 +683,7 @@ class PFITSReader(Filterbank):
         quiet: bool = False,
         allocator: Callable[[int], Buffer] | None = None,  # noqa: ARG002
     ) -> Iterator[tuple[int, int, np.ndarray]]:
+        _check_plan_args(gulp, start)
         if nsamps is None:
             nsamps = self.header.nsamples - start
         if description is None:
@@ -677,7 +703,11 @@ class PFITSReader(Filterbank):
             blocks.append((nreads, lastread, 0))
 
         pos = start
-        for ii, block, skip in track(blocks, description=description, disable=quiet):
+        for ii, block, skip in track(
+            blocks,
+            description=description,
+            disable=quiet or progress_disabled(),
+        ):
             data = self._read_samples(pos, block)
             pos += block + skip
             yield block, ii, data.ravel()
@@ -805,13 +835,13 @@ class PulseExtractor:
         logger.debug(
             f"nstart_file = {self.nstart_file}, nsamps_file = {self.nsamps_file}",
         )
-        fil = FilReader(self.filfile)
-        block = fil.read_block(
-            start=self.nstart_file,
-            nsamps=self.nsamps_file,
-            fch1=self.toa_freq,
-            nchans=self.nchans,
-        )
+        with FilReader(self.filfile) as fil:
+            block = fil.read_block(
+                start=self.nstart_file,
+                nsamps=self.nsamps_file,
+                fch1=self.toa_freq,
+                nchans=self.nchans,
+            )
         if self.nstart < 0 or self.nstart + self.nsamps > self.sub_hdr.nsamples:
             offset = abs(min(0, self.nstart))
             logger.info(f"Padding with {pad_mode}. start offset = {offset}")

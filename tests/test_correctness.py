@@ -30,8 +30,50 @@ def _write_fil(
         fch1=fch1,
         foff=foff,
     )
-    with header.prep_outfile(path, nbits=32) as outfile:
+    with header.prep_outfile(path, nbits=32, sources=()) as outfile:
         outfile.cwrite(np.asarray(data, dtype=np.float32).ravel())
+
+
+def test_remove_zerodm_keeps_a_constant_baseline(tmpdir: str) -> None:
+    nsamps, nchans = 128, 8
+    data = np.full((nsamps, nchans), 5, dtype=np.float32)
+    path = str(Path(tmpdir) / "const.fil")
+    out = str(Path(tmpdir) / "const_zdm.fil")
+    _write_fil(path, data, foff=-1.0)
+    FilReader(path).remove_zerodm(outfile_name=out, gulp=32)
+    got = FilReader(out).read_block(0, nsamps).data
+    np.testing.assert_allclose(got, 5)
+
+
+def test_remove_zerodm_suppresses_a_common_spike(tmpdir: str) -> None:
+    nsamps, nchans = 16, 4
+    data = np.zeros((nsamps, nchans), dtype=np.float32)
+    data[4] = 8
+    path = str(Path(tmpdir) / "spike.fil")
+    out = str(Path(tmpdir) / "spike_zdm.fil")
+    _write_fil(path, data, foff=-1.0)
+    FilReader(path).remove_zerodm(outfile_name=out)
+    got = FilReader(out).read_block(0, nsamps).data
+    # The common spike is removed and the mean bandpass, which includes it, is restored.
+    np.testing.assert_allclose(got, 0.5)
+
+
+def test_channel_stats_use_the_window_length(tmpdir: str) -> None:
+    nsamps = 128
+    data = np.column_stack(
+        [
+            np.arange(nsamps, dtype=np.float32),
+            np.full(nsamps, 3, dtype=np.float32),
+        ],
+    )
+    path = str(Path(tmpdir) / "ramp.fil")
+    _write_fil(path, data, foff=-1.0)
+    fil = FilReader(path)
+    window = 32
+    fil.compute_stats(nsamps=window, gulp=8)
+    expected = np.var(data[:window, 0])
+    np.testing.assert_allclose(fil.chan_stats.var[0], expected)
+    assert fil.chan_stats.nsamps == window
 
 
 class TestDownsample:

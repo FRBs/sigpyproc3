@@ -120,6 +120,7 @@ def boxcar_pulse_search(
                 "bin": peak,
                 "width_s": width_bins * tsamp,
                 "kind": "pulse",
+                "bin_origin": "start",
             },
         )
         lo = max(0, peak - deadtime)

@@ -33,6 +33,28 @@ class TestFilterbankBlock:
         assert block.dm == 0
         assert isinstance(block, FilterbankBlock)
 
+    def test_normalise_and_pad_keep_dm(self, filfile_8bit_1: str) -> None:
+        header = Header.from_sigproc(filfile_8bit_1).new_header(
+            {"nchans": 4, "nsamples": 16},
+        )
+        data = np.arange(4 * 16, dtype=np.float32).reshape(4, 16)
+        block = FilterbankBlock(data, header, dm=12.5)
+        assert block.normalise().dm == pytest.approx(12.5)
+        padded = block.pad_samples(20, 3)
+        assert padded.dm == pytest.approx(12.5)
+        assert padded.header.nsamples == 20
+        assert padded.header.tstart == pytest.approx(header.mjd_after_nsamps(-3))
+        np.testing.assert_array_equal(padded.data[:, 3:19], data)
+
+    def test_dmt_normalise_keeps_the_grid(self, filfile_8bit_1: str) -> None:
+        header = Header.from_sigproc(filfile_8bit_1).new_header({"nsamples": 8})
+        dms = np.array([0.0, 5.0, 10.0], dtype=np.float32)
+        data = np.arange(24, dtype=np.float32).reshape(3, 8)
+        block = DMTBlock(data, header, dms)
+        normalised = block.normalise()
+        assert isinstance(normalised, DMTBlock)
+        np.testing.assert_array_equal(normalised.dms, dms)
+
     def test_downsample(self, filfile_8bit_1: str) -> None:
         tfactor = 4
         ffactor = 2
@@ -216,3 +238,27 @@ class TestDMTBlock:
         import matplotlib.pyplot as plt
 
         plt.close(fig)
+
+    def test_dmt_peaks_at_the_injected_dm(self) -> None:
+        from sigpyproc.simulation.pulsar import make_header
+
+        header = make_header(
+            nchans=8,
+            nbits=32,
+            tsamp=1e-4,
+            tobs=0.05,
+            fch1=1500.0,
+            foff=-5.0,
+        )
+        dm = 20.0
+        delays = np.asarray(header.get_dmdelays(dm), dtype=int)
+        assert int(delays.max()) < 80
+        data = np.zeros((header.nchans, header.nsamples), dtype=np.float32)
+        origin = 100
+        for ichan, delay in enumerate(delays):
+            data[ichan, origin + int(delay)] = 1.0
+        block = FilterbankBlock(data, header)
+        dmt = block.dmt_transform(dm, dmsteps=5, only_valid_samples=True)
+        trial = int(np.argmin(np.abs(np.asarray(dmt.dms) - dm)))
+        assert dmt.header.nsamples == dmt.data.shape[1]
+        assert dmt.data[trial].max() > dmt.data[0].max()

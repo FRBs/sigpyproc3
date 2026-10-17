@@ -1,7 +1,13 @@
 # sigpyproc
 
-```{div} .lead
-A modern, object-oriented Python library for FRB and pulsar data analysis.
+```{raw} html
+<div class="spp-hero-card">
+  <img class="spp-hero-mark only-light" src="_static/logo/mark.svg" alt="">
+  <img class="spp-hero-mark only-dark" src="_static/logo/mark-dark.svg" alt="">
+  <p class="spp-hero-lede">
+    A modern, object-oriented Python library for FRB and pulsar data analysis.
+  </p>
+</div>
 ```
 
 [![GitHub CI](https://github.com/FRBs/sigpyproc3/workflows/GitHub%20CI/badge.svg)](https://github.com/FRBs/sigpyproc3/actions)
@@ -13,85 +19,72 @@ A modern, object-oriented Python library for FRB and pulsar data analysis.
 
 ---
 
-**sigpyproc** provides high-performance tools for manipulating pulsar and fast radio burst (FRB) data, combining a clean object-oriented API with [Numba](https://numba.pydata.org/)-accelerated kernels for time-critical workloads. Originally developed as a Python alternative to the
+**sigpyproc** reads filterbanks, time series, and related products, then processes them from Python or small `spp_*` commands. Numerical kernels are compiled with [Numba](https://numba.pydata.org/) on first use. Originally developed as a Python alternative to the
 [SIGPROC filterbank](http://sigproc.sourceforge.net) toolbox, the project has evolved into an independent framework for structured pulsar/FRB data manipulation.
 
-It is a modern extension of SIGPROC, not a clone. Search lives on `TimeSeries` / `PowerSpectrum` / `CandidateTable` (`TimeSeries.search`, `find_pulses`, `ffa`) with an `spp_search` CLI and CSV output. That is enough for exploratory FFT, FFA, and single-pulse work; it is not a drop-in survey pipeline (no `.prd` / `.bst` files, birdie lists, or PGPLOT). The library still focuses on:
-
-- Precise data inspection, data format conversion and header manipulation
-- Fine-grained control/visualization of filterbank and time series data
-- Rapid experimentation — including a first-class candidate table — prior to large-scale pipeline execution
-
-This makes it particularly well suited for exploratory research, validation work, and a simple plug-and-play system with new modules and extensions.
-
----
+It is aimed at inspecting data, checking a format, and prototyping an analysis ahead of a survey pipeline. Periodic search is an FFT with harmonic summing. Single-pulse search uses a boxcar. Format and method boundaries are listed on {doc}`capabilities`.
 
 ## Features
 
-- **Object-Oriented Design** — Explicit data objects for [SIGPROC filterbank](http://sigproc.sourceforge.net), [PSRFITS](https://www.atnf.csiro.au/research/pulsar/psrfits_definition/Psrfits.html), `TimeSeries`, `FourierSeries`, and `CandidateTable`.
-- **Search, as an API** — FFT + harmonic folds, Fast Folding Analysis, and a boxcar single-pulse search, all returning one CSV-friendly candidate table. See {doc}`/tutorials/search`.
-- **High Performance** — Critical paths implemented with Numba for speed without sacrificing clarity.
+- **Objects** — Filterbank, [PSRFITS](https://www.atnf.csiro.au/research/pulsar/psrfits_definition/Psrfits.html), `TimeSeries`, `FourierSeries`, and `CandidateTable`.
+- **Search as an API** — FFT harmonic folds and single-pulse search, both returned as one CSV-friendly table. See {doc}`tutorials/search`.
+- **Streaming reads** — Block I/O, so a full observation does not have to sit in memory.
 - **Structured Metadata** — Explicit header schemas for metadata handling.
-- **Modern Stack** — Built with `uv`, enforced with `ruff`, and maintained with strict `ty` type checking.
+- **Viewers** — Waterfall, time series, and spectrum plots, including a batch mode that writes image files.
 
----
+## Get started
 
-## Get Started
-
-::::{grid} 3
-:gutter: 3
+::::{grid} 1 2 3 3
+:gutter: 2
 
 :::{grid-item-card} 🚀 Installation
 :link: install
 :link-type: doc
+:padding: 2
 
-Environment setup and a first import.
+Python 3.12 or newer, with pip or uv.
 :::
 
-:::{grid-item-card} 📘 Filterbank quickstart
+:::{grid-item-card} 📘 Getting started
+:link: tutorials/basics
+:link-type: doc
+:padding: 2
+
+Open a file, read the header, chain methods.
+:::
+
+:::{grid-item-card} 📊 Quickstart
 :link: tutorials/quickstart
 :link-type: doc
+:padding: 2
 
-Load a `.fil`, inspect the header, dedisperse, and fold.
+Plots and a short search on synthetic data.
 :::
 
-:::{grid-item-card} 🔎 Search a time series
+:::{grid-item-card} 🔎 Search
 :link: tutorials/search
 :link-type: doc
+:padding: 2
 
-FFT, FFA, single pulses, and `CandidateTable` — how to use the search API.
+FFT, single pulses, and a candidate table.
 :::
 
-:::{grid-item-card} 📡 Simulate a pulse
+:::{grid-item-card} 📡 Simulate
 :link: tutorials/fake
 :link-type: doc
+:padding: 2
 
-Write a mock FRB with `spp_fake furby`, or inject one into a filterbank.
+A mock FRB, or a pulse injected into a file.
 :::
 
-:::{grid-item-card} 🖥️ Command line tools
+:::{grid-item-card} 🖥️ Command line
 :link: cmd
 :link-type: doc
+:padding: 2
 
-`spp_header`, `spp_search`, `spp_fake`, and the other `spp_*` scripts.
-:::
-
-:::{grid-item-card} 📚 API reference
-:link: generated/sigpyproc
-:link-type: doc
-
-Complete documentation of core classes, data structures, and kernels.
-:::
-
-:::{grid-item-card} 🛠️ Development guide
-:link: dev
-:link-type: doc
-
-Contributing, extending kernels, and architectural details.
+Headers, viewers, folding, and `spp_search`.
 :::
 ::::
-
----
 
 ```{toctree}
 :caption: User Guide
@@ -99,6 +92,7 @@ Contributing, extending kernels, and architectural details.
 :maxdepth: 1
 
 install
+capabilities
 cmd
 generated/sigpyproc
 dev
@@ -110,8 +104,12 @@ changes
 :hidden:
 :maxdepth: 1
 
-tutorials/quickstart
-tutorials/search
-tutorials/fake
-tutorials/header
+Objects and headers <tutorials/basics>
+Plots and a quick search <tutorials/quickstart>
+PSRFITS conversion <tutorials/io>
+Fold, save, and plot <tutorials/folding>
+Viewers and exports <tutorials/viewers>
+Searching time series <tutorials/search>
+Simulating pulses <tutorials/fake>
+Editing SIGPROC headers <tutorials/header>
 ```

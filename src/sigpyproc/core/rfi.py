@@ -73,17 +73,21 @@ def iqrm_mask(array: np.ndarray, threshold: float = 3, radius: int = 5) -> np.nd
     ValueError
         If the ``threshold`` is not positive.
     """
-    if threshold <= 0:
-        msg = f"threshold must be positive, got {threshold}"
+    values = np.asarray(array, dtype=float)
+    if values.ndim != 1:
+        msg = f"iqrm_mask expects a 1-D array, got shape {values.shape}"
         raise ValueError(msg)
-    mask = np.zeros_like(array, dtype="bool")
+    if radius < 1:
+        msg = f"radius must be >= 1, got {radius}"
+        raise ValueError(msg)
+    if not np.isfinite(threshold) or threshold <= 0:
+        msg = f"threshold must be positive and finite, got {threshold}"
+        raise ValueError(msg)
+    mask = np.zeros(values.shape, dtype=bool)
     lags = np.concatenate([np.arange(-radius, 0), np.arange(1, radius + 1)])
-    shifted_x = np.lib.stride_tricks.as_strided(
-        np.pad(array, radius, mode="edge"),
-        shape=(len(array), 2 * radius + 1),
-        strides=array.strides * 2,
-    )
-    lagged_diffs = array[:, np.newaxis] - shifted_x[:, lags + radius]
+    padded = np.pad(values, radius, mode="edge")
+    windows = np.lib.stride_tricks.sliding_window_view(padded, 2 * radius + 1)
+    lagged_diffs = values[:, np.newaxis] - windows[:, lags + radius]
     lagged_diffs = lagged_diffs.T
     for lagged_diff in lagged_diffs:
         zscore = stats.estimate_zscore(lagged_diff, scale_method="iqr")

@@ -8,8 +8,28 @@ from typing import TYPE_CHECKING, Literal, cast
 import attrs
 import numpy as np
 
-from sigpyproc.simulation.furby import FurbyGenerator, PulseParams
+from sigpyproc.simulation.furby import SPEC_KINDS, FurbyGenerator, PulseParams
 from sigpyproc.simulation.inject import Injector
+
+
+def _ordered(
+    name: str,
+    bounds: tuple[float, float],
+    *,
+    lower: float | None = None,
+    positive: bool = False,
+) -> None:
+    lo, hi = bounds
+    if not np.isfinite(lo) or not np.isfinite(hi) or lo > hi:
+        msg = f"{name} must be a finite ordered range, got {bounds}"
+        raise ValueError(msg)
+    if lower is not None and lo < lower:
+        msg = f"{name} must be >= {lower}, got {bounds}"
+        raise ValueError(msg)
+    if positive and lo <= 0:
+        msg = f"{name} must be positive, got {bounds}"
+        raise ValueError(msg)
+
 
 if TYPE_CHECKING:
     from sigpyproc.core.custom_types import SpecSimulMethods
@@ -78,6 +98,32 @@ class BurstDistribution:
         if not self.spec_kinds:
             msg = "spec_kinds must contain at least one spectral structure type"
             raise ValueError(msg)
+        if any(kind not in SPEC_KINDS for kind in self.spec_kinds):
+            msg = f"spec_kinds must be drawn from {SPEC_KINDS}, got {self.spec_kinds}"
+            raise ValueError(msg)
+        _ordered("dm_range", self.dm_range, lower=0.0)
+        _ordered("width_range", self.width_range, lower=0.0, positive=True)
+        _ordered("snr_range", self.snr_range, positive=True)
+        _ordered("tau_range", self.tau_range, lower=0.0)
+        _ordered("spec_idx_range", self.spec_idx_range)
+        if self.time_range is not None:
+            _ordered("time_range", self.time_range, lower=0.0)
+        if not np.isfinite(self.tau_ref_freq) or self.tau_ref_freq <= 0:
+            msg = f"tau_ref_freq must be positive, got {self.tau_ref_freq}"
+            raise ValueError(msg)
+        if self.shape not in {"gaussian", "boxcar"}:
+            msg = f"shape must be 'gaussian' or 'boxcar', got {self.shape!r}"
+            raise ValueError(msg)
+        for name, value in (("scatt_idx", self.scatt_idx), ("disp_ind", self.disp_ind)):
+            if not np.isfinite(value):
+                msg = f"{name} must be finite, got {value}"
+                raise ValueError(msg)
+        if isinstance(self.os_fact, bool) or not isinstance(self.os_fact, int):
+            msg = f"os_fact must be an integer >= 1, got {self.os_fact!r}"
+            raise TypeError(msg)
+        if self.os_fact < 1:
+            msg = f"os_fact must be an integer >= 1, got {self.os_fact!r}"
+            raise ValueError(msg)
 
 
 class RandomBurstPopulation:
@@ -120,8 +166,14 @@ class RandomBurstPopulation:
         list of tuple of (float, PulseParams)
             Pairs of (arrival_time, pulse_params).
         """
-        if count <= 0:
+        if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+            msg = f"count must be an integer >= 0, got {count!r}"
+            raise ValueError(msg)
+        if count == 0:
             return []
+        if not np.isfinite(tobs) or tobs <= 0:
+            msg = f"tobs must be finite and positive, got {tobs}"
+            raise ValueError(msg)
 
         dist = self.distribution
         t_min, t_max = dist.time_range if dist.time_range is not None else (0.0, tobs)
@@ -190,7 +242,9 @@ class RandomBurstPopulation:
 
         Returns
         -------
-        list of tuple of (time, dm, width, snr, spec_idx, tau0, spec_kind)
+        list of tuple
+            Rows contain ``time``, ``dm``, ``width``, ``snr``, ``spec_idx``,
+            ``tau0``, and ``spec_kind``, in that order.
         """
         bursts = self.draw_bursts(count, tobs)
         return [

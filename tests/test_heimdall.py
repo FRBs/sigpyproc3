@@ -478,7 +478,9 @@ class TestHeimdallPipeline:
         assert result.output.splitlines()[0].split(",") == [
             *PULSE_CANDIDATE_NAMES,
             *HEIMDALL_CANDIDATE_NAMES,
+            "bin_origin",
         ]
+        assert np.all(actual.values("bin_origin") == "center")
         np.testing.assert_array_equal(actual.values("bin"), expected.values("bin"))
         np.testing.assert_array_equal(
             actual.values("members"), expected.values("members")

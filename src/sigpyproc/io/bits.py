@@ -136,6 +136,12 @@ def pack(
         raise ValueError(msg)
     bitorder_str = "big" if bitorder[0] == "b" else "little"
     bitfact = 8 // nbits
+    if array.size % bitfact != 0:
+        msg = (
+            f"Cannot pack {array.size} samples at {nbits} bits: "
+            f"the length must be a multiple of {bitfact}"
+        )
+        raise ValueError(msg)
     if packed is None:
         packed = np.zeros(shape=array.size // bitfact, dtype=np.uint8)
     elif packed.size != array.size // bitfact:

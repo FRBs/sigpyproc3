@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+import sys
 
+from rich.console import Console
 from rich.logging import RichHandler
 
 from sigpyproc.utils import validate_path
@@ -18,8 +20,25 @@ def _formatter() -> logging.Formatter:
     return logging.Formatter(fmt=_LOG_FORMAT)
 
 
+_PROGRESS = {"disabled": False}
+
+
+def progress_disabled() -> bool:
+    """Whether streaming progress bars should stay off.
+
+    ``--quiet`` sets this. Diagnostics still go to stderr.
+    """
+    return bool(_PROGRESS["disabled"])
+
+
+def set_progress_disabled(*, disabled: bool) -> None:
+    """Enable or disable Rich progress bars for the rest of the process."""
+    _PROGRESS["disabled"] = disabled
+
+
 def _rich_handler() -> RichHandler:
     handler = RichHandler(
+        console=Console(file=sys.stderr),
         show_path=False,
         rich_tracebacks=True,
         log_time_format=_RICH_TIME_FORMAT,

@@ -6,6 +6,7 @@ import pytest
 from sigpyproc.foldedcube import Profile
 from sigpyproc.fourierseries import FourierSeries, PowerSpectrum
 from sigpyproc.header import Header
+from sigpyproc.timeseries import TimeSeries
 
 
 class TestFourierSeries:
@@ -33,6 +34,25 @@ class TestFourierSeries:
         fs = FourierSeries(fourier_data, Header(**tim_header))
         tim_ar = fs.ifft()
         np.testing.assert_allclose(tim_ar.data, tim_data, atol=0.01)
+
+    def test_odd_length_ifft_keeps_the_sample_count(self) -> None:
+        n = 9
+        samples = np.arange(n, dtype=np.float32)
+        header = Header(
+            filename="odd.tim",
+            data_type="time series",
+            nchans=1,
+            foff=0.0,
+            fch1=1400.0,
+            nbits=32,
+            tsamp=0.001,
+            tstart=50000.0,
+            nsamples=n,
+        )
+        spectrum = np.fft.rfft(samples).astype(np.complex64)
+        restored = FourierSeries(spectrum, header).ifft()
+        assert restored.data.size == n
+        np.testing.assert_allclose(restored.data, samples, atol=1e-5)
 
     def test_form_spec(self, fourier_data: np.ndarray, tim_header: dict) -> None:
         fs = FourierSeries(fourier_data, Header(**tim_header))
@@ -144,3 +164,141 @@ class TestPowerSpectrum:
         folds = spec.harmonic_fold(nfolds)
         assert isinstance(folds[0], PowerSpectrum)
         np.testing.assert_equal(len(folds), nfolds)
+
+    def test_spec_roundtrip_keeps_the_real_length(
+        self,
+        tim_header: dict,
+        tmp_path: Path,
+    ) -> None:
+        from sigpyproc.timeseries import TimeSeries
+
+        for n_time in (16, 9):
+            header = Header(**tim_header).new_header({"nsamples": n_time})
+            series = TimeSeries(np.arange(n_time, dtype=np.float32), header).rfft()
+            path = series.to_spec(str(tmp_path / f"complex_{n_time}.spec"))
+            loaded = FourierSeries.from_spec(path)
+            assert loaded.header.nsamples == n_time
+            assert loaded.binwidth == pytest.approx(series.binwidth)
+            np.testing.assert_allclose(loaded.data, series.data, atol=1e-5)
+            power = series.form_spec()
+            power_path = power.to_spec(str(tmp_path / f"power_{n_time}.spec"))
+            restored = PowerSpectrum.from_spec(power_path)
+            assert restored.header.nsamples == n_time
+            assert 1 / restored.header.tobs == pytest.approx(1 / power.header.tobs)
+            np.testing.assert_allclose(restored.data, power.data, atol=1e-5)
+
+    def test_lyne_sum_is_reported_at_the_fundamental(self, tim_header: dict) -> None:
+        spec = np.zeros(64, dtype=np.float32)
+        spec[10] = 1
+        spec[20] = 4
+        header = Header(**tim_header).new_header({"nsamples": 64})
+        folded = PowerSpectrum(spec, header).harmonic_fold(1, method="lyne")[0]
+        assert int(np.argmax(folded.data)) == 10
+        assert folded.data[10] >= folded.data[20]
+
+
+def _synthetic_series_header(nsamples: int = 128) -> Header:
+    return Header(
+        filename="synthetic.tim",
+        data_type="time series",
+        nchans=1,
+        foff=1.0,
+        fch1=1400.0,
+        nbits=32,
+        tsamp=0.001,
+        tstart=50000.0,
+        nsamples=nsamples,
+    )
+
+
+@pytest.mark.parametrize("line", [1, 10, 64])
+def test_sparse_whitening_preserves_lines_without_zero_division(line: int) -> None:
+    values = np.zeros(65, dtype=np.complex64)
+    values[line] = 3 + 4j
+    result = FourierSeries(values, _synthetic_series_header()).deredden().data
+    assert np.isfinite(result).all()
+    np.testing.assert_allclose(result[line], values[line])
+    np.testing.assert_array_equal(np.delete(result, [0, line]), 0)
+
+
+def test_whitening_constant_noise_has_analytic_scale() -> None:
+    values = np.full(65, 3 + 4j, dtype=np.complex64)
+    result = FourierSeries(values, _synthetic_series_header()).deredden().data
+    np.testing.assert_allclose(result[1:], (0.6 + 0.8j) * np.sqrt(np.log(2)), rtol=1e-6)
+    assert result[0] == 1
+
+
+@pytest.mark.parametrize("bad", [np.nan, np.inf, 1e30])
+def test_whitening_rejects_invalid_power(bad: float) -> None:
+    values = np.ones(65, dtype=np.complex64)
+    values[10] = bad
+    with pytest.raises(ValueError, match=r"finite|range"):
+        FourierSeries(values, _synthetic_series_header()).deredden()
+
+
+def _example_series_header(n: int = 256) -> Header:
+    return Header(
+        filename="example.tim",
+        data_type="time series",
+        nchans=1,
+        fch1=1400.0,
+        foff=1.0,
+        tsamp=0.001,
+        nbits=32,
+        tstart=50000.0,
+        nsamples=n,
+    )
+
+
+@pytest.mark.parametrize("order", [1, 2, 3, 4])
+def test_lyne_frequency_grid_for_unambiguous_harmonic_comb(order: int) -> None:
+    data = np.zeros(1025, dtype=np.float32)
+    # This constructed comb has a unique maximum on fundamental bin 10.
+    for harmonic in range(1, 2**order + 1):
+        data[10 * harmonic] = harmonic
+    original = PowerSpectrum(data, _example_series_header(2048))
+    folded = original.harmonic_fold(order, method="lyne")[-1]
+    peak_bin = int(np.argmax(folded.data))
+    assert peak_bin == 10
+    assert folded.bin2freq(peak_bin) == pytest.approx(10 / 2.048)
+    assert folded.bin2period(peak_bin) == pytest.approx(2.048 / 10)
+
+
+def test_spectrum_readers_reject_wrong_kind_and_truncation(tmp_path: Path) -> None:
+    series = TimeSeries(
+        np.arange(16, dtype=np.float32), _example_series_header(16)
+    ).rfft()
+    power = series.form_spec().to_spec(str(tmp_path / "power.spec"))
+    with pytest.raises(ValueError, match="power spectrum"):
+        FourierSeries.from_spec(power)
+    complex_path = series.to_spec(str(tmp_path / "complex.spec"))
+    with pytest.raises(ValueError, match="amplitude spectrum"):
+        PowerSpectrum.from_spec(complex_path)
+    path = tmp_path / "complex.spec"
+    path.write_bytes(path.read_bytes()[:-4])
+    with pytest.raises(ValueError, match="payload"):
+        FourierSeries.from_spec(path)
+
+
+@pytest.mark.parametrize(("order", "method"), [(0, "lyne"), (1, "unknown")])
+def test_harmonic_folds_reject_invalid_requests(order: int, method: str) -> None:
+    spectrum = PowerSpectrum(np.ones(65, dtype=np.float32), _synthetic_series_header())
+    with pytest.raises(ValueError):
+        spectrum.harmonic_fold(order, method=method)
+
+
+@pytest.mark.parametrize(("frequency", "harmonics"), [(0.0, 4), (10.0, 0), (1000.0, 4)])
+def test_profile_reconstruction_requires_available_harmonics(
+    frequency: float, harmonics: int
+) -> None:
+    fourier = FourierSeries(np.ones(65, dtype=np.complex64), _synthetic_series_header())
+    with pytest.raises(ValueError):
+        fourier.recon_prof(frequency, nharms=harmonics)
+
+
+@pytest.mark.parametrize("data", [np.ones((2, 2)), np.empty(0)])
+def test_amplitude_spectrum_requires_nonempty_one_dimensional_data(
+    data: np.ndarray,
+) -> None:
+    with pytest.raises(ValueError):
+        PowerSpectrum(data, _synthetic_series_header())

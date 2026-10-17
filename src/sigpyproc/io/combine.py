@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+from contextlib import ExitStack
 from itertools import pairwise
 from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 
 from sigpyproc.readers import FilReader
+
+# Channel centres are stored as 32-bit MHz. 100 Hz is about one ulp near 1 GHz.
+_FREQ_ATOL_MHZ = 1e-4
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -31,6 +35,12 @@ def merge_filterbanks(
     """
     if len(filenames) < 2:
         msg = "Need at least two filterbank files"
+        raise ValueError(msg)
+    if axis not in {"auto", "time", "freq"}:
+        msg = f"axis must be 'auto', 'time', or 'freq', got {axis!r}"
+        raise ValueError(msg)
+    if gulp < 1:
+        msg = f"gulp must be >= 1, got {gulp}"
         raise ValueError(msg)
     if axis == "auto":
         headers = []
@@ -63,6 +73,9 @@ def splice_filterbanks(
     if len(filenames) < 2:
         msg = "Need at least two filterbank files"
         raise ValueError(msg)
+    if gulp < 1:
+        msg = f"gulp must be >= 1, got {gulp}"
+        raise ValueError(msg)
     fils = _open_sorted_fils(filenames)
     try:
         return _splice_open(fils, outfile_name, gulp)
@@ -82,7 +95,11 @@ def _splice_open(
         "fch1": fils[0].header.fch1,
         "foff": fils[0].header.foff,
     }
-    out_file = fils[0].header.prep_outfile(outfile_name, updates=updates)
+    out_file = fils[0].header.prep_outfile(
+        outfile_name,
+        updates=updates,
+        sources=[fil.header.filename for fil in fils],
+    )
     nsamps = fils[0].header.nsamples
     nread = 0
     while nread < nsamps:
@@ -107,33 +124,48 @@ def _splice_open(
 
 
 def _open_sorted_fils(filenames: Sequence[str | Path]) -> list[FilReader]:
-    fils = [FilReader(name) for name in filenames]
-    ref = fils[0].header
-    for fil in fils[1:]:
-        hdr = fil.header
-        if abs(hdr.tstart - ref.tstart) * 86400 > 0.5 * ref.tsamp:
-            msg = f"tstart mismatch: {hdr.tstart} vs {ref.tstart}"
-            raise ValueError(msg)
-        if hdr.tsamp != ref.tsamp or hdr.nbits != ref.nbits or hdr.nifs != ref.nifs:
-            msg = "tsamp, nbits, and nifs must match across files"
-            raise ValueError(msg)
-        if hdr.nsamples != ref.nsamples:
-            msg = "nsamples must match across files"
-            raise ValueError(msg)
-        if hdr.foff != ref.foff:
-            msg = "foff must match across files for a linear frequency axis"
-            raise ValueError(msg)
-    descending = ref.foff < 0
-    fils.sort(key=lambda fil: fil.header.fch1, reverse=descending)
-    for prev, cur in pairwise(fils):
-        expected = prev.header.fch1 + prev.header.nchans * prev.header.foff
-        if not np.isclose(cur.header.fch1, expected, atol=1e-6):
-            msg = (
-                "Frequency axes do not adjoin "
-                f"({prev.header.fch1} + {prev.header.nchans}*{prev.header.foff} "
-                f"!= {cur.header.fch1})"
-            )
-            raise ValueError(msg)
+    with ExitStack() as stack:
+        fils = [stack.enter_context(FilReader(name)) for name in filenames]
+        ref = fils[0].header
+        for fil in fils[1:]:
+            hdr = fil.header
+            if abs(hdr.tstart - ref.tstart) * 86400 > 0.5 * ref.tsamp:
+                msg = f"tstart mismatch: {hdr.tstart} vs {ref.tstart}"
+                raise ValueError(msg)
+            if (
+                hdr.tsamp != ref.tsamp
+                or hdr.nbits != ref.nbits
+                or hdr.nifs != ref.nifs
+                or hdr.signed != ref.signed
+            ):
+                msg = "tsamp, nbits, nifs, and signed must match across files"
+                raise ValueError(msg)
+            if hdr.nsamples != ref.nsamples:
+                msg = "nsamples must match across files"
+                raise ValueError(msg)
+            if hdr.foff != ref.foff:
+                msg = "foff must match across files for a linear frequency axis"
+                raise ValueError(msg)
+            if hdr.dm != ref.dm or hdr.frame != ref.frame or hdr.source != ref.source:
+                msg = "dm, frame, and source must match across files"
+                raise ValueError(msg)
+        descending = ref.foff < 0
+        fils.sort(key=lambda fil: fil.header.fch1, reverse=descending)
+        for prev, cur in pairwise(fils):
+            expected = prev.header.fch1 + prev.header.nchans * prev.header.foff
+            if not np.isclose(
+                cur.header.fch1,
+                expected,
+                rtol=0.0,
+                atol=_FREQ_ATOL_MHZ,
+            ):
+                msg = (
+                    "Frequency axes do not adjoin "
+                    f"({prev.header.fch1} + {prev.header.nchans}*{prev.header.foff} "
+                    f"!= {cur.header.fch1})"
+                )
+                raise ValueError(msg)
+        stack.pop_all()
     return fils
 
 

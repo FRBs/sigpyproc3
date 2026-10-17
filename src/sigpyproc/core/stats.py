@@ -572,7 +572,8 @@ def _scale_iqr(
     data = np.asanyarray(data, dtype=np.float64)
     norm = 1.3489795003921634  # scipy.stats.norm.ppf(0.75) - scipy.stats.norm.ppf(0.25)
     percentiles = np.percentile(data, [25, 75], axis=axis, keepdims=True)
-    return np.squeeze(np.diff(percentiles, axis=0) / norm)
+    iqr = np.squeeze(np.diff(percentiles, axis=0) / norm, axis=0)
+    return _drop_reduced_axes(iqr, axis)
 
 
 def _scale_mad(
@@ -608,7 +609,7 @@ def _scale_mad(
     if np.any(is_zero_mad):
         aad = np.mean(np.abs(data - loc), axis=axis, keepdims=True) / norm_aad
         mad = np.where(is_zero_mad, aad, mad)
-    return np.squeeze(mad)
+    return _drop_reduced_axes(mad, axis)
 
 
 def _scale_doublemad(
@@ -762,11 +763,27 @@ def _scale_sn(
     np.float64 | NDArray[np.float64]
         The Normalized Sn scale of the array.
     """
-    norm = 1.1926
     data = np.asanyarray(data, dtype=np.float64)
-    diffs = np.abs(data[..., None] - data[..., None, :])
-    median_diffs = np.median(diffs, axis=-1)
-    return norm * np.median(median_diffs, axis=axis)
+    return apply_along_axes(_scale_sn_1d, data, axis)
+
+
+def _scale_sn_1d(data: NDArray[np.float64]) -> np.float64:
+    """Calculate the Normalized Sn scale of a 1-D array."""
+    norm = 1.1926
+    diffs = np.abs(data[:, None] - data[None, :])
+    return np.float64(norm * np.median(np.median(diffs, axis=1)))
+
+
+def _drop_reduced_axes(
+    values: NDArray[np.float64],
+    axis: int | tuple[int, ...] | None,
+) -> np.float64 | NDArray[np.float64]:
+    """Remove only the axes a keepdims reduction left at size 1."""
+    if axis is None:
+        return np.squeeze(values)
+    axes = (axis,) if isinstance(axis, int) else axis
+    axes = tuple(int(item) % values.ndim for item in axes)
+    return np.squeeze(values, axis=axes)
 
 
 def _scale_gapper(
@@ -850,14 +867,20 @@ class ChannelStats:
 
     @property
     def nsamps(self) -> int:
-        """Get the number of samples.
+        """Get the number of samples actually accumulated.
 
         Returns
         -------
         int
             The number of samples.
         """
+        counts = self._moments["count"]
+        if counts.size and int(counts.max()) > 0:
+            return int(counts.max())
         return self._nsamps
+
+    def _sample_counts(self) -> np.ndarray:
+        return self._moments["count"].astype(np.float64, copy=False)
 
     @property
     def moments(self) -> np.ndarray:
@@ -912,7 +935,10 @@ class ChannelStats:
         ndarray
             The variance of each channel.
         """
-        return self._moments["m2"] / self.nsamps
+        count = self._sample_counts()
+        out = np.zeros(self._nchans, dtype=np.float64)
+        np.divide(self._moments["m2"], count, out=out, where=count > 0)
+        return out
 
     @property
     def std(self) -> np.ndarray:
@@ -934,12 +960,14 @@ class ChannelStats:
         ndarray
             The skewness of each channel.
         """
-        return np.divide(
+        count = self._sample_counts()
+        moment = np.divide(
             self._moments["m3"],
             np.power(self._moments["m2"], 1.5),
-            out=np.zeros_like(self._moments["m3"]),
+            out=np.zeros_like(self._moments["m3"], dtype=np.float64),
             where=self._moments["m2"] != 0,
-        ) * np.sqrt(self.nsamps)
+        )
+        return moment * np.sqrt(count)
 
     @property
     def kurtosis(self) -> np.ndarray:
@@ -950,16 +978,14 @@ class ChannelStats:
         ndarray
             The kurtosis of each channel.
         """
-        return (
-            np.divide(
-                self._moments["m4"],
-                np.power(self._moments["m2"], 2.0),
-                out=np.zeros_like(self._moments["m4"]),
-                where=self._moments["m2"] != 0,
-            )
-            * self.nsamps
-            - 3.0
+        count = self._sample_counts()
+        moment = np.divide(
+            self._moments["m4"],
+            np.power(self._moments["m2"], 2.0),
+            out=np.zeros_like(self._moments["m4"], dtype=np.float64),
+            where=self._moments["m2"] != 0,
         )
+        return moment * count - np.where(count > 0, 3.0, 0.0)
 
     def push_data(
         self,

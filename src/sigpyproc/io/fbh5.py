@@ -1,6 +1,6 @@
 """Sigproc-style HDF5 header parsing.
 
-This module contains functions for parsing Sigproc-style HDF5 headers.
+Only the filterbank header is read. There is no HDF5 sample reader or writer.
 """
 
 from __future__ import annotations
@@ -31,9 +31,13 @@ def parse_header(filename: str | Path) -> dict:
     Raises
     ------
     FileNotFoundError
-        If the file does not exist
+        If the file does not exist.
     OSError
-        If file header is not in sigproc HDF5 format or no data block found in file
+        If the file is not HDF5, has no ``CLASS`` or ``DIMENSION_LABELS``,
+        is not a filterbank header, or the data cube is not three-dimensional.
+    ValueError
+        If a dimension label is missing, duplicated, or not one of
+        ``time``, ``feed_id`` and ``frequency``.
     """
     filename = Path(filename)
     if not filename.is_file():
@@ -43,24 +47,38 @@ def parse_header(filename: str | Path) -> dict:
         msg = f"File {filename} is not an HDF5 file"
         raise OSError(msg)
     with h5py.File(filename, "r") as h5file:
-        class_atr = h5file.attrs["CLASS"]
-        if not isinstance(class_atr, str | bytes) or class_atr.lower() not in [
+        try:
+            class_atr = h5file.attrs["CLASS"]
+        except KeyError as exc:
+            msg = f"File {filename} has no CLASS attribute"
+            raise OSError(msg) from exc
+        if not isinstance(class_atr, str | bytes) or class_atr.lower() not in {
             "filterbank",
             b"filterbank",
-        ]:
+        }:
             msg = "File header is not in sigproc format"
             raise OSError(msg)
-        if "data" not in h5file:
+        data = h5file.get("data")
+        if not isinstance(data, h5py.Dataset):
             msg = "No data block found in file"
             raise OSError(msg)
+        if data.ndim != 3:
+            msg = (
+                f"File {filename} data has rank {data.ndim}; "
+                "a filterbank header needs time, feed_id and frequency axes"
+            )
+            raise OSError(msg)
         header: dict[str, Any] = {}
-        for key, val in h5file["data"].attrs.items():
+        for key, val in data.attrs.items():
             header[key] = val.decode() if isinstance(val, bytes) else val
+        if "DIMENSION_LABELS" not in header:
+            msg = f"File {filename} data has no DIMENSION_LABELS attribute"
+            raise OSError(msg)
         axis_map = map_dimensions(header["DIMENSION_LABELS"])
 
         header["filelen"] = filename.stat().st_size
-        header["nsamples"] = h5file["data"].shape[axis_map["time"]]
-        header["nbeams"] = h5file["data"].shape[axis_map["feed_id"]]
+        header["nsamples"] = data.shape[axis_map["time"]]
+        header["nbeams"] = data.shape[axis_map["feed_id"]]
         header["filename"] = filename.as_posix()
     return header
 
@@ -81,16 +99,27 @@ def map_dimensions(dimension_labels: np.ndarray | list[str]) -> dict[str, int]:
 
     Raises
     ------
+    TypeError
+        If a dimension label is not text.
     ValueError
-        If an unexpected dimension label is encountered.
+        If a dimension label is unexpected or duplicated.
     """
     expected_labels = {"time", "feed_id", "frequency"}
     dimension_map = {}
 
     for i, label in enumerate(dimension_labels):
-        label_str = label.lower() if isinstance(label, str) else label.decode().lower()
+        if isinstance(label, str):
+            label_str = label.strip().lower()
+        elif isinstance(label, bytes):
+            label_str = label.decode().strip().lower()
+        else:
+            msg = f"Unexpected dimension label: {label!r}"
+            raise TypeError(msg)
         if label_str not in expected_labels:
             msg = f"Unexpected dimension label: {label_str}"
+            raise ValueError(msg)
+        if label_str in dimension_map:
+            msg = f"Duplicate dimension label: {label_str}"
             raise ValueError(msg)
         dimension_map[label_str] = i
 

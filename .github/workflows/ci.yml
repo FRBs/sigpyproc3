@@ -45,15 +45,18 @@ jobs:
         include:
           - os: ubuntu-latest
             python-version: "3.12"
+            coverage: true
           - os: ubuntu-latest
             python-version: "3.13"
+            coverage: false
           - os: ubuntu-latest
             python-version: "3.14"
+            coverage: false
           - os: macos-latest
             python-version: "3.12"
+            coverage: false
 
     env:
-      NUMBA_CACHE_DIR: ${{ github.workspace }}/.numba_cache
       # macOS otherwise selects the MacOSX backend. plt.show() then blocks,
       # and the viewer tests never finish.
       MPLBACKEND: Agg
@@ -70,45 +73,65 @@ jobs:
       - name: Install package with test dependencies
         run: uv sync --extra tests
 
-      - name: Restore numba cache
-        uses: actions/cache@v6
-        with:
-          path: ${{ env.NUMBA_CACHE_DIR }}
-          key: numba-${{ runner.os }}-py${{ matrix.python-version }}-${{ hashFiles('src/**/*.py') }}
-          restore-keys: |
-            numba-${{ runner.os }}-py${{ matrix.python-version }}-
-
-      # Numba invalidates cached kernels when a source file's mtime changes, and
-      # a fresh checkout gives every file a new mtime. Setting each mtime from a
-      # hash of its content keeps the cache valid for unchanged code and
-      # invalidates it when the code changes.
-      - name: Normalise source mtimes for numba cache
-        run: |
-          python3 - <<'EOF'
-          import hashlib
-          import os
-          import pathlib
-
-          for path in pathlib.Path("src").rglob("*.py"):
-              digest = int(hashlib.sha256(path.read_bytes()).hexdigest()[:8], 16)
-              stamp = 1_000_000_000 + digest % 1_000_000_000
-              os.utime(path, (stamp, stamp))
-          EOF
-
-      - name: Run pytest (with coverage)
-        if: runner.os == 'Linux'
-        run: uv run pytest --cov=src --cov-report=xml -v
-
       - name: Run pytest
-        if: runner.os == 'macOS'
+        if: ${{ !matrix.coverage }}
         run: uv run pytest -q
 
-      - name: Upload coverage to Codecov
-        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.14'
+      - name: Run pytest with line coverage
+        if: matrix.coverage
+        env:
+          NUMBA_NUM_THREADS: "2"
+          NUMBA_JIT_COVERAGE: "1"
+          # Fresh cache so kernels recompile under coverage tracing.
+          NUMBA_CACHE_DIR: ${{ runner.temp }}/numba-coverage-${{ github.run_id }}-${{ github.run_attempt }}
+        run: uv run pytest --cov=src --cov-report=xml --cov-report=term-missing
+
+      - name: Upload coverage
+        if: matrix.coverage
         uses: codecov/codecov-action@v7
         with:
           files: ./coverage.xml
-          name: codecov-umbrella
+          name: python-and-numba-compilation
           fail_ci_if_error: true
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  distributions:
+    name: distribution build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv & Python
+        uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Build the wheel
+        run: uv build
+
+      - name: Check distribution metadata
+        run: uvx twine check dist/*
+
+      - name: Import from the installed wheel
+        run: |
+          uv venv /tmp/sigpyproc-wheel
+          uv pip install --python /tmp/sigpyproc-wheel/bin/python dist/*.whl
+          cd /tmp
+          /tmp/sigpyproc-wheel/bin/python - <<'PY'
+          import inspect
+          import pathlib
+
+          import sigpyproc
+          from sigpyproc.timeseries import TimeSeries
+
+          location = pathlib.Path(inspect.getfile(sigpyproc))
+          if "site-packages" not in location.parts:
+              raise SystemExit(f"imported from the checkout: {location}")
+          if not (location.parent / "py.typed").is_file():
+              raise SystemExit(f"py.typed missing from {location.parent}")
+          assert TimeSeries is not None
+          PY
+          /tmp/sigpyproc-wheel/bin/spp_header --help >/dev/null
+

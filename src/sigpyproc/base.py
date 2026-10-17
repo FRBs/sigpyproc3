@@ -53,6 +53,11 @@ class Filterbank(ABC):
 
     def __init__(self) -> None:
         self._chan_stats: ChannelStats | None = None
+        self._chan_stats_window: tuple[int, int, str] | None = None
+
+    @abstractmethod
+    def close(self) -> None:
+        """Release the input stream owned by this reader."""
 
     @property
     @abstractmethod
@@ -247,15 +252,17 @@ class Filterbank(ABC):
         **plan_kwargs : dict
             Keyword arguments for :func:`read_plan`.
         """
-        bag = ChannelStats(self.header.nchans, self.header.nsamples)
+        n_in, _tstart = self._sample_window(start, nsamps)
+        bag = ChannelStats(self.header.nchans, n_in)
         for _, ii, data in self.read_plan(
             gulp=gulp,
             start=start,
-            nsamps=nsamps,
+            nsamps=n_in,
             **plan_kwargs,
         ):
             bag.push_data(data, ii, mode="full")
         self._chan_stats = bag
+        self._chan_stats_window = (start, n_in, "full")
 
     def compute_stats_basic(
         self,
@@ -279,15 +286,17 @@ class Filterbank(ABC):
         **plan_kwargs : dict
             Keyword arguments for :func:`read_plan`.
         """
-        bag = ChannelStats(self.header.nchans, self.header.nsamples)
+        n_in, _tstart = self._sample_window(start, nsamps)
+        bag = ChannelStats(self.header.nchans, n_in)
         for _, ii, data in self.read_plan(
             gulp=gulp,
             start=start,
-            nsamps=nsamps,
+            nsamps=n_in,
             **plan_kwargs,
         ):
             bag.push_data(data, ii, mode="basic")
         self._chan_stats = bag
+        self._chan_stats_window = (start, n_in, "basic")
 
     def collapse(
         self,
@@ -320,7 +329,15 @@ class Filterbank(ABC):
         -------
         :class:`~sigpyproc.timeseries.TimeSeries`
             A zero-DM time series.
+
+        Raises
+        ------
+        ValueError
+            If ``method`` is not ``"mean"`` or ``"sum"``.
         """
+        if method not in {"mean", "sum"}:
+            msg = f"method must be 'mean' or 'sum', got {method!r}"
+            raise ValueError(msg)
         tim_len, tstart = self._sample_window(start, nsamps)
         tim_ar = np.zeros(tim_len, dtype=np.float32)
         kernel_func = kernels.extract_tim_par if parallel else kernels.extract_tim
@@ -381,7 +398,15 @@ class Filterbank(ABC):
         -------
         :class:`~sigpyproc.timeseries.TimeSeries`
             Bandpass of the data.
+
+        Raises
+        ------
+        ValueError
+            If ``method`` is not ``"mean"`` or ``"sum"``.
         """
+        if method not in {"mean", "sum"}:
+            msg = f"method must be 'mean' or 'sum', got {method!r}"
+            raise ValueError(msg)
         bpass_ar = np.zeros(self.header.nchans, dtype=np.float32)
         kernel_func = kernels.extract_bpass_par if parallel else kernels.extract_bpass
         num_samples = 0
@@ -391,7 +416,12 @@ class Filterbank(ABC):
             nsamps=nsamps,
             **plan_kwargs,
         ):
-            kernel_func(data, bpass_ar, self.header.nchans, nsamps_r)
+            kernel_func(
+                data,
+                bpass_ar,
+                self.header.nchans,
+                nsamps_r,
+            )
             num_samples += nsamps_r
         if method == "mean":
             bpass_ar /= num_samples
@@ -591,7 +621,11 @@ class Filterbank(ABC):
             nsamps=n_in,
             **plan_kwargs,
         ):
-            out_ar = kernel_func(data, self.header.nchans, nsamps_r)
+            out_ar = kernel_func(
+                data,
+                self.header.nchans,
+                nsamps_r,
+            )
             out_file.cwrite(out_ar)
         out_file.close()
         return outfile_name
@@ -636,23 +670,42 @@ class Filterbank(ABC):
         """
         if outfile_name is None:
             outfile_name = f"{self.header.basename}_masked.fil"
+        if gulp < 1:
+            msg = f"gulp must be >= 1, got {gulp}"
+            raise ValueError(msg)
+        chan_mask = np.asarray(chan_mask, dtype=bool)
+        if chan_mask.shape != (self.header.nchans,):
+            msg = (
+                f"chan_mask length {chan_mask.size} does not match "
+                f"nchans {self.header.nchans}"
+            )
+            raise ValueError(msg)
 
         n_in, tstart = self._sample_window(start, nsamps)
-        chan_mask = np.array(chan_mask).astype("bool")
-        mask_value = np.float32(mask_value).astype(self.header.dtype)
-        out_file = self.header.prep_outfile(
+        # Signed 8-bit and 16-bit reads arrive as float32. See FilReader.
+        if self.header.nbits >= 16 or (self.header.nbits == 8 and self.header.signed):
+            mask_scalar = np.float32(mask_value)
+        else:
+            mask_scalar = np.uint8(np.clip(np.rint(mask_value), 0, 255))
+        kernel_func = kernels.mask_channels_par if parallel else kernels.mask_channels
+        with self.header.prep_outfile(
             outfile_name,
             updates={"nsamples": n_in, "tstart": tstart},
-        )
-        kernel_func = kernels.mask_channels_par if parallel else kernels.mask_channels
-        for nsamps_r, _ii, data in self.read_plan(
-            gulp=gulp,
-            start=start,
-            nsamps=n_in,
-            **plan_kwargs,
-        ):
-            kernel_func(data, chan_mask, mask_value, self.header.nchans, nsamps_r)
-            out_file.cwrite(data)
+        ) as out_file:
+            for nsamps_r, _ii, data in self.read_plan(
+                gulp=gulp,
+                start=start,
+                nsamps=n_in,
+                **plan_kwargs,
+            ):
+                kernel_func(
+                    data,
+                    chan_mask,
+                    mask_scalar,
+                    self.header.nchans,
+                    nsamps_r,
+                )
+                out_file.cwrite(data)
         return outfile_name
 
     def zap_times(
@@ -902,16 +955,15 @@ class Filterbank(ABC):
         ValueError
             If chans are out of range (chan < 0 or chan > total channels).
         """
-        if chans is None:
-            chans = np.arange(self.header.nchans)
-        chans = np.array(chans).astype("int")
-        nchans_extract = len(chans)
-        if np.all(np.logical_or(chans >= self.header.nchans, chans < 0)):
-            msg = f"Selected channels out of range: {chans.min()} to {chans.max()}"
+        if batch_size < 1:
+            msg = f"batch_size must be >= 1, got {batch_size}"
             raise ValueError(msg)
+        chans = _channel_index(chans, self.header.nchans)
+        nsamps_out, tstart = self._sample_window(start, nsamps)
         if outfile_base is None:
             outfile_base = self.header.basename
-        filenames = [f"{outfile_base}_chan{chan:04d}.tim" for chan in chans]
+        filenames = [f"{outfile_base}_chan{int(chan):04d}.tim" for chan in chans]
+        nchans_extract = len(chans)
 
         # Process in batches to avoid file open/close limits
         for batch_start in range(0, nchans_extract, batch_size):
@@ -930,6 +982,8 @@ class Filterbank(ABC):
                                 "data_type": "time series",
                                 "fch1": self.header.fch1
                                 + float(chan) * self.header.foff,
+                                "tstart": tstart,
+                                "nsamples": nsamps_out,
                             },
                             nbits=32,
                         ),
@@ -1001,6 +1055,9 @@ class Filterbank(ABC):
         """
         if chanpersub is None:
             chanpersub = nchans
+        if batch_size < 1:
+            msg = f"batch_size must be >= 1, got {batch_size}"
+            raise ValueError(msg)
         if chanpersub <= 1 or chanpersub > nchans:
             msg = f"chanpersub must be > 1 and <= nchans. Got {chanpersub}"
             raise ValueError(msg)
@@ -1011,8 +1068,9 @@ class Filterbank(ABC):
             msg = f"Number of channels must be divisible by sub-band size. Got {nchans}"
             raise ValueError(msg)
 
-        nsub = (self.header.nchans - chanstart) // chanpersub
+        nsub = nchans // chanpersub
         fstart = self.header.fch1 + chanstart * self.header.foff
+        nsamps_out, tstart = self._sample_window(start, nsamps)
 
         if outfile_base is None:
             outfile_base = self.header.basename
@@ -1033,6 +1091,8 @@ class Filterbank(ABC):
                                 "nchans": chanpersub,
                                 "fch1": fstart
                                 + (batch_start + i) * chanpersub * self.header.foff,
+                                "tstart": tstart,
+                                "nsamples": nsamps_out,
                             },
                             nbits=self.header.nbits,
                         ),
@@ -1171,23 +1231,31 @@ class Filterbank(ABC):
 
         n_in, tstart = self._sample_window(start, nsamps)
         bpass = self.bandpass(
+            method="mean",
             gulp=gulp,
             start=start,
             nsamps=n_in,
             **plan_kwargs,
         ).data
-        out_ar = np.empty(gulp * self.header.nchans, dtype=self.header.dtype)
+        if self.header.nbits >= 16 or (self.header.nbits == 8 and self.header.signed):
+            out_dtype = np.dtype(np.float32)
+        else:
+            out_dtype = self.header.dtype
+        out_ar = np.empty(gulp * self.header.nchans, dtype=out_dtype)
         out_file = self.header.prep_outfile(
             outfile_name,
             nbits=self.header.nbits,
             updates={"nsamples": n_in, "tstart": tstart},
         )
         kernel_func = kernels.remove_zerodm_par if parallel else kernels.remove_zerodm
-        clip_max = (
-            int(np.iinfo(self.header.dtype).max)
-            if np.issubdtype(self.header.dtype, np.integer)
-            else 0
-        )
+        # Signed 8-bit output is clipped by the writer. The kernel's clip is
+        # an unsigned range, which would turn negatives into zero.
+        if self.header.nbits == 8 and self.header.signed:
+            clip_max = 0
+        elif np.issubdtype(self.header.dtype, np.integer):
+            clip_max = int(np.iinfo(self.header.dtype).max)
+        else:
+            clip_max = 0
         for nsamps_r, _, data in self.read_plan(
             gulp=gulp,
             start=start,
@@ -1521,6 +1589,9 @@ class Filterbank(ABC):
         if outfile_base is None:
             outfile_base = self.header.basename
         paths = [f"{outfile_base}_DM{dm:08.3f}.tim" for dm in plan.dms]
+        if len(paths) != len(set(paths)):
+            msg = "DM trials are not unique when written to 3 decimal places"
+            raise ValueError(msg)
         writers = []
         for path, dm, lead_i in zip(paths, plan.dms, lead, strict=True):
             hdr = self.header.dedispersed_header(float(dm)).new_header(
@@ -1542,7 +1613,13 @@ class Filterbank(ABC):
                 **plan_kwargs,
             ):
                 valid = nsamps_r - max_delay
-                kernels.dedisperse_many(data, out, delays, nchans, nsamps_r)
+                kernels.dedisperse_many(
+                    data,
+                    out,
+                    delays,
+                    nchans,
+                    nsamps_r,
+                )
                 for idm, writer in enumerate(writers):
                     writer.cwrite(out[idm, :valid])
         finally:
@@ -1602,9 +1679,11 @@ class Filterbank(ABC):
             msg = f"Clean method must be 'mad' or 'iqrm', got {method}"
             raise ValueError(msg)
 
-        if self.chan_stats is None:
-            # 1st pass to compute channel statistics (upto kurtosis)
-            self.compute_stats(gulp=gulp, start=start, nsamps=nsamps, **plan_kwargs)
+        n_in, _tstart = self._sample_window(start, nsamps)
+        window = (start, n_in, "full")
+        if self.chan_stats is None or self._chan_stats_window != window:
+            # Statistics from another window or a basic-only pass are not reused.
+            self.compute_stats(gulp=gulp, start=start, nsamps=n_in, **plan_kwargs)
 
         if not isinstance(self.chan_stats, ChannelStats):
             msg = "Channel statistics not computed properly"
@@ -1660,6 +1739,26 @@ class Filterbank(ABC):
         if not kwargs.get("batch"):
             viewer.show()
         return viewer
+
+
+def _channel_index(chans: np.ndarray | None, nchans: int) -> np.ndarray:
+    """Return a unique integer channel list, or every channel when ``chans`` is None."""
+    if chans is None:
+        return np.arange(nchans)
+    selected = np.asarray(chans)
+    if selected.ndim != 1 or selected.size == 0:
+        msg = "chans must be a non-empty 1-D list of channel indices"
+        raise ValueError(msg)
+    if not np.issubdtype(selected.dtype, np.integer):
+        msg = "chans must be integers"
+        raise ValueError(msg)
+    if np.any((selected < 0) | (selected >= nchans)):
+        msg = f"Selected channels out of range: {selected.min()} to {selected.max()}"
+        raise ValueError(msg)
+    if np.unique(selected).size != selected.size:
+        msg = "chans must not contain duplicates"
+        raise ValueError(msg)
+    return selected
 
 
 def _validate_tree(

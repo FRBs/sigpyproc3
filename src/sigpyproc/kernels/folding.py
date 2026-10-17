@@ -1,4 +1,4 @@
-"""Numba kernels for pulsar folding, resampling, and Fast Folding Algorithm (FFA)."""
+"""Numba kernels for pulsar folding and resampling."""
 
 from __future__ import annotations
 
@@ -67,52 +67,3 @@ def resample_tim(array: np.ndarray, accel: float, tsamp: float) -> np.ndarray:
             resampled[index - 1] = array[ii]
         last_bin = index
     return resampled
-
-
-@njit(cache=True, fastmath=True)
-def ffa_stage(block: np.ndarray) -> np.ndarray:
-    """Run one FFA binary tree on a ``(n_rows, period)`` fold block."""
-    n_rows, nbin = block.shape
-    n_pad = 1
-    k = 0
-    while n_pad < n_rows:
-        n_pad *= 2
-        k += 1
-    src = np.zeros((n_pad, nbin), dtype=np.float32)
-    src[:n_rows, :] = block
-    if k == 0:
-        return src
-    dst = np.empty((n_pad, nbin), dtype=np.float32)
-    for stage in range(k):
-        step = 1 << stage
-        group = step << 1
-        for i in range(0, n_pad, group):
-            for shift in range(step):
-                a = src[i + shift]
-                b = src[i + step + shift]
-                out0 = dst[i + 2 * shift]
-                out1 = dst[i + 2 * shift + 1]
-                for j in range(nbin):
-                    out0[j] = a[j] + b[j]
-                out1[nbin - 1] = a[nbin - 1] + b[0]
-                for j in range(nbin - 1):
-                    out1[j] = a[j] + b[j + 1]
-        src, dst = dst, src
-    return src
-
-
-@njit(cache=True, fastmath=True)
-def ffa_profile_snr(profiles: np.ndarray) -> np.ndarray:
-    """Robust SNR of each FFA profile: ``(max - median) / (1.4826 * MAD)``."""
-    nprof = profiles.shape[0]
-    snrs = np.empty(nprof, dtype=np.float32)
-    mad_norm = np.float32(1.4826)
-    for i in range(nprof):
-        row = profiles[i]
-        med = np.median(row)
-        mad = np.median(np.abs(row - med))
-        if mad <= 0:
-            snrs[i] = 0.0
-        else:
-            snrs[i] = (np.max(row) - med) / (mad_norm * mad)
-    return snrs

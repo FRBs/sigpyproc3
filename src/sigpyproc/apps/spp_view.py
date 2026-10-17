@@ -3,11 +3,77 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import rich_click as click
 
 from sigpyproc.apps._logging import logging_options, setup_cli_logging
+
+if TYPE_CHECKING:
+    from sigpyproc.fourierseries import PowerSpectrum
+
+
+def _read_spectrum(filename: str, suffix: str) -> PowerSpectrum:
+    """Read amplitude, complex, or legacy complex spectra on their real grid."""
+    from sigpyproc.fourierseries import FourierSeries, PowerSpectrum
+    from sigpyproc.header import Header
+
+    if suffix == ".fft":
+        return FourierSeries.from_fft(filename).form_spec()
+    header = Header.from_sigproc(filename)
+    if header.data_type == "amplitude spectrum":
+        return PowerSpectrum.from_spec(filename)
+    return FourierSeries.from_spec(filename).form_spec()
+
+
+def _echo_paths(paths: list[str]) -> None:
+    for path in paths:
+        click.echo(path)
+
+
+def _batch_series(
+    files: tuple[str, ...],
+    suffix: str,
+    *,
+    theme: str,
+    start: int,
+    gulp: int,
+    outdir: str,
+) -> list[str]:
+    from sigpyproc.timeseries import TimeSeries
+    from sigpyproc.viz.series import SeriesViewer
+
+    Path(outdir).mkdir(parents=True, exist_ok=True)
+    written: list[str] = []
+    for name in files:
+        tim = (
+            TimeSeries.from_tim(name) if suffix == ".tim" else TimeSeries.from_dat(name)
+        )
+        viewer = SeriesViewer(tim, theme=theme, batch=True)
+        viewer.start_samp = max(0, start)
+        viewer.end_samp = min(len(tim.data), viewer.start_samp + max(gulp, 1))
+        out = Path(outdir) / f"{tim.header.basename}_timeseries.png"
+        written.append(viewer.save_png(str(out)))
+    return written
+
+
+def _batch_spectra(
+    files: tuple[str, ...],
+    suffix: str,
+    *,
+    theme: str,
+    outdir: str,
+) -> list[str]:
+    from sigpyproc.viz.series import SpectrumViewer
+
+    Path(outdir).mkdir(parents=True, exist_ok=True)
+    written: list[str] = []
+    for name in files:
+        spec = _read_spectrum(name, suffix)
+        viewer = SpectrumViewer(spec, theme=theme, batch=True)
+        out = Path(outdir) / f"{spec.header.basename}_spec.png"
+        written.append(viewer.save_png(str(out)))
+    return written
 
 
 @logging_options
@@ -100,9 +166,23 @@ def main(
     """Visualize pulsar/FRB filterbanks, time series, and power spectra."""
     setup_cli_logging(verbose, quiet=quiet)
 
-    first_ext = Path(files[0]).suffix.lower()
+    exts = {Path(name).suffix.lower() for name in files}
+    if len(exts) != 1:
+        msg = f"batch inputs must share one suffix, got {sorted(exts)}"
+        raise click.UsageError(msg)
+    first_ext = exts.pop()
+    if not batch and first_ext in {".tim", ".dat", ".fft", ".spec"} and len(files) > 1:
+        msg = "pass one time series or spectrum, or use --batch to render every file"
+        raise click.UsageError(msg)
 
     if first_ext in (".tim", ".dat"):
+        if batch:
+            _echo_paths(
+                _batch_series(
+                    files, first_ext, theme=theme, start=start, gulp=gulp, outdir=outdir
+                ),
+            )
+            return
         from sigpyproc.timeseries import TimeSeries
         from sigpyproc.viz.series import SeriesViewer
 
@@ -111,21 +191,17 @@ def main(
             if first_ext == ".tim"
             else TimeSeries.from_dat(files[0])
         )
-        viewer = SeriesViewer(tim)
-        viewer.show()
+        SeriesViewer(tim, theme=theme).show()
         return
 
     if first_ext in (".fft", ".spec"):
-        from sigpyproc.fourierseries import FourierSeries, PowerSpectrum
+        if batch:
+            _echo_paths(_batch_spectra(files, first_ext, theme=theme, outdir=outdir))
+            return
         from sigpyproc.viz.series import SpectrumViewer
 
-        spec = (
-            FourierSeries.from_fft(files[0]).form_spec()
-            if first_ext == ".fft"
-            else PowerSpectrum.from_spec(files[0])
-        )
-        viewer_spec = SpectrumViewer(spec)
-        viewer_spec.show()
+        spec = _read_spectrum(files[0], first_ext)
+        SpectrumViewer(spec, theme=theme).show()
         return
 
     # Filterbank / PSRFITS / FBH5 files
@@ -133,25 +209,34 @@ def main(
         from sigpyproc.readers import open_filterbank
         from sigpyproc.viz.batch import render_waterfall_batch
 
-        fil = open_filterbank(files[0])
-        render_waterfall_batch(
-            fil,
-            outdir,
-            start=start,
-            stop=stop,
-            gulp=gulp,
-            dm=dm,
-            tfactor=tfactor,
-            ffactor=ffactor,
-            mask=mask,
-            scaler=scale,
-            cmap=cmap,
-            theme=theme,
-            zerodm=zerodm,
-            flatten=flatten,
-            out_format=out_format,
-            jobs=jobs,
-        )
+        written = []
+        for name in files:
+            fil = open_filterbank(name)
+            try:
+                written.extend(
+                    render_waterfall_batch(
+                        fil,
+                        outdir,
+                        start=start,
+                        stop=stop,
+                        gulp=gulp,
+                        dm=dm,
+                        tfactor=tfactor,
+                        ffactor=ffactor,
+                        mask=mask,
+                        scaler=scale,
+                        cmap=cmap,
+                        theme=theme,
+                        zerodm=zerodm,
+                        flatten=flatten,
+                        out_format=out_format,
+                        jobs=jobs,
+                    ),
+                )
+            finally:
+                fil.close()
+        for path in written:
+            click.echo(path)
         return
 
     from sigpyproc.viz.waterfall import WaterfallViewer

@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -278,9 +279,13 @@ def _write_search(
     freq_rows = np.broadcast_to(freqs, (nsub, nchan)).copy()
     scale_rows = np.broadcast_to(scales.ravel(), (nsub, npol * nchan)).copy()
     offset_rows = np.broadcast_to(offsets.ravel(), (nsub, npol * nchan)).copy()
-    weight_rows = np.broadcast_to(weights, (nsub, nchan)).copy()
-    tsub = np.full(nsub, nsblk * 1e-3)
-    offs = tsub / 2
+    weights = np.asarray(weights, dtype=np.float32).reshape(-1)
+    weight_rows = np.broadcast_to(weights, (nsub, weights.size)).copy()
+    # Row centres of a contiguous observation. TBIN below is the same 1 ms.
+    tbin = 1e-3
+    duration = nsblk * tbin
+    tsub = np.full(nsub, duration)
+    offs = (np.arange(nsub, dtype=np.float64) + 0.5) * duration
     dim = str(tdim).replace(" ", "")
     if nbits == 16:
         ordered = np.stack(
@@ -306,7 +311,7 @@ def _write_search(
         fits.Column(name="TSUBINT", format="1D", array=tsub),
         fits.Column(name="OFFS_SUB", format="1D", array=offs),
         fits.Column(name="DAT_FREQ", format=f"{nchan}D", array=freq_rows),
-        fits.Column(name="DAT_WTS", format=f"{nchan}E", array=weight_rows),
+        fits.Column(name="DAT_WTS", format=f"{weights.size}E", array=weight_rows),
         fits.Column(name="DAT_OFFS", format=f"{npol * nchan}E", array=offset_rows),
         fits.Column(name="DAT_SCL", format=f"{npol * nchan}E", array=scale_rows),
         data_column,
@@ -317,7 +322,7 @@ def _write_search(
     table.header["NBITS"] = nbits
     table.header["NCHAN"] = nchan
     table.header["NSBLK"] = nsblk
-    table.header["TBIN"] = 1e-3
+    table.header["TBIN"] = tbin
     table.header["CHAN_BW"] = chan_bw
     table.header["SIGNINT"] = signint
     table.header["ZERO_OFF"] = zero_off
@@ -508,3 +513,560 @@ class TestSearchLayout:
         )
         with pytest.raises(ValueError, match="NOPE"):
             pfits.PFITSFile(str(bad))
+
+    def test_one_channel_is_rejected(self, tmp_path: Path) -> None:
+        path = tmp_path / "one.sf"
+        _write_search(
+            path,
+            np.zeros((1, 4, 1, 1), dtype=np.uint8),
+            nbits=8,
+            pol_type="INTEN",
+            chan0=1400.0,
+            chan_bw=-0.25,
+        )
+        with pytest.raises(ValueError, match="at least two channels"):
+            pfits.PFITSFile(str(path))
+
+    def test_short_weights_are_rejected(self, tmp_path: Path) -> None:
+        path = tmp_path / "short.sf"
+        _write_search(
+            path,
+            np.zeros((1, 4, 1, 4), dtype=np.uint8),
+            nbits=8,
+            pol_type="INTEN",
+            chan0=100.0,
+            chan_bw=1.0,
+            weights=np.ones(2, dtype=np.float32),
+        )
+        with pfits.PFITSFile(str(path)) as src:
+            with pytest.raises(ValueError, match="DAT_WTS"):
+                src.read_weights(0)
+            with pytest.raises(ValueError, match="DAT_WTS"):
+                src.read_subint_pol(0)
+
+    def test_irregular_frequencies_are_rejected(self, tmp_path: Path) -> None:
+        path = tmp_path / "irregular.sf"
+        _write_search(
+            path,
+            np.zeros((1, 4, 1, 4), dtype=np.uint8),
+            nbits=8,
+            pol_type="INTEN",
+            chan0=100.0,
+            chan_bw=1.0,
+        )
+        _assign_column(path, "DAT_FREQ", np.array([[100.0, 101.0, 104.0, 103.0]]))
+        with pytest.raises(ValueError, match="not uniform"):
+            pfits.PFITSFile(str(path))
+
+    def test_row_gap_is_rejected(self, tmp_path: Path) -> None:
+        nsblk = 4
+        path = tmp_path / "gap.sf"
+        _write_search(
+            path,
+            np.zeros((2, nsblk, 1, 2), dtype=np.uint8),
+            nbits=8,
+            pol_type="INTEN",
+            chan0=100.0,
+            chan_bw=1.0,
+        )
+        duration = nsblk * 1e-3
+        centres = np.array([0.5 * duration, 0.5 * duration + 10.0])
+        _assign_column(path, "OFFS_SUB", centres)
+        with pytest.raises(ValueError, match="not contiguous"):
+            pfits.PFITSFile(str(path))
+
+    def test_fold_mode_is_rejected(self, tmp_path: Path) -> None:
+        path = tmp_path / "fold.sf"
+        _write_search(
+            path,
+            np.zeros((1, 4, 1, 2), dtype=np.uint8),
+            nbits=8,
+            pol_type="INTEN",
+            chan0=100.0,
+            chan_bw=1.0,
+        )
+        with fits.open(path, mode="update") as hdul:
+            hdul[0].header["OBS_MODE"] = "PSR"
+        with pytest.raises(ValueError, match="SEARCH"):
+            pfits.PFITSFile(str(path))
+
+    def test_nstot_past_the_rows_is_rejected(self, tmp_path: Path) -> None:
+        path = tmp_path / "long.sf"
+        _write_search(
+            path,
+            np.zeros((1, 4, 1, 2), dtype=np.uint8),
+            nbits=8,
+            pol_type="INTEN",
+            chan0=100.0,
+            chan_bw=1.0,
+        )
+        with fits.open(path, mode="update") as hdul:
+            hdul["SUBINT"].header["NSTOT"] = 100
+        with pytest.raises(ValueError, match="NSTOT"):
+            pfits.PFITSFile(str(path))
+
+    def test_partial_nstot_is_kept(self, tmp_path: Path) -> None:
+        path = tmp_path / "partial.sf"
+        _write_search(
+            path,
+            np.zeros((1, 8, 1, 2), dtype=np.uint8),
+            nbits=8,
+            pol_type="INTEN",
+            chan0=100.0,
+            chan_bw=1.0,
+        )
+        with fits.open(path, mode="update") as hdul:
+            hdul["SUBINT"].header["NSTOT"] = 3
+        with pfits.PFITSFile(str(path)) as src:
+            assert src.sub_hdr.nsamples == 3
+
+
+def _assign_column(path: Path, name: str, values: np.ndarray) -> None:
+    """Replace one SUBINT column and write the file again."""
+    with fits.open(path) as hdul:
+        table = hdul["SUBINT"].data
+        table[name][:] = values
+        copied = fits.HDUList([hdu.copy() for hdu in hdul])
+    copied.writeto(path, overwrite=True)
+    copied.close()
+
+
+@pytest.mark.parametrize("tform", ["not-a-format", "1PJ(4)", "1QJ(4)", "3X"])
+def test_invalid_fits_column_formats_are_rejected(tform: str) -> None:
+    with pytest.raises(ValueError):
+        pfits._parse_tform(tform)
+
+
+@pytest.mark.parametrize(
+    ("pol_type", "npol"), [("UNKNOWN", 2), ("INTEN", 4), ("IQUV", 2)]
+)
+def test_polarization_layout_must_match_its_product_count(
+    pol_type: str, npol: int
+) -> None:
+    with pytest.raises(ValueError, match="POL_TYPE"):
+        pfits.polarisation_state(pol_type, npol)
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"NBITS": 12},
+        {"NCHAN": 1},
+        {"NPOL": 0},
+        {"NSBLK": 0},
+        {"NSTOT": -1},
+        {"POL_TYPE": "UNKNOWN"},
+    ],
+)
+def test_malformed_search_headers_fail_before_sample_reads(
+    tmp_path: Path, changes: dict
+) -> None:
+    path = tmp_path / "invalid.sf"
+    _write_search(
+        path,
+        np.zeros((1, 4, 1, 4), dtype=np.uint8),
+        nbits=8,
+        pol_type="INTEN",
+        chan0=100.0,
+        chan_bw=1.0,
+    )
+    with fits.open(path, mode="update") as hdul:
+        for key, value in changes.items():
+            hdul["SUBINT"].header[key] = value
+    with pytest.raises(ValueError):
+        pfits.PFITSFile(str(path))
+
+
+@pytest.mark.parametrize("frequencies", [[100.0, 101.0, 103.0, 104.0], [np.nan] * 4])
+def test_nonuniform_or_missing_frequency_coordinates_are_rejected(
+    tmp_path: Path, frequencies: list[float]
+) -> None:
+    path = tmp_path / "coordinates.sf"
+    _write_search(
+        path,
+        np.zeros((1, 4, 1, 4), dtype=np.uint8),
+        nbits=8,
+        pol_type="INTEN",
+        chan0=100.0,
+        chan_bw=1.0,
+    )
+    _assign_column(path, "DAT_FREQ", np.asarray([frequencies]))
+    with pytest.raises(ValueError, match="DAT_FREQ"):
+        pfits.PFITSFile(str(path))
+
+
+@pytest.mark.parametrize("duration", [0.0, -1.0, np.nan, np.inf])
+def test_invalid_subintegration_durations_are_rejected(
+    tmp_path: Path, duration: float
+) -> None:
+    path = tmp_path / "duration.sf"
+    _write_search(
+        path,
+        np.zeros((2, 4, 1, 4), dtype=np.uint8),
+        nbits=8,
+        pol_type="INTEN",
+        chan0=100.0,
+        chan_bw=1.0,
+    )
+    _assign_column(path, "TSUBINT", np.full(2, duration))
+    with pytest.raises(ValueError, match="TSUBINT"):
+        pfits.PFITSFile(str(path))
+
+
+def test_row_reader_rejects_invalid_indices_and_closed_files(tmp_path: Path) -> None:
+    path = tmp_path / "rows.sf"
+    samples = np.arange(16, dtype=np.uint8).reshape(1, 4, 1, 4)
+    _write_search(path, samples, nbits=8, pol_type="INTEN", chan0=100.0, chan_bw=1.0)
+    reader = pfits.PFITSFile(str(path))
+    for row in [-1, 1]:
+        with pytest.raises(IndexError):
+            reader._table.row_slice(row, "DATA")
+    for pol in [-2, 1]:
+        with pytest.raises(ValueError, match="polarisation"):
+            reader.read_detected(0, pol=pol)
+    with pytest.raises(ValueError, match="NPOL"):
+        reader.read_detected(0, pol=-1)
+    reader.close()
+    reader.close()
+    with pytest.raises(ValueError, match="closed"):
+        reader._table.row_slice(0, "DATA")
+
+
+@pytest.mark.parametrize("small_reads", [None, False, True])
+def test_pfits_dedispersion_matches_channel_sample_gather(
+    tmp_path: Path,
+    small_reads: bool | None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from sigpyproc import readers
+
+    path = tmp_path / "dispersed.sf"
+    samples = (np.arange(2 * 32 * 4) % 200).astype(np.uint8).reshape(2, 32, 1, 4)
+    _write_search(path, samples, nbits=8, pol_type="INTEN", chan0=100.0, chan_bw=10.0)
+    monkeypatch.setattr(readers, "_BULK_BYTES", 1)
+    monkeypatch.setattr(readers, "_STREAM_GULP_BYTES", 16)
+    with PFITSReader(str(path)) as reader:
+        delays = reader.header.get_dmdelays(0.02)
+        block = reader.read_dedisp_block(10, 16, 0.02, small_reads=small_reads)
+        raw = samples.reshape(64, 4)
+        expected = np.stack(
+            [raw[10 + delay + np.arange(16), chan] for chan, delay in enumerate(delays)]
+        )
+        np.testing.assert_array_equal(block.data, expected)
+        assert block.header.tstart == reader.header.mjd_after_nsamps(10)
+        assert block.dm == 0.02
+
+
+def test_pfits_overlapping_plan_preserves_samples_and_indices(tmp_path: Path) -> None:
+    path = tmp_path / "plan.sf"
+    samples = np.arange(64, dtype=np.uint8).reshape(2, 8, 1, 4)
+    _write_search(path, samples, nbits=8, pol_type="INTEN", chan0=100.0, chan_bw=1.0)
+    with PFITSReader(str(path)) as reader:
+        blocks = list(
+            reader.read_plan(gulp=6, start=2, nsamps=11, skipback=2, quiet=True)
+        )
+        for index, (count, _block_id, values) in enumerate(blocks):
+            np.testing.assert_array_equal(
+                values.reshape(count, 4),
+                samples.reshape(16, 4)[2 + index * 4 : 2 + index * 4 + count],
+            )
+        for kwargs in [{"gulp": 0}, {"start": -1}, {"gulp": 4, "skipback": 4}]:
+            with pytest.raises(ValueError):
+                list(reader.read_plan(**kwargs, quiet=True))
+        with pytest.raises(ValueError):
+            reader.read_block(0, 4, fch1=1000.0, nchans=1)
+
+
+def _subint_card(path: Path, key: str, value: object | None) -> None:
+    with fits.open(path, mode="update") as hdul:
+        header = hdul["SUBINT"].header
+        if value is None:
+            del header[key]
+        else:
+            header[key] = value
+
+
+def _data_tdim_key(path: Path) -> str:
+    with fits.open(path) as hdul:
+        header = hdul["SUBINT"].header
+        for index in range(1, int(header["TFIELDS"]) + 1):
+            if str(header[f"TTYPE{index}"]).strip() == "DATA":
+                return f"TDIM{index}"
+    msg = "DATA column is missing"
+    raise AssertionError(msg)
+
+
+def _drop_column(path: Path, name: str) -> None:
+    kept_cards = (
+        "POL_TYPE",
+        "NPOL",
+        "NBITS",
+        "NCHAN",
+        "NSBLK",
+        "TBIN",
+        "CHAN_BW",
+        "SIGNINT",
+        "ZERO_OFF",
+        "NSUBOFFS",
+        "NSTOT",
+    )
+    with fits.open(path) as hdul:
+        table = hdul["SUBINT"]
+        kept = [column for column in table.columns if column.name != name]
+        replacement = fits.BinTableHDU.from_columns(kept, name="SUBINT")
+        for key in kept_cards:
+            if key in table.header:
+                replacement.header[key] = table.header[key]
+        copied = fits.HDUList([hdul[0].copy(), replacement])
+    copied.writeto(path, overwrite=True)
+    copied.close()
+
+
+def _tiny_search(path: Path, *, nsub: int = 1) -> None:
+    _write_search(
+        path,
+        np.zeros((nsub, 4, 1, 4), dtype=np.uint8),
+        nbits=8,
+        pol_type="INTEN",
+        chan0=100.0,
+        chan_bw=1.0,
+    )
+
+
+def test_search_header_reports_recorded_metadata(tmp_path: Path) -> None:
+    path = tmp_path / "meta.sf"
+    _tiny_search(path)
+    with pfits.PFITSFile(str(path)) as src:
+        assert src.filename == str(path)
+        assert src.pri_hdr.observer == "test"
+        assert src.pri_hdr.project_id == "test"
+        assert src.pri_hdr.telescope == "Parkes"
+        assert src.pri_hdr.obs_mode == "SEARCH"
+        assert src.pri_hdr.chan_dm == 0
+        assert src.sub_hdr.zero_off == 0
+        assert src.sub_hdr.signint == 0
+        assert src.sub_hdr.subint_offset == 0
+        assert src.sub_hdr.nchans == 4
+        assert src.sub_hdr.chan_bw == pytest.approx(1.0)
+        assert src.sub_hdr.channel_offset == 0
+        assert src.sub_hdr.tsubint == pytest.approx(0.004)
+        assert src.sub_hdr.offs_sub == pytest.approx(0.002)
+        empty = src.read_subints(0, 0)
+        assert empty.shape == (0, 4)
+        with pytest.raises(IndexError, match="subint range"):
+            src.read_subints(1, 1)
+
+
+def test_data_geometry_rejections() -> None:
+    raw = np.zeros(8, dtype=np.uint8)
+    with pytest.raises(ValueError, match="axes"):
+        pfits.arrange_data_bytes(raw, (2, 4), nbits=8, nsblk=2, npol=1, nchan=2)
+    with pytest.raises(ValueError, match="does not match"):
+        pfits.arrange_data_bytes(
+            np.zeros(8, dtype=np.uint8),
+            (2, 2, 2),
+            nbits=8,
+            nsblk=4,
+            npol=2,
+            nchan=2,
+        )
+    with pytest.raises(ValueError, match="TDIM"):
+        pfits.arrange_data_bytes(
+            np.zeros(3, dtype=np.uint8),
+            (2, 2, 2),
+            nbits=8,
+            nsblk=2,
+            npol=1,
+            nchan=2,
+        )
+    with pytest.raises(ValueError, match="element size"):
+        pfits.arrange_data_bytes(
+            np.zeros(4, dtype=np.uint8),
+            (2, 1, 2),
+            nbits=16,
+            nsblk=2,
+            npol=1,
+            nchan=2,
+        )
+    with pytest.raises(ValueError, match="Empty TDIM"):
+        pfits._parse_tdim("()")
+    with pytest.raises(ValueError, match="Cannot parse TFORM"):
+        pfits._parse_tform("123")
+
+
+def _expect_open_error(path: Path, match: str) -> None:
+    with pytest.raises(ValueError, match=match):
+        pfits.PFITSFile(str(path))
+
+
+def test_unrecognised_fits_type_is_rejected(tmp_path: Path) -> None:
+    path = tmp_path / "type.sf"
+    _tiny_search(path)
+    with fits.open(path, mode="update") as hdul:
+        hdul[0].header["FITSTYPE"] = "OTHER"
+    _expect_open_error(path, "not a PSRFITS")
+
+
+def test_column_width_must_match_naxis1(tmp_path: Path) -> None:
+    path = tmp_path / "naxis.sf"
+    _tiny_search(path)
+    _subint_card(path, "NAXIS1", 1)
+    _expect_open_error(path, "NAXIS1")
+
+
+def test_empty_data_dimensions_are_rejected(tmp_path: Path) -> None:
+    path = tmp_path / "tdim.sf"
+    _tiny_search(path)
+    _subint_card(path, _data_tdim_key(path), "()")
+    _expect_open_error(path, "Empty TDIM")
+
+
+def test_packed_channels_must_fill_whole_bytes(tmp_path: Path) -> None:
+    path = tmp_path / "pack.sf"
+    _tiny_search(path)
+    _subint_card(path, "NBITS", 2)
+    _subint_card(path, "NCHAN", 2)
+    _expect_open_error(path, "whole number")
+
+
+def test_missing_data_column_is_rejected(tmp_path: Path) -> None:
+    path = tmp_path / "nodata.sf"
+    _tiny_search(path)
+    _drop_column(path, "DATA")
+    _expect_open_error(path, "no DATA")
+
+
+def test_missing_weights_column_is_rejected(tmp_path: Path) -> None:
+    path = tmp_path / "noweights.sf"
+    _tiny_search(path)
+    _drop_column(path, "DAT_WTS")
+    with pfits.PFITSFile(str(path)) as src, pytest.raises(ValueError, match="DAT_WTS"):
+        src.read_weights(0)
+
+
+def _replace_column(path: Path, column: fits.Column) -> None:
+    kept_cards = (
+        "POL_TYPE",
+        "NPOL",
+        "NBITS",
+        "NCHAN",
+        "NSBLK",
+        "TBIN",
+        "CHAN_BW",
+        "SIGNINT",
+        "ZERO_OFF",
+        "NSUBOFFS",
+        "NSTOT",
+    )
+    with fits.open(path) as hdul:
+        table = hdul["SUBINT"]
+        kept = [old if old.name != column.name else column for old in table.columns]
+        replacement = fits.BinTableHDU.from_columns(kept, name="SUBINT")
+        for key in kept_cards:
+            if key in table.header:
+                replacement.header[key] = table.header[key]
+        copied = fits.HDUList([hdul[0].copy(), replacement])
+    copied.writeto(path, overwrite=True)
+    copied.close()
+
+
+@pytest.mark.parametrize(
+    ("name", "match", "reader_name"),
+    [
+        ("DAT_SCL", "DAT_SCL", "read_scales"),
+        ("DAT_OFFS", "DAT_OFFS", "read_offsets"),
+    ],
+)
+def test_short_calibration_columns_are_rejected(
+    tmp_path: Path, name: str, match: str, reader_name: str
+) -> None:
+    path = tmp_path / f"{name}.sf"
+    _tiny_search(path)
+    _replace_column(
+        path,
+        fits.Column(name=name, format="1E", array=np.ones(1, dtype=np.float32)),
+    )
+    with pfits.PFITSFile(str(path)) as src, pytest.raises(ValueError, match=match):
+        getattr(src, reader_name)(0)
+
+
+def test_split_files_without_row_centres_are_rejected(tmp_path: Path) -> None:
+    path = tmp_path / "centres.sf"
+    _tiny_search(path, nsub=2)
+    _drop_column(path, "OFFS_SUB")
+    _expect_open_error(path, "OFFS_SUB")
+
+
+def test_missing_or_nonpositive_sample_interval_is_rejected(tmp_path: Path) -> None:
+    missing = tmp_path / "missing.sf"
+    _tiny_search(missing, nsub=2)
+    _subint_card(missing, "TBIN", None)
+    _expect_open_error(missing, "no TBIN")
+    zero = tmp_path / "zero.sf"
+    _tiny_search(zero, nsub=2)
+    _subint_card(zero, "TBIN", 0.0)
+    _expect_open_error(zero, "TBIN")
+
+
+def test_missing_sample_count_uses_the_table_capacity(tmp_path: Path) -> None:
+    path = tmp_path / "nstot.sf"
+    _tiny_search(path)
+    _subint_card(path, "NSTOT", None)
+    with pfits.PFITSFile(str(path)) as src:
+        assert src.sub_hdr.nsamples == src.sub_hdr.subint_samples * src.sub_hdr.nsubint
+
+
+def test_frequency_table_must_agree_across_rows_and_with_the_header(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    shifted = tmp_path / "shifted.sf"
+    _tiny_search(shifted, nsub=2)
+    _assign_column(
+        shifted,
+        "DAT_FREQ",
+        np.array([[100.0, 101.0, 102.0, 103.0], [110.0, 111.0, 112.0, 113.0]]),
+    )
+    _expect_open_error(shifted, "differs from subint 0")
+
+    short = tmp_path / "shortfreq.sf"
+    _tiny_search(short)
+    _subint_card(short, "NCHAN", 8)
+    _expect_open_error(short, "DAT_FREQ")
+
+    implicit = tmp_path / "notdim.sf"
+    _tiny_search(implicit)
+    _subint_card(implicit, _data_tdim_key(implicit), None)
+    with pfits.PFITSFile(str(implicit)) as src:
+        assert src.sub_hdr.nchans == 4
+
+    no_bw = tmp_path / "nobw.sf"
+    _tiny_search(no_bw)
+    _subint_card(no_bw, "CHAN_BW", None)
+    with pfits.PFITSFile(str(no_bw)) as src:
+        assert src.sub_hdr.nchans == 4
+
+    disagree = tmp_path / "disagree.sf"
+    _tiny_search(disagree)
+    _subint_card(disagree, "CHAN_BW", 50.0)
+    with (
+        caplog.at_level(logging.WARNING, logger="sigpyproc.io.pfits"),
+        pfits.PFITSFile(str(disagree)) as src,
+    ):
+        assert src.sub_hdr.chan_bw == pytest.approx(50.0)
+    assert "CHAN_BW" in caplog.text
+
+
+def test_nonfinite_row_centres_are_rejected(tmp_path: Path) -> None:
+    path = tmp_path / "centres.sf"
+    _tiny_search(path, nsub=2)
+    _assign_column(path, "OFFS_SUB", np.array([np.nan, 0.002]))
+    _expect_open_error(path, "OFFS_SUB")
+
+
+def test_file_without_a_subint_table_is_rejected(tmp_path: Path) -> None:
+    path = tmp_path / "primary.sf"
+    primary = fits.PrimaryHDU(header=_primary_cards(obs_bw=4.0, nchan=4, fcenter=101.5))
+    fits.HDUList([primary]).writeto(path)
+    with pytest.raises(ValueError, match="SUBINT"):
+        pfits.PFITSFile(str(path))

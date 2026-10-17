@@ -989,6 +989,39 @@ def _skip_unknown_key(fp: BinaryIO, filepath: Path) -> None:
     raise OSError(msg)
 
 
+def _declared_spectrum_length(header: dict[str, int | float | str]) -> int | None:
+    """Return the real transform length stored on a sigpyproc spectrum.
+
+    Amplitude and complex spectra store one real FFT length in ``nsamples``.
+    The payload is the frequency bins (complex values as interleaved floats),
+    which is not that length. ``None`` means this header is not such a file.
+    """
+    try:
+        kind = int(header.get("data_type", 1))
+    except (TypeError, ValueError):
+        return None
+    if kind not in {4, 5} or "nsamples" not in header:
+        return None
+    if int(header.get("nchans", 1)) != 1 or int(header.get("nbits", 0)) != 32:
+        return None
+    if int(header.get("nifs", 1)) != 1:
+        return None
+    declared = int(header["nsamples"])
+    if declared < 1:
+        msg = f"spectrum nsamples must be positive, got {declared}"
+        raise ValueError(msg)
+    nbin = declared // 2 + 1
+    expect = nbin if kind == 4 else 2 * nbin
+    got = int(header["datalen"]) // 4
+    if got != expect:
+        msg = (
+            f"spectrum payload has {got} values, expected {expect} "
+            f"for a real length of {declared}"
+        )
+        raise ValueError(msg)
+    return declared
+
+
 def _compute_nsamples(header: dict[str, int | float | str]) -> int:
     """Compute the number of samples from parsed header."""
     required_keys = frozenset({"nbits", "nchans", "datalen"})
@@ -998,13 +1031,31 @@ def _compute_nsamples(header: dict[str, int | float | str]) -> int:
         raise ValueError(msg)
     nbits = int(header["nbits"])
     nchans = int(header["nchans"])
+    nifs = int(header.get("nifs", 1))
     datalen = int(header["datalen"])
-    if nbits <= 0 or nchans <= 0:
-        msg = f"Invalid header values: nbits={nbits}, nchans={nchans} (must be > 0)."
+    if nbits <= 0 or nchans <= 0 or nifs <= 0:
+        msg = (
+            f"Invalid header values: nbits={nbits}, nchans={nchans}, "
+            f"nifs={nifs} (must be > 0)."
+        )
         raise ValueError(msg)
 
-    # Samples derived purely from file size and header parameters.
-    nsamples_from_file = (8 * datalen) // nbits // nchans
+    spectrum_nsamples = _declared_spectrum_length(header)
+    if spectrum_nsamples is not None:
+        return spectrum_nsamples
+
+    # One sample is every channel of every IF. A trailing partial frame is not
+    # a sample: it is dropped, and the count is the whole samples on disk.
+    # Raising here would reject the truncated files ``read_plan`` already reads.
+    frame_bits = nbits * nchans * nifs
+    payload_bits = 8 * datalen
+    leftover = payload_bits % frame_bits
+    if leftover:
+        logger.warning(
+            f"Trailing {leftover} bits do not fill a sample "
+            f"({frame_bits} bits); ignoring that partial frame.",
+        )
+    nsamples_from_file = payload_bits // frame_bits
 
     if "nsamples" in header:
         nsamples_declared = int(header["nsamples"])

@@ -386,15 +386,13 @@ def _validate_freqs(
     value: NDArray[np.float64],
 ) -> None:
     attr_name = attribute.name
-    if len(value) == 0:
-        msg = f"{attr_name} must not be empty."
+    if len(value) < 2:
+        msg = f"{attr_name} must contain at least two channels."
         raise ValueError(msg)
     if value.ndim != 1:
         msg = f"{attr_name} must be 1D, but got {value.ndim}D."
         raise ValueError(msg)
     diff = np.diff(value)
-    if diff.size == 0:
-        return
     if not np.all(np.isclose(diff, diff[0])):
         msg = f"{attr_name} must have a constant difference between elements."
         raise ValueError(msg)
@@ -407,7 +405,7 @@ class FrequencyChannels:
     Parameters
     ----------
     freqs : ArrayLike
-        Central frequencies of the channels in MHz.
+        Central frequencies of the channels in MHz. At least two channels.
 
     Attributes
     ----------

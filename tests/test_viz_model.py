@@ -102,3 +102,49 @@ def test_fit_dm() -> None:
     expected_dm = dt / (4148.808 * ((f2**-2) - (f1**-2)))
     fitted = WaterfallModel.fit_dm(0.0, f1, dt, f2)
     assert np.isclose(fitted, expected_dm, rtol=1e-3)
+
+
+def test_history_has_detached_undo_redo_and_bounded_capacity() -> None:
+    from sigpyproc.viz.waterfall import History
+
+    history = History(maxlen=2)
+    state = WaterfallState(zapped_channels={1})
+    assert history.back(state) is None
+    assert history.forward(state) is None
+    for start in [0, 10, 20]:
+        state.start = start
+        history.push(state)
+    state.zapped_channels.add(2)
+    previous = history.back(state)
+    assert previous.start == 20
+    assert previous.zapped_channels == {1}
+    restored = history.forward(previous)
+    assert restored.zapped_channels == {1, 2}
+    history.push(WaterfallState(start=30))
+    assert history.forward(state) is None
+    assert len(history._past) == 2
+
+
+def test_model_cache_evicts_old_windows_and_owns_data(filfile_8bit_1: str) -> None:
+    with FilReader(filfile_8bit_1) as reader:
+        model = WaterfallModel(reader, cache_blocks=1)
+        first = model._raw_block(WaterfallState(start=0, nsamps=64))
+        expected = first.data.copy()
+        second = model._raw_block(WaterfallState(start=64, nsamps=64))
+        assert second is not first
+        assert len(model._cache) == 1
+        np.testing.assert_array_equal(first.data, expected)
+        assert model._raw_block(WaterfallState(start=64, nsamps=64)) is second
+
+
+def test_zero_dm_removes_common_mode_without_changing_cached_input(
+    filfile_8bit_1: str,
+) -> None:
+    with FilReader(filfile_8bit_1) as reader:
+        model = WaterfallModel(reader)
+        state = WaterfallState(nsamps=128)
+        original = model._raw_block(state).data.copy()
+        state.zerodm = True
+        filtered, _ = model.get_block(state)
+        np.testing.assert_allclose(filtered.data.mean(axis=0), 0, atol=1e-4)
+        np.testing.assert_array_equal(model._raw_block(state).data, original)
